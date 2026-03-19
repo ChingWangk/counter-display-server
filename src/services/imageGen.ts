@@ -1,4 +1,5 @@
 import { Counter, CounterResult, CounterType } from '../types';
+const PACK_WIDTH_CM = 6; 
 
 const COUNTER_TYPE_LABEL: Record<CounterType, string> = {
   front: '前柜',
