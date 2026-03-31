@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { GenerateRequest, GenerateResponse, Category, CounterResult } from '../types';
 import { sortCategories } from '../services/sortCategories';
-import { generateCounterImage } from '../services/imageGen';
+import { generateCounterImage, filterWithImages } from '../services/imageGen';
 
 const router = Router();
 
@@ -35,10 +35,13 @@ router.post('/', async (req: Request, res: Response) => {
     // 按规则排序
     const sorted = sortCategories(available);
 
+    // 过滤掉服务器上没有图片的品规
+    const withImages = filterWithImages(sorted);
+
     // 为每个柜台生成图片
     const results: CounterResult[] = [];
     for (const counter of counters) {
-      const imageUrl = await generateCounterImage(counter, sorted);
+      const imageUrl = await generateCounterImage(counter, withImages);
       results.push({
         counterId: counter.id,
         counterType: counter.type,
