@@ -8,6 +8,7 @@
     "start": "node dist/app.js"
   },
   "dependencies": {
+    "canvas": "^2.11.2",
     "express": "^4.21.0"
   },
   "devDependencies": {
