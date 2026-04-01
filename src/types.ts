@@ -20,7 +20,7 @@ export interface Category {
 
 export interface GenerateRequest {
   counters: Counter[];
-  categories: Category[];   // 用户勾选的品规（排除项）
+  categories: Category[];   // 用户勾选的品规（本店有进货的品规）
 }
 
 export interface CounterResult {

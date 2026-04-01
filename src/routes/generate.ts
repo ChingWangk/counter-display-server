@@ -1,17 +1,9 @@
 import { Router, Request, Response } from 'express';
-import * as fs from 'fs';
-import * as path from 'path';
-import { GenerateRequest, GenerateResponse, Category, CounterResult } from '../types';
+import { GenerateRequest, GenerateResponse, CounterResult } from '../types';
 import { sortCategories } from '../services/sortCategories';
 import { generateCounterImage, filterWithImages } from '../services/imageGen';
 
 const router = Router();
-
-/** 读取完整品类列表 */
-function loadAllCategories(): Category[] {
-  const filePath = path.join(__dirname, '../data/categories.json');
-  return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-}
 
 router.post('/', async (req: Request, res: Response) => {
   try {
@@ -23,14 +15,8 @@ router.post('/', async (req: Request, res: Response) => {
       return;
     }
 
-    // categories = 用户勾选的品规（排除项）
-    const excludeIds = new Set(
-      Array.isArray(categories) ? categories.map(c => c.id) : []
-    );
-
-    // 从全部品规中排除勾选的，得到可放列表
-    const allCategories = loadAllCategories();
-    const available = allCategories.filter(c => !excludeIds.has(c.id));
+    // categories = 用户勾选的品规（即本店有进货的品规，直接作为可用列表）
+    const available = Array.isArray(categories) ? categories : [];
 
     // 按规则排序
     const sorted = sortCategories(available);
