@@ -1,13 +1,20 @@
 import { Router, Request, Response } from 'express';
-import { GenerateRequest, GenerateResponse, CounterResult } from '../types';
+import * as fs from 'fs';
+import * as path from 'path';
+import { GenerateResponse, CounterResult, Category } from '../types';
 import { sortCategories } from '../services/sortCategories';
 import { generateCounterImage, filterWithImages } from '../services/imageGen';
+
+// 加载完整品类数据，建立 id → Category 映射
+const categoriesFile = path.join(__dirname, '../data/categories.json');
+const allCategories: Category[] = JSON.parse(fs.readFileSync(categoriesFile, 'utf-8'));
+const categoryMap = new Map<string, Category>(allCategories.map(c => [c.id, c]));
 
 const router = Router();
 
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { counters, categories } = req.body as GenerateRequest;
+    const { counters, categories } = req.body;
 
     if (!Array.isArray(counters) || counters.length === 0) {
       const body: GenerateResponse = { success: false, error: '柜台列表不能为空' };
@@ -15,8 +22,13 @@ router.post('/', async (req: Request, res: Response) => {
       return;
     }
 
-    // categories = 用户勾选的品规（即本店有进货的品规，直接作为可用列表）
-    const available = Array.isArray(categories) ? categories : [];
+    // 前端只需传 id，后端根据 id 查完整品类信息
+    const ids: string[] = Array.isArray(categories)
+      ? categories.map((c: { id: string }) => c.id)
+      : [];
+    const available = ids
+      .map(id => categoryMap.get(id))
+      .filter((c): c is Category => c !== undefined);
 
     // 按规则排序
     const sorted = sortCategories(available);
