@@ -5,9 +5,15 @@ import { Counter, Category, CounterResult, CounterType } from '../types';
 
 const PACK_WIDTH_CM = 6; // 每包宽度 cm
 
-// 每个格子的像素尺寸
+// 每个格子的基础像素尺寸（烟包图片）
 const CELL_W = 120;
 const CELL_H = 160;
+
+// 层板（横木）高度
+const SHELF_BOARD_H = 12;
+// 层板颜色（木色）
+const SHELF_BOARD_COLOR = '#8B6914';
+const SHELF_BOARD_SHADOW = '#6B4F10';
 
 // 图片输出目录（服务器上 Nginx 静态文件目录）
 const OUTPUT_DIR = '/www/wwwroot/47.103.65.4/images/generated';
@@ -42,14 +48,24 @@ export async function generateCounterImage(
   // 取前 totalSlots 个品规
   const placed = sorted.slice(0, totalSlots);
 
-  // 画布尺寸
-  const canvasW = packsPerRow * CELL_W;
-  const canvasH = counter.levels * CELL_H;
+  // 计算包与包之间的间隙
+  // 填充率 = 实际品规数 / 总格子数
+  const fillRatio = placed.length / totalSlots;
+  // 间隙上限：烟包宽度的 1/4
+  const MAX_GAP = Math.floor(CELL_W / 4);
+  // 填充率越高间隙越小：100%填充→0间隙，低填充→最大间隙
+  const gap = Math.round(MAX_GAP * (1 - fillRatio));
+
+  // 画布尺寸：考虑间隙和层板
+  const canvasW = packsPerRow * CELL_W + (packsPerRow + 1) * gap;
+  const shelfBoards = counter.levels - 1; // 层板数 = 层数 - 1（顶层上方无板）
+  const canvasH = counter.levels * CELL_H + shelfBoards * SHELF_BOARD_H + (counter.levels * 2 + 2) * 1; // 上下留一点边距
+  const PADDING_TOP = 2;
 
   const canvas = createCanvas(canvasW, canvasH);
   const ctx = canvas.getContext('2d');
 
-  // 背景色
+  // 背景色（柜台内部）
   ctx.fillStyle = '#F5F0E8';
   ctx.fillRect(0, 0, canvasW, canvasH);
 
@@ -57,18 +73,30 @@ export async function generateCounterImage(
   for (let i = 0; i < placed.length; i++) {
     const row = Math.floor(i / packsPerRow);
     const col = i % packsPerRow;
-    const x = col * CELL_W;
-    const y = row * CELL_H;
+    // x: 左边距gap + col*(格子宽+间隙)
+    const x = gap + col * (CELL_W + gap);
+    // y: 顶部边距 + row*(格子高+层板高)
+    const y = PADDING_TOP + row * (CELL_H + SHELF_BOARD_H);
 
     const imgPath = path.join(CATEGORY_IMG_ROOT, placed[i].imageUrl);
     try {
       const img = await loadImage(imgPath);
       ctx.drawImage(img, x, y, CELL_W, CELL_H);
     } catch {
-      // 不应该走到这里（已经预过滤了），但保底画空格
       ctx.fillStyle = '#E8E0D0';
       ctx.fillRect(x, y, CELL_W, CELL_H);
     }
+  }
+
+  // 绘制层板（横木），在每层之间
+  for (let r = 0; r < shelfBoards; r++) {
+    const boardY = PADDING_TOP + (r + 1) * CELL_H + r * SHELF_BOARD_H;
+    // 层板主体
+    ctx.fillStyle = SHELF_BOARD_COLOR;
+    ctx.fillRect(0, boardY, canvasW, SHELF_BOARD_H);
+    // 底部阴影线
+    ctx.fillStyle = SHELF_BOARD_SHADOW;
+    ctx.fillRect(0, boardY + SHELF_BOARD_H - 2, canvasW, 2);
   }
 
   // 确保输出目录存在
