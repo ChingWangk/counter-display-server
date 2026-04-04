@@ -16,10 +16,10 @@ const SHELF_BOARD_COLOR = '#8B6914';
 const SHELF_BOARD_SHADOW = '#6B4F10';
 
 // 图片输出目录（服务器上 Nginx 静态文件目录）
-const OUTPUT_DIR = '/www/wwwroot/ypchenlie.cn/images/generated';
+const OUTPUT_DIR = '/www/wwwroot/47.103.65.4/images/generated';
 
 // 品类图片根目录
-const CATEGORY_IMG_ROOT = '/www/wwwroot/ypchenlie.cn';
+const CATEGORY_IMG_ROOT = '/www/wwwroot/47.103.65.4';
 
 /**
  * 过滤掉服务器上没有图片文件的品规
