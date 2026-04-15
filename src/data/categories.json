@@ -1,2372 +1,2598 @@
 [
   {
-    "id": "001",
+    "id": "110105",
     "name": "中南海(金8mg)",
-    "imageUrl": "/images/categories/001.jpg",
+    "imageUrl": "/images/categories/110105.jpg",
     "price": 80,
     "brand": "中南海",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": true
   },
   {
-    "id": "002",
+    "id": "110108",
     "name": "中南海(5mg)",
-    "imageUrl": "/images/categories/002.jpg",
+    "imageUrl": "/images/categories/110108.jpg",
     "price": 114.5,
     "brand": "中南海",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "003",
+    "id": "110109",
     "name": "中南海(3mg)",
-    "imageUrl": "/images/categories/003.jpg",
+    "imageUrl": "/images/categories/110109.jpg",
     "price": 190.8,
     "brand": "中南海",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "004",
+    "id": "110114",
     "name": "中南海(硬酷爽风尚)",
-    "imageUrl": "/images/categories/004.jpg",
+    "imageUrl": "/images/categories/110114.jpg",
     "price": 175,
     "brand": "中南海",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "005",
+    "id": "110118",
     "name": "中南海(5mg细支)",
-    "imageUrl": "/images/categories/005.jpg",
+    "imageUrl": "/images/categories/110118.jpg",
     "price": 121.9,
     "brand": "中南海",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "006",
+    "id": "110124",
     "name": "中南海(典8)",
-    "imageUrl": "/images/categories/006.jpg",
+    "imageUrl": "/images/categories/110124.jpg",
     "price": 97,
     "brand": "中南海",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "007",
+    "id": "110125",
     "name": "中南海(典5)",
-    "imageUrl": "/images/categories/007.jpg",
+    "imageUrl": "/images/categories/110125.jpg",
     "price": 143.1,
     "brand": "中南海",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "008",
+    "id": "110129",
     "name": "中南海(冰耀中支)",
-    "imageUrl": "/images/categories/008.jpg",
+    "imageUrl": "/images/categories/110129.jpg",
     "price": 201.4,
     "brand": "中南海",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "009",
+    "id": "110130",
     "name": "中南海(双中支1mg)",
-    "imageUrl": "/images/categories/009.jpg",
+    "imageUrl": "/images/categories/110130.jpg",
     "price": 339.2,
     "brand": "中南海",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "010",
+    "id": "110131",
     "name": "中南海(冰耀细支)",
-    "imageUrl": "/images/categories/010.jpg",
+    "imageUrl": "/images/categories/110131.jpg",
     "price": 225,
     "brand": "中南海",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "011",
+    "id": "130906",
     "name": "钻石(荷花)",
-    "imageUrl": "/images/categories/011.jpg",
+    "imageUrl": "/images/categories/130906.jpg",
     "price": 275.6,
     "brand": "钻石",
     "manufacturer": "河北中烟工业有限责任公司",
     "category": "provincial",
-    "province": "河北"
+    "province": "河北",
+    "is_hot": true
   },
   {
-    "id": "012",
+    "id": "130907",
     "name": "钻石(细支荷花)",
-    "imageUrl": "/images/categories/012.jpg",
+    "imageUrl": "/images/categories/130907.jpg",
     "price": 360.4,
     "brand": "钻石",
     "manufacturer": "河北中烟工业有限责任公司",
     "category": "provincial",
-    "province": "河北"
+    "province": "河北",
+    "is_hot": false
   },
   {
-    "id": "013",
+    "id": "130909",
     "name": "钻石(软荷花)",
-    "imageUrl": "/images/categories/013.jpg",
+    "imageUrl": "/images/categories/130909.jpg",
     "price": 339.2,
     "brand": "钻石",
     "manufacturer": "河北中烟工业有限责任公司",
     "category": "provincial",
-    "province": "河北"
+    "province": "河北",
+    "is_hot": false
   },
   {
-    "id": "014",
+    "id": "130910",
     "name": "钻石(双中支荷花)",
-    "imageUrl": "/images/categories/014.jpg",
+    "imageUrl": "/images/categories/130910.jpg",
     "price": 381.6,
     "brand": "钻石",
     "manufacturer": "河北中烟工业有限责任公司",
     "category": "provincial",
-    "province": "河北"
+    "province": "河北",
+    "is_hot": false
   },
   {
-    "id": "015",
+    "id": "150101",
     "name": "冬虫夏草(双中支)",
-    "imageUrl": "/images/categories/015.jpg",
+    "imageUrl": "/images/categories/150101.jpg",
     "price": 339.2,
     "brand": "冬虫夏草",
     "manufacturer": "内蒙古昆明卷烟有限责任公司",
     "category": "provincial",
-    "province": "内蒙古"
+    "province": "内蒙古",
+    "is_hot": false
   },
   {
-    "id": "016",
+    "id": "150103",
     "name": "冬虫夏草(和润)",
-    "imageUrl": "/images/categories/016.jpg",
+    "imageUrl": "/images/categories/150103.jpg",
     "price": 424,
     "brand": "冬虫夏草",
     "manufacturer": "内蒙古昆明卷烟有限责任公司",
     "category": "provincial",
-    "province": "内蒙古"
+    "province": "内蒙古",
+    "is_hot": false
   },
   {
-    "id": "017",
+    "id": "210405",
     "name": "人民大会堂(盛京中支)",
-    "imageUrl": "/images/categories/017.jpg",
+    "imageUrl": "/images/categories/210405.jpg",
     "price": 175,
     "brand": "人民大会堂",
     "manufacturer": "红塔辽宁烟草有限责任公司",
     "category": "provincial",
-    "province": "辽宁"
+    "province": "辽宁",
+    "is_hot": false
   },
   {
-    "id": "018",
+    "id": "210407",
     "name": "人民大会堂(辉煌)",
-    "imageUrl": "/images/categories/018.jpg",
+    "imageUrl": "/images/categories/210407.jpg",
     "price": 201.4,
     "brand": "人民大会堂",
     "manufacturer": "红塔辽宁烟草有限责任公司",
     "category": "provincial",
-    "province": "辽宁"
+    "province": "辽宁",
+    "is_hot": false
   },
   {
-    "id": "019",
+    "id": "210408",
     "name": "人民大会堂(硬红细支)",
-    "imageUrl": "/images/categories/019.jpg",
+    "imageUrl": "/images/categories/210408.jpg",
     "price": 139.92,
     "brand": "人民大会堂",
     "manufacturer": "红塔辽宁烟草有限责任公司",
     "category": "provincial",
-    "province": "辽宁"
+    "province": "辽宁",
+    "is_hot": true
   },
   {
-    "id": "020",
+    "id": "210409",
     "name": "人民大会堂(古瓷细支)",
-    "imageUrl": "/images/categories/020.jpg",
+    "imageUrl": "/images/categories/210409.jpg",
     "price": 158,
     "brand": "人民大会堂",
     "manufacturer": "红塔辽宁烟草有限责任公司",
     "category": "provincial",
-    "province": "辽宁"
+    "province": "辽宁",
+    "is_hot": false
   },
   {
-    "id": "021",
+    "id": "220101",
     "name": "长白山(软红)",
-    "imageUrl": "/images/categories/021.jpg",
+    "imageUrl": "/images/categories/220101.jpg",
     "price": 90.1,
     "brand": "长白山",
     "manufacturer": "吉林烟草工业有限责任公司",
     "category": "provincial",
-    "province": "吉林"
+    "province": "吉林",
+    "is_hot": true
   },
   {
-    "id": "022",
+    "id": "220109",
     "name": "长白山(777)",
-    "imageUrl": "/images/categories/022.jpg",
+    "imageUrl": "/images/categories/220109.jpg",
     "price": 121.9,
     "brand": "长白山",
     "manufacturer": "吉林烟草工业有限责任公司",
     "category": "provincial",
-    "province": "吉林"
+    "province": "吉林",
+    "is_hot": true
   },
   {
-    "id": "023",
+    "id": "220112",
     "name": "长白山(蓝尚)",
-    "imageUrl": "/images/categories/023.jpg",
+    "imageUrl": "/images/categories/220112.jpg",
     "price": 158,
     "brand": "长白山",
     "manufacturer": "吉林烟草工业有限责任公司",
     "category": "provincial",
-    "province": "吉林"
+    "province": "吉林",
+    "is_hot": true
   },
   {
-    "id": "024",
+    "id": "220113",
     "name": "长白山(人参参缘)",
-    "imageUrl": "/images/categories/024.jpg",
+    "imageUrl": "/images/categories/220113.jpg",
     "price": 263,
     "brand": "长白山",
     "manufacturer": "吉林烟草工业有限责任公司",
     "category": "provincial",
-    "province": "吉林"
+    "province": "吉林",
+    "is_hot": false
   },
   {
-    "id": "025",
+    "id": "230101",
     "name": "龙烟(老巴夺传琦)",
-    "imageUrl": "/images/categories/025.jpg",
+    "imageUrl": "/images/categories/230101.jpg",
     "price": 225,
     "brand": "龙烟",
     "manufacturer": "黑龙江烟草工业有限责任公司",
     "category": "provincial",
-    "province": "黑龙江"
+    "province": "黑龙江",
+    "is_hot": false
   },
   {
-    "id": "026",
+    "id": "230102",
     "name": "龙烟(老巴夺传呈)",
-    "imageUrl": "/images/categories/026.jpg",
+    "imageUrl": "/images/categories/230102.jpg",
     "price": 175,
     "brand": "龙烟",
     "manufacturer": "黑龙江烟草工业有限责任公司",
     "category": "provincial",
-    "province": "黑龙江"
+    "province": "黑龙江",
+    "is_hot": false
   },
   {
-    "id": "027",
+    "id": "310101",
     "name": "中华(软)",
-    "imageUrl": "/images/categories/027.jpg",
+    "imageUrl": "/images/categories/310101.jpg",
     "price": 583,
     "brand": "中华",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "028",
+    "id": "310102",
     "name": "中华(硬)",
-    "imageUrl": "/images/categories/028.jpg",
+    "imageUrl": "/images/categories/310102.jpg",
     "price": 381.6,
     "brand": "中华",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "029",
+    "id": "310126",
     "name": "中华(全开式)",
-    "imageUrl": "/images/categories/029.jpg",
+    "imageUrl": "/images/categories/310126.jpg",
     "price": 381.6,
     "brand": "中华",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "030",
+    "id": "310131",
     "name": "中华(金中支)",
-    "imageUrl": "/images/categories/030.jpg",
+    "imageUrl": "/images/categories/310131.jpg",
     "price": 678.4,
     "brand": "中华",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": true
   },
   {
-    "id": "031",
+    "id": "310132",
     "name": "中华(硬12支)",
-    "imageUrl": "/images/categories/031.jpg",
+    "imageUrl": "/images/categories/310132.jpg",
     "price": 228.96,
     "brand": "中华",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "032",
+    "id": "310133",
     "name": "中华(双中支)",
-    "imageUrl": "/images/categories/032.jpg",
+    "imageUrl": "/images/categories/310133.jpg",
     "price": 424,
     "brand": "中华",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": true
   },
   {
-    "id": "033",
+    "id": "310137",
     "name": "中华(细支)",
-    "imageUrl": "/images/categories/033.jpg",
+    "imageUrl": "/images/categories/310137.jpg",
     "price": 424,
     "brand": "中华",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "034",
+    "id": "310138",
     "name": "中华(金细支)",
-    "imageUrl": "/images/categories/034.jpg",
+    "imageUrl": "/images/categories/310138.jpg",
     "price": 678.4,
     "brand": "中华",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "035",
+    "id": "310139",
     "name": "中华(金短支)",
-    "imageUrl": "/images/categories/035.jpg",
+    "imageUrl": "/images/categories/310139.jpg",
     "price": 678.4,
     "brand": "中华",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "036",
+    "id": "310140",
     "name": "中华(细支3mg)",
-    "imageUrl": "/images/categories/036.jpg",
+    "imageUrl": "/images/categories/310140.jpg",
     "price": 848,
     "brand": "中华",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": true
   },
   {
-    "id": "037",
+    "id": "310141",
     "name": "中华(细支6mg)",
-    "imageUrl": "/images/categories/037.jpg",
+    "imageUrl": "/images/categories/310141.jpg",
     "price": 510,
     "brand": "中华",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": true
   },
   {
-    "id": "038",
+    "id": "310142",
     "name": "中华(金双中)",
-    "imageUrl": "/images/categories/038.jpg",
+    "imageUrl": "/images/categories/310142.jpg",
     "price": 510,
     "brand": "中华",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": true
   },
   {
-    "id": "039",
+    "id": "310202",
     "name": "红双喜(硬)",
-    "imageUrl": "/images/categories/039.jpg",
+    "imageUrl": "/images/categories/310202.jpg",
     "price": 80,
     "brand": "红双喜",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": true
   },
   {
-    "id": "040",
+    "id": "310205",
     "name": "红双喜(硬8mg)",
-    "imageUrl": "/images/categories/040.jpg",
+    "imageUrl": "/images/categories/310205.jpg",
     "price": 88,
     "brand": "红双喜",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": true
   },
   {
-    "id": "041",
+    "id": "310219",
     "name": "红双喜(硬百顺)",
-    "imageUrl": "/images/categories/041.jpg",
+    "imageUrl": "/images/categories/310219.jpg",
     "price": 88,
     "brand": "红双喜",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": true
   },
   {
-    "id": "042",
+    "id": "310224",
     "name": "红双喜(硬晶派)",
-    "imageUrl": "/images/categories/042.jpg",
+    "imageUrl": "/images/categories/310224.jpg",
     "price": 188.68,
     "brand": "红双喜",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "043",
+    "id": "310248",
     "name": "红双喜(硬上海)",
-    "imageUrl": "/images/categories/043.jpg",
+    "imageUrl": "/images/categories/310248.jpg",
     "price": 93.28,
     "brand": "红双喜",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": true
   },
   {
-    "id": "044",
+    "id": "310301",
     "name": "牡丹(软)",
-    "imageUrl": "/images/categories/044.jpg",
+    "imageUrl": "/images/categories/310301.jpg",
     "price": 121.9,
     "brand": "牡丹",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": true
   },
   {
-    "id": "045",
+    "id": "310306",
     "name": "牡丹(青柠细支)",
-    "imageUrl": "/images/categories/045.jpg",
+    "imageUrl": "/images/categories/310306.jpg",
     "price": 225,
     "brand": "牡丹",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "046",
+    "id": "310309",
     "name": "牡丹(飞马)",
-    "imageUrl": "/images/categories/046.jpg",
+    "imageUrl": "/images/categories/310309.jpg",
     "price": 129.3,
     "brand": "牡丹",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": true
   },
   {
-    "id": "047",
+    "id": "310310",
     "name": "牡丹(蓝中支)",
-    "imageUrl": "/images/categories/047.jpg",
+    "imageUrl": "/images/categories/310310.jpg",
     "price": 263,
     "brand": "牡丹",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "048",
+    "id": "310311",
     "name": "牡丹(红中支)",
-    "imageUrl": "/images/categories/048.jpg",
+    "imageUrl": "/images/categories/310311.jpg",
     "price": 175,
     "brand": "牡丹",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": true
   },
   {
-    "id": "049",
+    "id": "310312",
     "name": "牡丹(凤凰细支)",
-    "imageUrl": "/images/categories/049.jpg",
+    "imageUrl": "/images/categories/310312.jpg",
     "price": 300,
     "brand": "牡丹",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "050",
+    "id": "310313",
     "name": "牡丹(紫凤凰)",
-    "imageUrl": "/images/categories/050.jpg",
+    "imageUrl": "/images/categories/310313.jpg",
     "price": 300,
     "brand": "牡丹",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "051",
+    "id": "310314",
     "name": "牡丹(恒大硬中支)",
-    "imageUrl": "/images/categories/051.jpg",
+    "imageUrl": "/images/categories/310314.jpg",
     "price": 201.4,
     "brand": "牡丹",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "052",
+    "id": "310315",
     "name": "牡丹(恒大蓝金中支)",
-    "imageUrl": "/images/categories/052.jpg",
+    "imageUrl": "/images/categories/310315.jpg",
     "price": 225,
     "brand": "牡丹",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "053",
+    "id": "310316",
     "name": "牡丹(蓝彩细支)",
-    "imageUrl": "/images/categories/053.jpg",
+    "imageUrl": "/images/categories/310316.jpg",
     "price": 263,
     "brand": "牡丹",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "054",
+    "id": "310317",
     "name": "牡丹(玄华双中)",
-    "imageUrl": "/images/categories/054.jpg",
+    "imageUrl": "/images/categories/310317.jpg",
     "price": 339.2,
     "brand": "牡丹",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": true
   },
   {
-    "id": "055",
+    "id": "310408",
     "name": "熊猫(硬经典)",
-    "imageUrl": "/images/categories/055.jpg",
+    "imageUrl": "/images/categories/310408.jpg",
     "price": 848,
     "brand": "熊猫",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "056",
+    "id": "310409",
     "name": "熊猫(典藏中支)",
-    "imageUrl": "/images/categories/056.jpg",
+    "imageUrl": "/images/categories/310409.jpg",
     "price": 1000,
     "brand": "熊猫",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": true
   },
   {
-    "id": "057",
+    "id": "310410",
     "name": "熊猫(经典细支)",
-    "imageUrl": "/images/categories/057.jpg",
+    "imageUrl": "/images/categories/310410.jpg",
     "price": 848,
     "brand": "熊猫",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": true
   },
   {
-    "id": "058",
+    "id": "310901",
     "name": "大前门(软)",
-    "imageUrl": "/images/categories/058.jpg",
+    "imageUrl": "/images/categories/310901.jpg",
     "price": 53,
     "brand": "大前门",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": true
   },
   {
-    "id": "059",
+    "id": "310903",
     "name": "大前门(短支)",
-    "imageUrl": "/images/categories/059.jpg",
+    "imageUrl": "/images/categories/310903.jpg",
     "price": 158,
     "brand": "大前门",
     "manufacturer": "上海烟草集团有限责任公司",
     "category": "group",
-    "province": null
+    "province": null,
+    "is_hot": true
   },
   {
-    "id": "060",
+    "id": "320505",
     "name": "南京(红)",
-    "imageUrl": "/images/categories/060.jpg",
+    "imageUrl": "/images/categories/320505.jpg",
     "price": 114.5,
     "brand": "南京",
     "manufacturer": "江苏中烟工业有限责任公司",
     "category": "provincial",
-    "province": "江苏"
+    "province": "江苏",
+    "is_hot": true
   },
   {
-    "id": "061",
+    "id": "320510",
     "name": "南京(十二钗烤烟)",
-    "imageUrl": "/images/categories/061.jpg",
+    "imageUrl": "/images/categories/320510.jpg",
     "price": 243.8,
     "brand": "南京",
     "manufacturer": "江苏中烟工业有限责任公司",
     "category": "provincial",
-    "province": "江苏"
+    "province": "江苏",
+    "is_hot": false
   },
   {
-    "id": "062",
+    "id": "320511",
     "name": "南京(雨花石)",
-    "imageUrl": "/images/categories/062.jpg",
+    "imageUrl": "/images/categories/320511.jpg",
     "price": 455.8,
     "brand": "南京",
     "manufacturer": "江苏中烟工业有限责任公司",
     "category": "provincial",
-    "province": "江苏"
+    "province": "江苏",
+    "is_hot": false
   },
   {
-    "id": "063",
+    "id": "320512",
     "name": "南京(炫赫门)",
-    "imageUrl": "/images/categories/063.jpg",
+    "imageUrl": "/images/categories/320512.jpg",
     "price": 155,
     "brand": "南京",
     "manufacturer": "江苏中烟工业有限责任公司",
     "category": "provincial",
-    "province": "江苏"
+    "province": "江苏",
+    "is_hot": true
   },
   {
-    "id": "064",
+    "id": "320513",
     "name": "南京(细支九五)",
-    "imageUrl": "/images/categories/064.jpg",
+    "imageUrl": "/images/categories/320513.jpg",
     "price": 678.4,
     "brand": "南京",
     "manufacturer": "江苏中烟工业有限责任公司",
     "category": "provincial",
-    "province": "江苏"
+    "province": "江苏",
+    "is_hot": false
   },
   {
-    "id": "065",
+    "id": "320514",
     "name": "南京(软九五)",
-    "imageUrl": "/images/categories/065.jpg",
+    "imageUrl": "/images/categories/320514.jpg",
     "price": 720.8,
     "brand": "南京",
     "manufacturer": "江苏中烟工业有限责任公司",
     "category": "provincial",
-    "province": "江苏"
+    "province": "江苏",
+    "is_hot": false
   },
   {
-    "id": "066",
+    "id": "320515",
     "name": "南京(大观园爆冰)",
-    "imageUrl": "/images/categories/066.jpg",
+    "imageUrl": "/images/categories/320515.jpg",
     "price": 263,
     "brand": "南京",
     "manufacturer": "江苏中烟工业有限责任公司",
     "category": "provincial",
-    "province": "江苏"
+    "province": "江苏",
+    "is_hot": false
   },
   {
-    "id": "067",
+    "id": "320516",
     "name": "南京(细支九五3mg)",
-    "imageUrl": "/images/categories/067.jpg",
+    "imageUrl": "/images/categories/320516.jpg",
     "price": 1000,
     "brand": "南京",
     "manufacturer": "江苏中烟工业有限责任公司",
     "category": "provincial",
-    "province": "江苏"
+    "province": "江苏",
+    "is_hot": true
   },
   {
-    "id": "068",
+    "id": "320517",
     "name": "南京(雨花石3mg)",
-    "imageUrl": "/images/categories/068.jpg",
+    "imageUrl": "/images/categories/320517.jpg",
     "price": 551.2,
     "brand": "南京",
     "manufacturer": "江苏中烟工业有限责任公司",
     "category": "provincial",
-    "province": "江苏"
+    "province": "江苏",
+    "is_hot": false
   },
   {
-    "id": "069",
+    "id": "322601",
     "name": "苏烟(软金砂)",
-    "imageUrl": "/images/categories/069.jpg",
+    "imageUrl": "/images/categories/322601.jpg",
     "price": 381.6,
     "brand": "苏烟",
     "manufacturer": "江苏中烟工业有限责任公司",
     "category": "provincial",
-    "province": "江苏"
+    "province": "江苏",
+    "is_hot": false
   },
   {
-    "id": "070",
+    "id": "322602",
     "name": "苏烟(五星红杉树)",
-    "imageUrl": "/images/categories/070.jpg",
+    "imageUrl": "/images/categories/322602.jpg",
     "price": 188.68,
     "brand": "苏烟",
     "manufacturer": "江苏中烟工业有限责任公司",
     "category": "provincial",
-    "province": "江苏"
+    "province": "江苏",
+    "is_hot": false
   },
   {
-    "id": "071",
+    "id": "322604",
     "name": "苏烟(彩中)",
-    "imageUrl": "/images/categories/071.jpg",
+    "imageUrl": "/images/categories/322604.jpg",
     "price": 381.6,
     "brand": "苏烟",
     "manufacturer": "江苏中烟工业有限责任公司",
     "category": "provincial",
-    "province": "江苏"
+    "province": "江苏",
+    "is_hot": false
   },
   {
-    "id": "072",
+    "id": "330402",
     "name": "利群(硬)",
-    "imageUrl": "/images/categories/072.jpg",
+    "imageUrl": "/images/categories/330402.jpg",
     "price": 228.96,
     "brand": "利群",
     "manufacturer": "浙江中烟工业有限责任公司",
     "category": "provincial",
-    "province": "浙江"
+    "province": "浙江",
+    "is_hot": false
   },
   {
-    "id": "073",
+    "id": "330403",
     "name": "利群(新版)",
-    "imageUrl": "/images/categories/073.jpg",
+    "imageUrl": "/images/categories/330403.jpg",
     "price": 143.1,
     "brand": "利群",
     "manufacturer": "浙江中烟工业有限责任公司",
     "category": "provincial",
-    "province": "浙江"
+    "province": "浙江",
+    "is_hot": true
   },
   {
-    "id": "074",
+    "id": "330407",
     "name": "利群(长嘴)",
-    "imageUrl": "/images/categories/074.jpg",
+    "imageUrl": "/images/categories/330407.jpg",
     "price": 190.8,
     "brand": "利群",
     "manufacturer": "浙江中烟工业有限责任公司",
     "category": "provincial",
-    "province": "浙江"
+    "province": "浙江",
+    "is_hot": true
   },
   {
-    "id": "075",
+    "id": "330409",
     "name": "利群(软长嘴)",
-    "imageUrl": "/images/categories/075.jpg",
+    "imageUrl": "/images/categories/330409.jpg",
     "price": 318,
     "brand": "利群",
     "manufacturer": "浙江中烟工业有限责任公司",
     "category": "provincial",
-    "province": "浙江"
+    "province": "浙江",
+    "is_hot": false
   },
   {
-    "id": "076",
+    "id": "330417",
     "name": "利群(西子阳光)",
-    "imageUrl": "/images/categories/076.jpg",
+    "imageUrl": "/images/categories/330417.jpg",
     "price": 275.6,
     "brand": "利群",
     "manufacturer": "浙江中烟工业有限责任公司",
     "category": "provincial",
-    "province": "浙江"
+    "province": "浙江",
+    "is_hot": false
   },
   {
-    "id": "077",
+    "id": "330420",
     "name": "利群(江南韵)",
-    "imageUrl": "/images/categories/077.jpg",
+    "imageUrl": "/images/categories/330420.jpg",
     "price": 225,
     "brand": "利群",
     "manufacturer": "浙江中烟工业有限责任公司",
     "category": "provincial",
-    "province": "浙江"
+    "province": "浙江",
+    "is_hot": true
   },
   {
-    "id": "078",
+    "id": "330421",
     "name": "利群(软蓝)",
-    "imageUrl": "/images/categories/078.jpg",
+    "imageUrl": "/images/categories/330421.jpg",
     "price": 159,
     "brand": "利群",
     "manufacturer": "浙江中烟工业有限责任公司",
     "category": "provincial",
-    "province": "浙江"
+    "province": "浙江",
+    "is_hot": true
   },
   {
-    "id": "079",
+    "id": "330423",
     "name": "利群(休闲细支)",
-    "imageUrl": "/images/categories/079.jpg",
+    "imageUrl": "/images/categories/330423.jpg",
     "price": 848,
     "brand": "利群",
     "manufacturer": "浙江中烟工业有限责任公司",
     "category": "provincial",
-    "province": "浙江"
+    "province": "浙江",
+    "is_hot": false
   },
   {
-    "id": "080",
+    "id": "330427",
     "name": "利群(山外山)",
-    "imageUrl": "/images/categories/080.jpg",
+    "imageUrl": "/images/categories/330427.jpg",
     "price": 263,
     "brand": "利群",
     "manufacturer": "浙江中烟工业有限责任公司",
     "category": "provincial",
-    "province": "浙江"
+    "province": "浙江",
+    "is_hot": false
   },
   {
-    "id": "081",
+    "id": "330428",
     "name": "利群(阳光尊中支)",
-    "imageUrl": "/images/categories/081.jpg",
+    "imageUrl": "/images/categories/330428.jpg",
     "price": 339.2,
     "brand": "利群",
     "manufacturer": "浙江中烟工业有限责任公司",
     "category": "provincial",
-    "province": "浙江"
+    "province": "浙江",
+    "is_hot": false
   },
   {
-    "id": "082",
+    "id": "330429",
     "name": "利群(阳光青中支)",
-    "imageUrl": "/images/categories/082.jpg",
+    "imageUrl": "/images/categories/330429.jpg",
     "price": 263,
     "brand": "利群",
     "manufacturer": "浙江中烟工业有限责任公司",
     "category": "provincial",
-    "province": "浙江"
+    "province": "浙江",
+    "is_hot": false
   },
   {
-    "id": "083",
+    "id": "330430",
     "name": "利群(休闲银细支)",
-    "imageUrl": "/images/categories/083.jpg",
+    "imageUrl": "/images/categories/330430.jpg",
     "price": 678.4,
     "brand": "利群",
     "manufacturer": "浙江中烟工业有限责任公司",
     "category": "provincial",
-    "province": "浙江"
+    "province": "浙江",
+    "is_hot": true
   },
   {
-    "id": "084",
+    "id": "330431",
     "name": "利群(阳光细支)",
-    "imageUrl": "/images/categories/084.jpg",
+    "imageUrl": "/images/categories/330431.jpg",
     "price": 339.2,
     "brand": "利群",
     "manufacturer": "浙江中烟工业有限责任公司",
     "category": "provincial",
-    "province": "浙江"
+    "province": "浙江",
+    "is_hot": true
   },
   {
-    "id": "085",
+    "id": "330432",
     "name": "利群(阳光铂金细支)",
-    "imageUrl": "/images/categories/085.jpg",
+    "imageUrl": "/images/categories/330432.jpg",
     "price": 510,
     "brand": "利群",
     "manufacturer": "浙江中烟工业有限责任公司",
     "category": "provincial",
-    "province": "浙江"
+    "province": "浙江",
+    "is_hot": true
   },
   {
-    "id": "086",
+    "id": "330433",
     "name": "利群(休闲金中支)",
-    "imageUrl": "/images/categories/086.jpg",
+    "imageUrl": "/images/categories/330433.jpg",
     "price": 848,
     "brand": "利群",
     "manufacturer": "浙江中烟工业有限责任公司",
     "category": "provincial",
-    "province": "浙江"
+    "province": "浙江",
+    "is_hot": false
   },
   {
-    "id": "087",
+    "id": "340120",
     "name": "黄山(大红方印)",
-    "imageUrl": "/images/categories/087.jpg",
+    "imageUrl": "/images/categories/340120.jpg",
     "price": 275.6,
     "brand": "黄山",
     "manufacturer": "安徽中烟工业有限责任公司",
     "category": "provincial",
-    "province": "安徽"
+    "province": "安徽",
+    "is_hot": false
   },
   {
-    "id": "088",
+    "id": "340124",
     "name": "黄山(新制皖烟)",
-    "imageUrl": "/images/categories/088.jpg",
+    "imageUrl": "/images/categories/340124.jpg",
     "price": 121.9,
     "brand": "黄山",
     "manufacturer": "安徽中烟工业有限责任公司",
     "category": "provincial",
-    "province": "安徽"
+    "province": "安徽",
+    "is_hot": true
   },
   {
-    "id": "089",
+    "id": "340125",
     "name": "黄山(金皖烟)",
-    "imageUrl": "/images/categories/089.jpg",
+    "imageUrl": "/images/categories/340125.jpg",
     "price": 248.04,
     "brand": "黄山",
     "manufacturer": "安徽中烟工业有限责任公司",
     "category": "provincial",
-    "province": "安徽"
+    "province": "安徽",
+    "is_hot": false
   },
   {
-    "id": "090",
+    "id": "340135",
     "name": "黄山(红方印细支)",
-    "imageUrl": "/images/categories/090.jpg",
+    "imageUrl": "/images/categories/340135.jpg",
     "price": 175,
     "brand": "黄山",
     "manufacturer": "安徽中烟工业有限责任公司",
     "category": "provincial",
-    "province": "安徽"
+    "province": "安徽",
+    "is_hot": false
   },
   {
-    "id": "091",
+    "id": "340136",
     "name": "黄山(徽商新概念细支)",
-    "imageUrl": "/images/categories/091.jpg",
+    "imageUrl": "/images/categories/340136.jpg",
     "price": 339.2,
     "brand": "黄山",
     "manufacturer": "安徽中烟工业有限责任公司",
     "category": "provincial",
-    "province": "安徽"
+    "province": "安徽",
+    "is_hot": false
   },
   {
-    "id": "092",
+    "id": "340137",
     "name": "黄山(小红方印)",
-    "imageUrl": "/images/categories/092.jpg",
+    "imageUrl": "/images/categories/340137.jpg",
     "price": 185.5,
     "brand": "黄山",
     "manufacturer": "安徽中烟工业有限责任公司",
     "category": "provincial",
-    "province": "安徽"
+    "province": "安徽",
+    "is_hot": false
   },
   {
-    "id": "093",
+    "id": "340139",
     "name": "黄山(徽商新视界细支)",
-    "imageUrl": "/images/categories/093.jpg",
+    "imageUrl": "/images/categories/340139.jpg",
     "price": 678.4,
     "brand": "黄山",
     "manufacturer": "安徽中烟工业有限责任公司",
     "category": "provincial",
-    "province": "安徽"
+    "province": "安徽",
+    "is_hot": false
   },
   {
-    "id": "094",
+    "id": "340140",
     "name": "黄山(天高云淡细支)",
-    "imageUrl": "/images/categories/094.jpg",
+    "imageUrl": "/images/categories/340140.jpg",
     "price": 678.4,
     "brand": "黄山",
     "manufacturer": "安徽中烟工业有限责任公司",
     "category": "provincial",
-    "province": "安徽"
+    "province": "安徽",
+    "is_hot": true
   },
   {
-    "id": "095",
+    "id": "340141",
     "name": "黄山(徽商3mg)",
-    "imageUrl": "/images/categories/095.jpg",
+    "imageUrl": "/images/categories/340141.jpg",
     "price": 424,
     "brand": "黄山",
     "manufacturer": "安徽中烟工业有限责任公司",
     "category": "provincial",
-    "province": "安徽"
+    "province": "安徽",
+    "is_hot": true
   },
   {
-    "id": "096",
+    "id": "342805",
     "name": "都宝(悠酷中支)",
-    "imageUrl": "/images/categories/096.jpg",
+    "imageUrl": "/images/categories/342805.jpg",
     "price": 175,
     "brand": "都宝",
     "manufacturer": "安徽中烟工业有限责任公司",
     "category": "provincial",
-    "province": "安徽"
+    "province": "安徽",
+    "is_hot": false
   },
   {
-    "id": "097",
+    "id": "350507",
     "name": "七匹狼(蓝)",
-    "imageUrl": "/images/categories/097.jpg",
+    "imageUrl": "/images/categories/350507.jpg",
     "price": 66.78,
     "brand": "七匹狼",
     "manufacturer": "福建中烟工业有限责任公司",
     "category": "provincial",
-    "province": "福建"
+    "province": "福建",
+    "is_hot": true
   },
   {
-    "id": "098",
+    "id": "350513",
     "name": "七匹狼(软灰)",
-    "imageUrl": "/images/categories/098.jpg",
+    "imageUrl": "/images/categories/350513.jpg",
     "price": 185.5,
     "brand": "七匹狼",
     "manufacturer": "福建中烟工业有限责任公司",
     "category": "provincial",
-    "province": "福建"
+    "province": "福建",
+    "is_hot": false
   },
   {
-    "id": "099",
+    "id": "350517",
     "name": "七匹狼(纯境)",
-    "imageUrl": "/images/categories/099.jpg",
+    "imageUrl": "/images/categories/350517.jpg",
     "price": 143.1,
     "brand": "七匹狼",
     "manufacturer": "福建中烟工业有限责任公司",
     "category": "provincial",
-    "province": "福建"
+    "province": "福建",
+    "is_hot": true
   },
   {
-    "id": "100",
+    "id": "350519",
     "name": "七匹狼(银中支)",
-    "imageUrl": "/images/categories/100.jpg",
+    "imageUrl": "/images/categories/350519.jpg",
     "price": 201.4,
     "brand": "七匹狼",
     "manufacturer": "福建中烟工业有限责任公司",
     "category": "provincial",
-    "province": "福建"
+    "province": "福建",
+    "is_hot": false
   },
   {
-    "id": "101",
+    "id": "350520",
     "name": "七匹狼(星辰大海细支)",
-    "imageUrl": "/images/categories/101.jpg",
+    "imageUrl": "/images/categories/350520.jpg",
     "price": 339.2,
     "brand": "七匹狼",
     "manufacturer": "福建中烟工业有限责任公司",
     "category": "provincial",
-    "province": "福建"
+    "province": "福建",
+    "is_hot": true
   },
   {
-    "id": "102",
+    "id": "352504",
     "name": "金桥(冰爆)",
-    "imageUrl": "/images/categories/102.jpg",
+    "imageUrl": "/images/categories/352504.jpg",
     "price": 175,
     "brand": "金桥",
     "manufacturer": "福建中烟工业有限责任公司",
     "category": "provincial",
-    "province": "福建"
+    "province": "福建",
+    "is_hot": false
   },
   {
-    "id": "103",
+    "id": "352708",
     "name": "万宝路(软红2.0)",
-    "imageUrl": "/images/categories/103.jpg",
+    "imageUrl": "/images/categories/352708.jpg",
     "price": 143.1,
     "brand": "万宝路",
     "manufacturer": "菲利普莫里斯有限公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "104",
+    "id": "352709",
     "name": "万宝路(硬红2.0)",
-    "imageUrl": "/images/categories/104.jpg",
+    "imageUrl": "/images/categories/352709.jpg",
     "price": 175,
     "brand": "万宝路",
     "manufacturer": "菲利普莫里斯有限公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "105",
+    "id": "352710",
     "name": "万宝路(硬冰爵2.0)",
-    "imageUrl": "/images/categories/105.jpg",
+    "imageUrl": "/images/categories/352710.jpg",
     "price": 225,
     "brand": "万宝路",
     "manufacturer": "菲利普莫里斯有限公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "106",
+    "id": "352711",
     "name": "万宝路(硬金3.0)",
-    "imageUrl": "/images/categories/106.jpg",
+    "imageUrl": "/images/categories/352711.jpg",
     "price": 201.4,
     "brand": "万宝路",
     "manufacturer": "菲利普莫里斯有限公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "107",
+    "id": "352712",
     "name": "万宝路(软金3.0)",
-    "imageUrl": "/images/categories/107.jpg",
+    "imageUrl": "/images/categories/352712.jpg",
     "price": 167.48,
     "brand": "万宝路",
     "manufacturer": "菲利普莫里斯有限公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "108",
+    "id": "360112",
     "name": "金圣(智圣出山)",
-    "imageUrl": "/images/categories/108.jpg",
+    "imageUrl": "/images/categories/360112.jpg",
     "price": 720.8,
     "brand": "金圣",
     "manufacturer": "江西中烟工业有限责任公司",
     "category": "provincial",
-    "province": "江西"
+    "province": "江西",
+    "is_hot": false
   },
   {
-    "id": "109",
+    "id": "360122",
     "name": "金圣(青瓷)",
-    "imageUrl": "/images/categories/109.jpg",
+    "imageUrl": "/images/categories/360122.jpg",
     "price": 158,
     "brand": "金圣",
     "manufacturer": "江西中烟工业有限责任公司",
     "category": "provincial",
-    "province": "江西"
+    "province": "江西",
+    "is_hot": false
   },
   {
-    "id": "110",
+    "id": "360123",
     "name": "金圣(智圣出山双中支)",
-    "imageUrl": "/images/categories/110.jpg",
+    "imageUrl": "/images/categories/360123.jpg",
     "price": 510,
     "brand": "金圣",
     "manufacturer": "江西中烟工业有限责任公司",
     "category": "provincial",
-    "province": "江西"
+    "province": "江西",
+    "is_hot": false
   },
   {
-    "id": "111",
+    "id": "360124",
     "name": "金圣(乐神)",
-    "imageUrl": "/images/categories/111.jpg",
+    "imageUrl": "/images/categories/360124.jpg",
     "price": 263,
     "brand": "金圣",
     "manufacturer": "江西中烟工业有限责任公司",
     "category": "provincial",
-    "province": "江西"
+    "province": "江西",
+    "is_hot": false
   },
   {
-    "id": "112",
+    "id": "372203",
     "name": "泰山(望岳)",
-    "imageUrl": "/images/categories/112.jpg",
+    "imageUrl": "/images/categories/372203.jpg",
     "price": 167.48,
     "brand": "泰山",
     "manufacturer": "山东中烟工业有限责任公司",
     "category": "provincial",
-    "province": "山东"
+    "province": "山东",
+    "is_hot": false
   },
   {
-    "id": "113",
+    "id": "372207",
     "name": "泰山(红将军)",
-    "imageUrl": "/images/categories/113.jpg",
+    "imageUrl": "/images/categories/372207.jpg",
     "price": 88,
     "brand": "泰山",
     "manufacturer": "山东中烟工业有限责任公司",
     "category": "provincial",
-    "province": "山东"
+    "province": "山东",
+    "is_hot": true
   },
   {
-    "id": "114",
+    "id": "372212",
     "name": "泰山(青秀)",
-    "imageUrl": "/images/categories/114.jpg",
+    "imageUrl": "/images/categories/372212.jpg",
     "price": 121.9,
     "brand": "泰山",
     "manufacturer": "山东中烟工业有限责任公司",
     "category": "provincial",
-    "province": "山东"
+    "province": "山东",
+    "is_hot": true
   },
   {
-    "id": "115",
+    "id": "372220",
     "name": "泰山(心悦)",
-    "imageUrl": "/images/categories/115.jpg",
+    "imageUrl": "/images/categories/372220.jpg",
     "price": 139.92,
     "brand": "泰山",
     "manufacturer": "山东中烟工业有限责任公司",
     "category": "provincial",
-    "province": "山东"
+    "province": "山东",
+    "is_hot": true
   },
   {
-    "id": "116",
+    "id": "372221",
     "name": "泰山(儒风细支)",
-    "imageUrl": "/images/categories/116.jpg",
+    "imageUrl": "/images/categories/372221.jpg",
     "price": 263,
     "brand": "泰山",
     "manufacturer": "山东中烟工业有限责任公司",
     "category": "provincial",
-    "province": "山东"
+    "province": "山东",
+    "is_hot": false
   },
   {
-    "id": "117",
+    "id": "372234",
     "name": "泰山(颜悦)",
-    "imageUrl": "/images/categories/117.jpg",
+    "imageUrl": "/images/categories/372234.jpg",
     "price": 167.48,
     "brand": "泰山",
     "manufacturer": "山东中烟工业有限责任公司",
     "category": "provincial",
-    "province": "山东"
+    "province": "山东",
+    "is_hot": true
   },
   {
-    "id": "118",
+    "id": "372241",
     "name": "泰山(茉莉香韵)",
-    "imageUrl": "/images/categories/118.jpg",
+    "imageUrl": "/images/categories/372241.jpg",
     "price": 424,
     "brand": "泰山",
     "manufacturer": "山东中烟工业有限责任公司",
     "category": "provincial",
-    "province": "山东"
+    "province": "山东",
+    "is_hot": false
   },
   {
-    "id": "119",
+    "id": "410608",
     "name": "黄金叶(金满堂)",
-    "imageUrl": "/images/categories/119.jpg",
+    "imageUrl": "/images/categories/410608.jpg",
     "price": 93.28,
     "brand": "黄金叶",
     "manufacturer": "河南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "河南"
+    "province": "河南",
+    "is_hot": true
   },
   {
-    "id": "120",
+    "id": "410609",
     "name": "黄金叶(天叶)",
-    "imageUrl": "/images/categories/120.jpg",
+    "imageUrl": "/images/categories/410609.jpg",
     "price": 678.4,
     "brand": "黄金叶",
     "manufacturer": "河南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "河南"
+    "province": "河南",
+    "is_hot": true
   },
   {
-    "id": "121",
+    "id": "410617",
     "name": "黄金叶(天香细支)",
-    "imageUrl": "/images/categories/121.jpg",
+    "imageUrl": "/images/categories/410617.jpg",
     "price": 455.8,
     "brand": "黄金叶",
     "manufacturer": "河南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "河南"
+    "province": "河南",
+    "is_hot": false
   },
   {
-    "id": "122",
+    "id": "410618",
     "name": "黄金叶(天叶细支)",
-    "imageUrl": "/images/categories/122.jpg",
+    "imageUrl": "/images/categories/410618.jpg",
     "price": 848,
     "brand": "黄金叶",
     "manufacturer": "河南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "河南"
+    "province": "河南",
+    "is_hot": false
   },
   {
-    "id": "123",
+    "id": "410626",
     "name": "黄金叶(天叶中支)",
-    "imageUrl": "/images/categories/123.jpg",
+    "imageUrl": "/images/categories/410626.jpg",
     "price": 1000,
     "brand": "黄金叶",
     "manufacturer": "河南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "河南"
+    "province": "河南",
+    "is_hot": false
   },
   {
-    "id": "124",
+    "id": "410627",
     "name": "黄金叶(商鼎)",
-    "imageUrl": "/images/categories/124.jpg",
+    "imageUrl": "/images/categories/410627.jpg",
     "price": 175,
     "brand": "黄金叶",
     "manufacturer": "河南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "河南"
+    "province": "河南",
+    "is_hot": false
   },
   {
-    "id": "125",
+    "id": "410628",
     "name": "黄金叶(软天叶)",
-    "imageUrl": "/images/categories/125.jpg",
+    "imageUrl": "/images/categories/410628.jpg",
     "price": 763.2,
     "brand": "黄金叶",
     "manufacturer": "河南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "河南"
+    "province": "河南",
+    "is_hot": true
   },
   {
-    "id": "126",
+    "id": "410629",
     "name": "黄金叶(大成细支)",
-    "imageUrl": "/images/categories/126.jpg",
+    "imageUrl": "/images/categories/410629.jpg",
     "price": 263,
     "brand": "黄金叶",
     "manufacturer": "河南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "河南"
+    "province": "河南",
+    "is_hot": false
   },
   {
-    "id": "127",
+    "id": "410630",
     "name": "黄金叶(天叶细支3mg)",
-    "imageUrl": "/images/categories/127.jpg",
+    "imageUrl": "/images/categories/410630.jpg",
     "price": 848,
     "brand": "黄金叶",
     "manufacturer": "河南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "河南"
+    "province": "河南",
+    "is_hot": true
   },
   {
-    "id": "128",
+    "id": "422214",
     "name": "红金龙(硬新版)",
-    "imageUrl": "/images/categories/128.jpg",
+    "imageUrl": "/images/categories/422214.jpg",
     "price": 44.5,
     "brand": "红金龙",
     "manufacturer": "湖北中烟工业有限责任公司",
     "category": "provincial",
-    "province": "湖北"
+    "province": "湖北",
+    "is_hot": true
   },
   {
-    "id": "129",
+    "id": "423801",
     "name": "黄鹤楼(软蓝)",
-    "imageUrl": "/images/categories/129.jpg",
+    "imageUrl": "/images/categories/423801.jpg",
     "price": 164.3,
     "brand": "黄鹤楼",
     "manufacturer": "湖北中烟工业有限责任公司",
     "category": "provincial",
-    "province": "湖北"
+    "province": "湖北",
+    "is_hot": false
   },
   {
-    "id": "130",
+    "id": "423808",
     "name": "黄鹤楼(天下名楼)",
-    "imageUrl": "/images/categories/130.jpg",
+    "imageUrl": "/images/categories/423808.jpg",
     "price": 139.92,
     "brand": "黄鹤楼",
     "manufacturer": "湖北中烟工业有限责任公司",
     "category": "provincial",
-    "province": "湖北"
+    "province": "湖北",
+    "is_hot": false
   },
   {
-    "id": "131",
+    "id": "423813",
     "name": "黄鹤楼(硬8度)",
-    "imageUrl": "/images/categories/131.jpg",
+    "imageUrl": "/images/categories/423813.jpg",
     "price": 158,
     "brand": "黄鹤楼",
     "manufacturer": "湖北中烟工业有限责任公司",
     "category": "provincial",
-    "province": "湖北"
+    "province": "湖北",
+    "is_hot": false
   },
   {
-    "id": "132",
+    "id": "423817",
     "name": "黄鹤楼(硬奇景)",
-    "imageUrl": "/images/categories/132.jpg",
+    "imageUrl": "/images/categories/423817.jpg",
     "price": 238.5,
     "brand": "黄鹤楼",
     "manufacturer": "湖北中烟工业有限责任公司",
     "category": "provincial",
-    "province": "湖北"
+    "province": "湖北",
+    "is_hot": false
   },
   {
-    "id": "133",
+    "id": "423819",
     "name": "黄鹤楼(硬峡谷情细支)",
-    "imageUrl": "/images/categories/133.jpg",
+    "imageUrl": "/images/categories/423819.jpg",
     "price": 263,
     "brand": "黄鹤楼",
     "manufacturer": "湖北中烟工业有限责任公司",
     "category": "provincial",
-    "province": "湖北"
+    "province": "湖北",
+    "is_hot": false
   },
   {
-    "id": "134",
+    "id": "423820",
     "name": "黄鹤楼(硬平安)",
-    "imageUrl": "/images/categories/134.jpg",
+    "imageUrl": "/images/categories/423820.jpg",
     "price": 720.8,
     "brand": "黄鹤楼",
     "manufacturer": "湖北中烟工业有限责任公司",
     "category": "provincial",
-    "province": "湖北"
+    "province": "湖北",
+    "is_hot": false
   },
   {
-    "id": "135",
+    "id": "423823",
     "name": "黄鹤楼(硬峡谷柔情)",
-    "imageUrl": "/images/categories/135.jpg",
+    "imageUrl": "/images/categories/423823.jpg",
     "price": 263,
     "brand": "黄鹤楼",
     "manufacturer": "湖北中烟工业有限责任公司",
     "category": "provincial",
-    "province": "湖北"
+    "province": "湖北",
+    "is_hot": false
   },
   {
-    "id": "136",
+    "id": "423827",
     "name": "黄鹤楼(硬1916红爆)",
-    "imageUrl": "/images/categories/136.jpg",
+    "imageUrl": "/images/categories/423827.jpg",
     "price": 720.8,
     "brand": "黄鹤楼",
     "manufacturer": "湖北中烟工业有限责任公司",
     "category": "provincial",
-    "province": "湖北"
+    "province": "湖北",
+    "is_hot": true
   },
   {
-    "id": "137",
+    "id": "423830",
     "name": "黄鹤楼(软1916)",
-    "imageUrl": "/images/categories/137.jpg",
+    "imageUrl": "/images/categories/423830.jpg",
     "price": 848,
     "brand": "黄鹤楼",
     "manufacturer": "湖北中烟工业有限责任公司",
     "category": "provincial",
-    "province": "湖北"
+    "province": "湖北",
+    "is_hot": false
   },
   {
-    "id": "138",
+    "id": "423839",
     "name": "黄鹤楼(视窗)",
-    "imageUrl": "/images/categories/138.jpg",
+    "imageUrl": "/images/categories/423839.jpg",
     "price": 300,
     "brand": "黄鹤楼",
     "manufacturer": "湖北中烟工业有限责任公司",
     "category": "provincial",
-    "province": "湖北"
+    "province": "湖北",
+    "is_hot": true
   },
   {
-    "id": "139",
+    "id": "423848",
     "name": "黄鹤楼(硬15细支)",
-    "imageUrl": "/images/categories/139.jpg",
+    "imageUrl": "/images/categories/423848.jpg",
     "price": 848,
     "brand": "黄鹤楼",
     "manufacturer": "湖北中烟工业有限责任公司",
     "category": "provincial",
-    "province": "湖北"
+    "province": "湖北",
+    "is_hot": true
   },
   {
-    "id": "140",
+    "id": "423851",
     "name": "黄鹤楼(冰咖)",
-    "imageUrl": "/images/categories/140.jpg",
+    "imageUrl": "/images/categories/423851.jpg",
     "price": 225,
     "brand": "黄鹤楼",
     "manufacturer": "湖北中烟工业有限责任公司",
     "category": "provincial",
-    "province": "湖北"
+    "province": "湖北",
+    "is_hot": true
   },
   {
-    "id": "141",
+    "id": "423852",
     "name": "黄鹤楼(1916小蜜蜂)",
-    "imageUrl": "/images/categories/141.jpg",
+    "imageUrl": "/images/categories/423852.jpg",
     "price": 678.4,
     "brand": "黄鹤楼",
     "manufacturer": "湖北中烟工业有限责任公司",
     "category": "provincial",
-    "province": "湖北"
+    "province": "湖北",
+    "is_hot": true
   },
   {
-    "id": "142",
+    "id": "423853",
     "name": "黄鹤楼(漫天游九天)",
-    "imageUrl": "/images/categories/142.jpg",
+    "imageUrl": "/images/categories/423853.jpg",
     "price": 424,
     "brand": "黄鹤楼",
     "manufacturer": "湖北中烟工业有限责任公司",
     "category": "provincial",
-    "province": "湖北"
+    "province": "湖北",
+    "is_hot": true
   },
   {
-    "id": "143",
+    "id": "430117",
     "name": "白沙(和天下)",
-    "imageUrl": "/images/categories/143.jpg",
+    "imageUrl": "/images/categories/430117.jpg",
     "price": 848,
     "brand": "白沙",
     "manufacturer": "湖南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "湖南"
+    "province": "湖南",
+    "is_hot": false
   },
   {
-    "id": "144",
+    "id": "430119",
     "name": "白沙(硬新精品二代)",
-    "imageUrl": "/images/categories/144.jpg",
+    "imageUrl": "/images/categories/430119.jpg",
     "price": 97,
     "brand": "白沙",
     "manufacturer": "湖南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "湖南"
+    "province": "湖南",
+    "is_hot": true
   },
   {
-    "id": "145",
+    "id": "430121",
     "name": "白沙(硬细支和天下)",
-    "imageUrl": "/images/categories/145.jpg",
+    "imageUrl": "/images/categories/430121.jpg",
     "price": 720.8,
     "brand": "白沙",
     "manufacturer": "湖南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "湖南"
+    "province": "湖南",
+    "is_hot": false
   },
   {
-    "id": "146",
+    "id": "430123",
     "name": "白沙(和天下尊品中支)",
-    "imageUrl": "/images/categories/146.jpg",
+    "imageUrl": "/images/categories/430123.jpg",
     "price": 1000,
     "brand": "白沙",
     "manufacturer": "湖南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "湖南"
+    "province": "湖南",
+    "is_hot": false
   },
   {
-    "id": "147",
+    "id": "430402",
     "name": "芙蓉王(硬)",
-    "imageUrl": "/images/categories/147.jpg",
+    "imageUrl": "/images/categories/430402.jpg",
     "price": 218.36,
     "brand": "芙蓉王",
     "manufacturer": "湖南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "湖南"
+    "province": "湖南",
+    "is_hot": false
   },
   {
-    "id": "148",
+    "id": "430411",
     "name": "芙蓉王(硬细支)",
-    "imageUrl": "/images/categories/148.jpg",
+    "imageUrl": "/images/categories/430411.jpg",
     "price": 225,
     "brand": "芙蓉王",
     "manufacturer": "湖南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "湖南"
+    "province": "湖南",
+    "is_hot": false
   },
   {
-    "id": "149",
+    "id": "430418",
     "name": "芙蓉王(硬中支)",
-    "imageUrl": "/images/categories/149.jpg",
+    "imageUrl": "/images/categories/430418.jpg",
     "price": 263,
     "brand": "芙蓉王",
     "manufacturer": "湖南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "湖南"
+    "province": "湖南",
+    "is_hot": false
   },
   {
-    "id": "150",
+    "id": "430414",
     "name": "芙蓉王(沁爽细支)",
-    "imageUrl": "/images/categories/150.jpg",
+    "imageUrl": "/images/categories/430414.jpg",
     "price": 263,
     "brand": "芙蓉王",
     "manufacturer": "湖南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "湖南"
+    "province": "湖南",
+    "is_hot": true
   },
   {
-    "id": "151",
+    "id": "430415",
     "name": "芙蓉王(绽放)",
-    "imageUrl": "/images/categories/151.jpg",
+    "imageUrl": "/images/categories/430415.jpg",
     "price": 300,
     "brand": "芙蓉王",
     "manufacturer": "湖南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "湖南"
+    "province": "湖南",
+    "is_hot": true
   },
   {
-    "id": "152",
+    "id": "430416",
     "name": "芙蓉王(锦绣世纪3mg)",
-    "imageUrl": "/images/categories/152.jpg",
+    "imageUrl": "/images/categories/430416.jpg",
     "price": 678.4,
     "brand": "芙蓉王",
     "manufacturer": "湖南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "湖南"
+    "province": "湖南",
+    "is_hot": true
   },
   {
-    "id": "153",
+    "id": "430417",
     "name": "芙蓉王(品悦细支)",
-    "imageUrl": "/images/categories/153.jpg",
+    "imageUrl": "/images/categories/430417.jpg",
     "price": 225,
     "brand": "芙蓉王",
     "manufacturer": "湖南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "湖南"
+    "province": "湖南",
+    "is_hot": true
   },
   {
-    "id": "154",
-    "name": "芙蓉王(硬中支)",
-    "imageUrl": "/images/categories/154.jpg",
-    "price": 263,
-    "brand": "芙蓉王",
-    "manufacturer": "湖南中烟工业有限责任公司",
-    "category": "provincial",
-    "province": "湖南"
-  },
-  {
-    "id": "155",
+    "id": "440306",
     "name": "双喜(硬经典1906)",
-    "imageUrl": "/images/categories/155.jpg",
+    "imageUrl": "/images/categories/440306.jpg",
     "price": 150.52,
     "brand": "双喜",
     "manufacturer": "广东中烟工业公司",
     "category": "provincial",
-    "province": "广东"
+    "province": "广东",
+    "is_hot": true
   },
   {
-    "id": "156",
+    "id": "440316",
     "name": "双喜(百年经典)",
-    "imageUrl": "/images/categories/156.jpg",
+    "imageUrl": "/images/categories/440316.jpg",
     "price": 175,
     "brand": "双喜",
     "manufacturer": "广东中烟工业公司",
     "category": "provincial",
-    "province": "广东"
+    "province": "广东",
+    "is_hot": false
   },
   {
-    "id": "157",
+    "id": "440317",
     "name": "双喜(春天魅影)",
-    "imageUrl": "/images/categories/157.jpg",
+    "imageUrl": "/images/categories/440317.jpg",
     "price": 424,
     "brand": "双喜",
     "manufacturer": "广东中烟工业公司",
     "category": "provincial",
-    "province": "广东"
+    "province": "广东",
+    "is_hot": false
   },
   {
-    "id": "158",
+    "id": "440318",
     "name": "双喜(春天白月光)",
-    "imageUrl": "/images/categories/158.jpg",
+    "imageUrl": "/images/categories/440318.jpg",
     "price": 263,
     "brand": "双喜",
     "manufacturer": "广东中烟工业公司",
     "category": "provincial",
-    "province": "广东"
+    "province": "广东",
+    "is_hot": true
   },
   {
-    "id": "159",
+    "id": "450811",
     "name": "真龙(起源)",
-    "imageUrl": "/images/categories/159.jpg",
+    "imageUrl": "/images/categories/450811.jpg",
     "price": 212,
     "brand": "真龙",
     "manufacturer": "广西中烟工业有限责任公司",
     "category": "provincial",
-    "province": "广西"
+    "province": "广西",
+    "is_hot": false
   },
   {
-    "id": "160",
+    "id": "450816",
     "name": "真龙(珍品)",
-    "imageUrl": "/images/categories/160.jpg",
+    "imageUrl": "/images/categories/450816.jpg",
     "price": 97,
     "brand": "真龙",
     "manufacturer": "广西中烟工业有限责任公司",
     "category": "provincial",
-    "province": "广西"
+    "province": "广西",
+    "is_hot": true
   },
   {
-    "id": "161",
+    "id": "450817",
     "name": "真龙(冰净)",
-    "imageUrl": "/images/categories/161.jpg",
+    "imageUrl": "/images/categories/450817.jpg",
     "price": 225,
     "brand": "真龙",
     "manufacturer": "广西中烟工业有限责任公司",
     "category": "provincial",
-    "province": "广西"
+    "province": "广西",
+    "is_hot": false
   },
   {
-    "id": "162",
+    "id": "460201",
     "name": "三沙(细支)",
-    "imageUrl": "/images/categories/162.jpg",
+    "imageUrl": "/images/categories/460201.jpg",
     "price": 225,
     "brand": "三沙",
     "manufacturer": "海南红塔卷烟有限责任公司",
     "category": "provincial",
-    "province": "海南"
+    "province": "海南",
+    "is_hot": false
   },
   {
-    "id": "163",
+    "id": "460203",
     "name": "三沙(椰王绿)",
-    "imageUrl": "/images/categories/163.jpg",
+    "imageUrl": "/images/categories/460203.jpg",
     "price": 143.1,
     "brand": "三沙",
     "manufacturer": "海南红塔卷烟有限责任公司",
     "category": "provincial",
-    "province": "海南"
+    "province": "海南",
+    "is_hot": false
   },
   {
-    "id": "164",
+    "id": "510809",
     "name": "娇子(时代阳光)",
-    "imageUrl": "/images/categories/164.jpg",
+    "imageUrl": "/images/categories/510809.jpg",
     "price": 71,
     "brand": "娇子",
     "manufacturer": "四川中烟工业有限责任公司",
     "category": "provincial",
-    "province": "四川"
+    "province": "四川",
+    "is_hot": true
   },
   {
-    "id": "165",
+    "id": "510824",
     "name": "娇子(宽窄好运)",
-    "imageUrl": "/images/categories/165.jpg",
+    "imageUrl": "/images/categories/510824.jpg",
     "price": 263,
     "brand": "娇子",
     "manufacturer": "四川中烟工业有限责任公司",
     "category": "provincial",
-    "province": "四川"
+    "province": "四川",
+    "is_hot": false
   },
   {
-    "id": "166",
+    "id": "510825",
     "name": "娇子(宽窄好运细支)",
-    "imageUrl": "/images/categories/166.jpg",
+    "imageUrl": "/images/categories/510825.jpg",
     "price": 225,
     "brand": "娇子",
     "manufacturer": "四川中烟工业有限责任公司",
     "category": "provincial",
-    "province": "四川"
+    "province": "四川",
+    "is_hot": false
   },
   {
-    "id": "167",
+    "id": "510828",
     "name": "娇子(宽窄锦上细支)",
-    "imageUrl": "/images/categories/167.jpg",
+    "imageUrl": "/images/categories/510828.jpg",
     "price": 263,
     "brand": "娇子",
     "manufacturer": "四川中烟工业有限责任公司",
     "category": "provincial",
-    "province": "四川"
+    "province": "四川",
+    "is_hot": false
   },
   {
-    "id": "168",
+    "id": "511121",
     "name": "长城(醇雅薄荷)",
-    "imageUrl": "/images/categories/168.jpg",
+    "imageUrl": "/images/categories/511121.jpg",
     "price": 158.4,
     "brand": "长城",
     "manufacturer": "四川中烟工业有限责任公司",
     "category": "provincial",
-    "province": "四川"
+    "province": "四川",
+    "is_hot": false
   },
   {
-    "id": "169",
+    "id": "511706",
     "name": "龙凤呈祥(软魅力朝天门)",
-    "imageUrl": "/images/categories/169.jpg",
+    "imageUrl": "/images/categories/511706.jpg",
     "price": 97,
     "brand": "龙凤呈祥",
     "manufacturer": "重庆中烟工业有限责任公司",
     "category": "provincial",
-    "province": "重庆"
+    "province": "重庆",
+    "is_hot": true
   },
   {
-    "id": "170",
+    "id": "511804",
     "name": "天子(金)",
-    "imageUrl": "/images/categories/170.jpg",
+    "imageUrl": "/images/categories/511804.jpg",
     "price": 167.48,
     "brand": "天子",
     "manufacturer": "重庆中烟工业有限责任公司",
     "category": "provincial",
-    "province": "重庆"
+    "province": "重庆",
+    "is_hot": false
   },
   {
-    "id": "171",
+    "id": "511806",
     "name": "天子(中支)",
-    "imageUrl": "/images/categories/171.jpg",
+    "imageUrl": "/images/categories/511806.jpg",
     "price": 201.4,
     "brand": "天子",
     "manufacturer": "重庆中烟工业有限责任公司",
     "category": "provincial",
-    "province": "重庆"
+    "province": "重庆",
+    "is_hot": false
   },
   {
-    "id": "172",
+    "id": "511809",
     "name": "天子(C位)",
-    "imageUrl": "/images/categories/172.jpg",
+    "imageUrl": "/images/categories/511809.jpg",
     "price": 201.4,
     "brand": "天子",
     "manufacturer": "重庆中烟工业有限责任公司",
     "category": "provincial",
-    "province": "重庆"
+    "province": "重庆",
+    "is_hot": false
   },
   {
-    "id": "173",
+    "id": "520105",
     "name": "黄果树(佳品)",
-    "imageUrl": "/images/categories/173.jpg",
+    "imageUrl": "/images/categories/520105.jpg",
     "price": 61.5,
     "brand": "黄果树",
     "manufacturer": "贵州中烟工业有限责任公司",
     "category": "provincial",
-    "province": "贵州"
+    "province": "贵州",
+    "is_hot": true
   },
   {
-    "id": "174",
+    "id": "520218",
     "name": "贵烟(跨越)",
-    "imageUrl": "/images/categories/174.jpg",
+    "imageUrl": "/images/categories/520218.jpg",
     "price": 201.4,
     "brand": "贵烟",
     "manufacturer": "贵州中烟工业有限责任公司",
     "category": "provincial",
-    "province": "贵州"
+    "province": "贵州",
+    "is_hot": false
   },
   {
-    "id": "175",
+    "id": "520220",
     "name": "贵烟(萃)",
-    "imageUrl": "/images/categories/175.jpg",
+    "imageUrl": "/images/categories/520220.jpg",
     "price": 158,
     "brand": "贵烟",
     "manufacturer": "贵州中烟工业有限责任公司",
     "category": "provincial",
-    "province": "贵州"
+    "province": "贵州",
+    "is_hot": false
   },
   {
-    "id": "176",
+    "id": "520222",
     "name": "贵烟(红中支)",
-    "imageUrl": "/images/categories/176.jpg",
+    "imageUrl": "/images/categories/520222.jpg",
     "price": 263,
     "brand": "贵烟",
     "manufacturer": "贵州中烟工业有限责任公司",
     "category": "provincial",
-    "province": "贵州"
+    "province": "贵州",
+    "is_hot": false
   },
   {
-    "id": "177",
+    "id": "520223",
     "name": "贵烟(细支国酒香30)",
-    "imageUrl": "/images/categories/177.jpg",
+    "imageUrl": "/images/categories/520223.jpg",
     "price": 678.4,
     "brand": "贵烟",
     "manufacturer": "贵州中烟工业有限责任公司",
     "category": "provincial",
-    "province": "贵州"
+    "province": "贵州",
+    "is_hot": false
   },
   {
-    "id": "178",
+    "id": "520224",
     "name": "贵烟(魔力)",
-    "imageUrl": "/images/categories/178.jpg",
+    "imageUrl": "/images/categories/520224.jpg",
     "price": 381.6,
     "brand": "贵烟",
     "manufacturer": "贵州中烟工业有限责任公司",
     "category": "provincial",
-    "province": "贵州"
+    "province": "贵州",
+    "is_hot": true
   },
   {
-    "id": "179",
+    "id": "530108",
     "name": "云烟(软珍品)",
-    "imageUrl": "/images/categories/179.jpg",
+    "imageUrl": "/images/categories/530108.jpg",
     "price": 206.7,
     "brand": "云烟",
     "manufacturer": "云南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "云南"
+    "province": "云南",
+    "is_hot": false
   },
   {
-    "id": "180",
+    "id": "530109",
     "name": "云烟(紫)",
-    "imageUrl": "/images/categories/180.jpg",
+    "imageUrl": "/images/categories/530109.jpg",
     "price": 114.5,
     "brand": "云烟",
     "manufacturer": "云南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "云南"
+    "province": "云南",
+    "is_hot": false
   },
   {
-    "id": "181",
+    "id": "530115",
     "name": "云烟(软大重九)",
-    "imageUrl": "/images/categories/181.jpg",
+    "imageUrl": "/images/categories/530115.jpg",
     "price": 720.8,
     "brand": "云烟",
     "manufacturer": "云南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "云南"
+    "province": "云南",
+    "is_hot": false
   },
   {
-    "id": "182",
+    "id": "530122",
     "name": "云烟(中支金腰带)",
-    "imageUrl": "/images/categories/182.jpg",
+    "imageUrl": "/images/categories/530122.jpg",
     "price": 263,
     "brand": "云烟",
     "manufacturer": "云南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "云南"
+    "province": "云南",
+    "is_hot": false
   },
   {
-    "id": "183",
+    "id": "530123",
     "name": "云烟(细支云龙)",
-    "imageUrl": "/images/categories/183.jpg",
+    "imageUrl": "/images/categories/530123.jpg",
     "price": 129.3,
     "brand": "云烟",
     "manufacturer": "云南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "云南"
+    "province": "云南",
+    "is_hot": false
   },
   {
-    "id": "184",
+    "id": "530125",
     "name": "云烟(中支大重九)",
-    "imageUrl": "/images/categories/184.jpg",
+    "imageUrl": "/images/categories/530125.jpg",
     "price": 848,
     "brand": "云烟",
     "manufacturer": "云南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "云南"
+    "province": "云南",
+    "is_hot": false
   },
   {
-    "id": "185",
+    "id": "530126",
     "name": "云烟(中支云端)",
-    "imageUrl": "/images/categories/185.jpg",
+    "imageUrl": "/images/categories/530126.jpg",
     "price": 848,
     "brand": "云烟",
     "manufacturer": "云南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "云南"
+    "province": "云南",
+    "is_hot": false
   },
   {
-    "id": "186",
+    "id": "530127",
     "name": "云烟(黑金刚印象)",
-    "imageUrl": "/images/categories/186.jpg",
+    "imageUrl": "/images/categories/530127.jpg",
     "price": 466.4,
     "brand": "云烟",
     "manufacturer": "云南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "云南"
+    "province": "云南",
+    "is_hot": false
   },
   {
-    "id": "187",
+    "id": "530128",
     "name": "云烟(大重九细支久仰)",
-    "imageUrl": "/images/categories/187.jpg",
+    "imageUrl": "/images/categories/530128.jpg",
     "price": 678.4,
     "brand": "云烟",
     "manufacturer": "云南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "云南"
+    "province": "云南",
+    "is_hot": true
   },
   {
-    "id": "188",
+    "id": "530129",
     "name": "云烟(细支小重九)",
-    "imageUrl": "/images/categories/188.jpg",
+    "imageUrl": "/images/categories/530129.jpg",
     "price": 424,
     "brand": "云烟",
     "manufacturer": "云南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "云南"
+    "province": "云南",
+    "is_hot": false
   },
   {
-    "id": "189",
+    "id": "530130",
     "name": "云烟(细支筋斗云)",
-    "imageUrl": "/images/categories/189.jpg",
+    "imageUrl": "/images/categories/530130.jpg",
     "price": 300,
     "brand": "云烟",
     "manufacturer": "云南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "云南"
+    "province": "云南",
+    "is_hot": true
   },
   {
-    "id": "190",
+    "id": "530131",
     "name": "云烟(细支灵感蘑菇)",
-    "imageUrl": "/images/categories/190.jpg",
+    "imageUrl": "/images/categories/530131.jpg",
     "price": 225,
     "brand": "云烟",
     "manufacturer": "云南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "云南"
+    "province": "云南",
+    "is_hot": false
   },
   {
-    "id": "191",
+    "id": "530620",
     "name": "红塔山(细支传奇)",
-    "imageUrl": "/images/categories/191.jpg",
+    "imageUrl": "/images/categories/530620.jpg",
     "price": 155,
     "brand": "红塔山",
     "manufacturer": "云南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "云南"
+    "province": "云南",
+    "is_hot": false
   },
   {
-    "id": "192",
+    "id": "530904",
     "name": "玉溪(软)",
-    "imageUrl": "/images/categories/192.jpg",
+    "imageUrl": "/images/categories/530904.jpg",
     "price": 201.4,
     "brand": "玉溪",
     "manufacturer": "云南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "云南"
+    "province": "云南",
+    "is_hot": false
   },
   {
-    "id": "193",
+    "id": "530907",
     "name": "玉溪(软尚善)",
-    "imageUrl": "/images/categories/193.jpg",
+    "imageUrl": "/images/categories/530907.jpg",
     "price": 243.8,
     "brand": "玉溪",
     "manufacturer": "云南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "云南"
+    "province": "云南",
+    "is_hot": false
   },
   {
-    "id": "194",
+    "id": "530915",
     "name": "玉溪(鑫中支)",
-    "imageUrl": "/images/categories/194.jpg",
+    "imageUrl": "/images/categories/530915.jpg",
     "price": 225,
     "brand": "玉溪",
     "manufacturer": "云南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "云南"
+    "province": "云南",
+    "is_hot": false
   },
   {
-    "id": "195",
+    "id": "530917",
     "name": "玉溪(细支翡翠)",
-    "imageUrl": "/images/categories/195.jpg",
+    "imageUrl": "/images/categories/530917.jpg",
     "price": 678.4,
     "brand": "玉溪",
     "manufacturer": "云南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "云南"
+    "province": "云南",
+    "is_hot": false
   },
   {
-    "id": "196",
+    "id": "530918",
     "name": "玉溪(合顺)",
-    "imageUrl": "/images/categories/196.jpg",
+    "imageUrl": "/images/categories/530918.jpg",
     "price": 263,
     "brand": "玉溪",
     "manufacturer": "云南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "云南"
+    "province": "云南",
+    "is_hot": false
   },
   {
-    "id": "197",
+    "id": "530919",
     "name": "玉溪(细支缤果爆)",
-    "imageUrl": "/images/categories/197.jpg",
+    "imageUrl": "/images/categories/530919.jpg",
     "price": 225,
     "brand": "玉溪",
     "manufacturer": "云南中烟工业有限责任公司",
     "category": "provincial",
-    "province": "云南"
+    "province": "云南",
+    "is_hot": true
   },
   {
-    "id": "198",
+    "id": "610705",
     "name": "好猫(猴王磨砂)",
-    "imageUrl": "/images/categories/198.jpg",
+    "imageUrl": "/images/categories/610705.jpg",
     "price": 97,
     "brand": "好猫",
     "manufacturer": "陕西中烟工业有限责任公司",
     "category": "provincial",
-    "province": "陕西"
+    "province": "陕西",
+    "is_hot": true
   },
   {
-    "id": "199",
+    "id": "610710",
     "name": "好猫(细支长乐)",
-    "imageUrl": "/images/categories/199.jpg",
+    "imageUrl": "/images/categories/610710.jpg",
     "price": 139.92,
     "brand": "好猫",
     "manufacturer": "陕西中烟工业有限责任公司",
     "category": "provincial",
-    "province": "陕西"
+    "province": "陕西",
+    "is_hot": false
   },
   {
-    "id": "200",
+    "id": "610711",
     "name": "好猫(招财猫1600)",
-    "imageUrl": "/images/categories/200.jpg",
+    "imageUrl": "/images/categories/610711.jpg",
     "price": 158,
     "brand": "好猫",
     "manufacturer": "陕西中烟工业有限责任公司",
     "category": "provincial",
-    "province": "陕西"
+    "province": "陕西",
+    "is_hot": false
   },
   {
-    "id": "201",
+    "id": "610713",
     "name": "好猫(长乐九美)",
-    "imageUrl": "/images/categories/201.jpg",
+    "imageUrl": "/images/categories/610713.jpg",
     "price": 175,
     "brand": "好猫",
     "manufacturer": "陕西中烟工业有限责任公司",
     "category": "provincial",
-    "province": "陕西"
+    "province": "陕西",
+    "is_hot": false
   },
   {
-    "id": "202",
+    "id": "620101",
     "name": "兰州(硬珍品)",
-    "imageUrl": "/images/categories/202.jpg",
+    "imageUrl": "/images/categories/620101.jpg",
     "price": 155,
     "brand": "兰州",
     "manufacturer": "甘肃烟草工业有限责任公司",
     "category": "provincial",
-    "province": "甘肃"
+    "province": "甘肃",
+    "is_hot": true
   },
   {
-    "id": "203",
+    "id": "620105",
     "name": "兰州(16支吉祥)",
-    "imageUrl": "/images/categories/203.jpg",
+    "imageUrl": "/images/categories/620105.jpg",
     "price": 169.6,
     "brand": "兰州",
     "manufacturer": "甘肃烟草工业有限责任公司",
     "category": "provincial",
-    "province": "甘肃"
+    "province": "甘肃",
+    "is_hot": true
   },
   {
-    "id": "204",
+    "id": "620107",
     "name": "兰州(黑中支)",
-    "imageUrl": "/images/categories/204.jpg",
+    "imageUrl": "/images/categories/620107.jpg",
     "price": 263,
     "brand": "兰州",
     "manufacturer": "甘肃烟草工业有限责任公司",
     "category": "provincial",
-    "province": "甘肃"
+    "province": "甘肃",
+    "is_hot": false
   },
   {
-    "id": "205",
+    "id": "620109",
     "name": "兰州(硬如意)",
-    "imageUrl": "/images/categories/205.jpg",
+    "imageUrl": "/images/categories/620109.jpg",
     "price": 93.28,
     "brand": "兰州",
     "manufacturer": "甘肃烟草工业有限责任公司",
     "category": "provincial",
-    "province": "甘肃"
+    "province": "甘肃",
+    "is_hot": true
   },
   {
-    "id": "206",
+    "id": "710120",
     "name": "555(金锐)",
-    "imageUrl": "/images/categories/206.jpg",
+    "imageUrl": "/images/categories/710120.jpg",
     "price": 137.8,
     "brand": "555",
     "manufacturer": "英美烟草公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "207",
+    "id": "710125",
     "name": "555(双冰)",
-    "imageUrl": "/images/categories/207.jpg",
+    "imageUrl": "/images/categories/710125.jpg",
     "price": 271.07,
     "brand": "555",
     "manufacturer": "英美烟草公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "208",
+    "id": "710126",
     "name": "555(冰炫)",
-    "imageUrl": "/images/categories/208.jpg",
+    "imageUrl": "/images/categories/710126.jpg",
     "price": 216.05,
     "brand": "555",
     "manufacturer": "英美烟草公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "209",
+    "id": "710127",
     "name": "555(经典)",
-    "imageUrl": "/images/categories/209.jpg",
+    "imageUrl": "/images/categories/710127.jpg",
     "price": 257.2,
     "brand": "555",
     "manufacturer": "英美烟草公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "210",
+    "id": "710129",
     "name": "555(国际版)",
-    "imageUrl": "/images/categories/210.jpg",
+    "imageUrl": "/images/categories/710129.jpg",
     "price": 254.92,
     "brand": "555",
     "manufacturer": "英美烟草公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "211",
+    "id": "710130",
     "name": "555(老版细支)",
-    "imageUrl": "/images/categories/211.jpg",
+    "imageUrl": "/images/categories/710130.jpg",
     "price": 212.28,
     "brand": "555",
     "manufacturer": "英美烟草公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "212",
+    "id": "710131",
     "name": "555(金天越)",
-    "imageUrl": "/images/categories/212.jpg",
+    "imageUrl": "/images/categories/710131.jpg",
     "price": 119.09,
     "brand": "555",
     "manufacturer": "英美烟草公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "213",
+    "id": "710323",
     "name": "建牌(薄荷4)",
-    "imageUrl": "/images/categories/213.jpg",
+    "imageUrl": "/images/categories/710323.jpg",
     "price": 234.91,
     "brand": "建牌",
     "manufacturer": "英美烟草公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "214",
+    "id": "710324",
     "name": "建牌(薄荷紫冰)",
-    "imageUrl": "/images/categories/214.jpg",
+    "imageUrl": "/images/categories/710324.jpg",
     "price": 257.75,
     "brand": "建牌",
     "manufacturer": "英美烟草公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "215",
+    "id": "710325",
     "name": "建牌(HD细支1)",
-    "imageUrl": "/images/categories/215.jpg",
+    "imageUrl": "/images/categories/710325.jpg",
     "price": 234.91,
     "brand": "建牌",
     "manufacturer": "英美烟草公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "216",
+    "id": "710326",
     "name": "建牌(薄荷黄冰)",
-    "imageUrl": "/images/categories/216.jpg",
+    "imageUrl": "/images/categories/710326.jpg",
     "price": 257.75,
     "brand": "建牌",
     "manufacturer": "英美烟草公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "217",
+    "id": "720204",
     "name": "百乐门(水蓝)",
-    "imageUrl": "/images/categories/217.jpg",
+    "imageUrl": "/images/categories/720204.jpg",
     "price": 206.84,
     "brand": "百乐门",
     "manufacturer": "菲利普莫里斯有限公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "218",
+    "id": "720205",
     "name": "百乐门(普通)",
-    "imageUrl": "/images/categories/218.jpg",
+    "imageUrl": "/images/categories/720205.jpg",
     "price": 206.84,
     "brand": "百乐门",
     "manufacturer": "菲利普莫里斯有限公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "219",
+    "id": "730121",
     "name": "七星(天蓝)",
-    "imageUrl": "/images/categories/219.jpg",
+    "imageUrl": "/images/categories/730121.jpg",
     "price": 245.19,
     "brand": "七星",
     "manufacturer": "日本烟草产业株式会社",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "220",
+    "id": "730122",
     "name": "七星(风蓝)",
-    "imageUrl": "/images/categories/220.jpg",
+    "imageUrl": "/images/categories/730122.jpg",
     "price": 245.19,
     "brand": "七星",
     "manufacturer": "日本烟草产业株式会社",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "221",
+    "id": "730123",
     "name": "七星(1mg)",
-    "imageUrl": "/images/categories/221.jpg",
+    "imageUrl": "/images/categories/730123.jpg",
     "price": 233.44,
     "brand": "七星",
     "manufacturer": "日本烟草产业株式会社",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "222",
+    "id": "730128",
     "name": "七星(晶选赤玉)",
-    "imageUrl": "/images/categories/222.jpg",
+    "imageUrl": "/images/categories/730128.jpg",
     "price": 347.43,
     "brand": "七星",
     "manufacturer": "日本烟草产业株式会社",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "223",
+    "id": "730129",
     "name": "七星(晶选紫玉)",
-    "imageUrl": "/images/categories/223.jpg",
+    "imageUrl": "/images/categories/730129.jpg",
     "price": 373.35,
     "brand": "七星",
     "manufacturer": "日本烟草产业株式会社",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "224",
+    "id": "780106",
     "name": "南洋红双喜(龙凤)",
-    "imageUrl": "/images/categories/224.jpg",
+    "imageUrl": "/images/categories/780106.jpg",
     "price": 93.28,
     "brand": "南洋红双喜",
     "manufacturer": "南洋兄弟烟草股份有限公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "225",
+    "id": "780111",
     "name": "南洋红双喜(百年龙凤)",
-    "imageUrl": "/images/categories/225.jpg",
+    "imageUrl": "/images/categories/780111.jpg",
     "price": 218.81,
     "brand": "南洋红双喜",
     "manufacturer": "南洋兄弟烟草股份有限公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "226",
+    "id": "780115",
     "name": "南洋红双喜(爱国绿中支)",
-    "imageUrl": "/images/categories/226.jpg",
+    "imageUrl": "/images/categories/780115.jpg",
     "price": 225.73,
     "brand": "南洋红双喜",
     "manufacturer": "南洋兄弟烟草股份有限公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "227",
+    "id": "780117",
     "name": "南洋红双喜(吉祥龙凤罐装)",
-    "imageUrl": "/images/categories/227.jpg",
+    "imageUrl": "/images/categories/780117.jpg",
     "price": 218.54,
     "brand": "南洋红双喜",
     "manufacturer": "南洋兄弟烟草股份有限公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "228",
+    "id": "780118",
     "name": "南洋红双喜(俏佳人细支罐装)",
-    "imageUrl": "/images/categories/228.jpg",
+    "imageUrl": "/images/categories/780118.jpg",
     "price": 232.12,
     "brand": "南洋红双喜",
     "manufacturer": "南洋兄弟烟草股份有限公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "229",
+    "id": "780119",
     "name": "南洋红双喜(龙凤紫)",
-    "imageUrl": "/images/categories/229.jpg",
+    "imageUrl": "/images/categories/780119.jpg",
     "price": 123.04,
     "brand": "南洋红双喜",
     "manufacturer": "南洋兄弟烟草股份有限公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "230",
+    "id": "840108",
     "name": "爱喜(薄荷)",
-    "imageUrl": "/images/categories/230.jpg",
+    "imageUrl": "/images/categories/840108.jpg",
     "price": 196.24,
     "brand": "爱喜",
     "manufacturer": "韩国烟草人参公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "231",
+    "id": "840111",
     "name": "爱喜(幻变)",
-    "imageUrl": "/images/categories/231.jpg",
+    "imageUrl": "/images/categories/840111.jpg",
     "price": 207.97,
     "brand": "爱喜",
     "manufacturer": "韩国烟草人参公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "232",
+    "id": "840114",
     "name": "爱喜(幻变倍享)",
-    "imageUrl": "/images/categories/232.jpg",
+    "imageUrl": "/images/categories/840114.jpg",
     "price": 246.69,
     "brand": "爱喜",
     "manufacturer": "韩国烟草人参公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "233",
+    "id": "840115",
     "name": "爱喜(幻变喜马拉雅)",
-    "imageUrl": "/images/categories/233.jpg",
+    "imageUrl": "/images/categories/840115.jpg",
     "price": 223.91,
     "brand": "爱喜",
     "manufacturer": "韩国烟草人参公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "234",
+    "id": "840298",
     "name": "宝亨(宝珠)",
-    "imageUrl": "/images/categories/234.jpg",
+    "imageUrl": "/images/categories/840298.jpg",
     "price": 207.97,
     "brand": "宝亨",
     "manufacturer": "韩国烟草人参公司",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "235",
+    "id": "900204",
     "name": "阿里山(景泰典蓝硬)",
-    "imageUrl": "/images/categories/235.jpg",
+    "imageUrl": "/images/categories/900204.jpg",
     "price": 235.32,
     "brand": "阿里山",
     "manufacturer": "台湾家源开发股份",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "236",
+    "id": "900301",
     "name": "大华(开元硬包烟)",
-    "imageUrl": "/images/categories/236.jpg",
+    "imageUrl": "/images/categories/900301.jpg",
     "price": 245,
     "brand": "大华",
     "manufacturer": "台湾家源开发股份",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   },
   {
-    "id": "237",
+    "id": "900302",
     "name": "大华(黄金眼)",
-    "imageUrl": "/images/categories/237.jpg",
+    "imageUrl": "/images/categories/900302.jpg",
     "price": 217.74,
     "brand": "大华",
     "manufacturer": "台湾家源开发股份",
     "category": "foreign",
-    "province": null
+    "province": null,
+    "is_hot": false
   }
 ]
