@@ -34,6 +34,7 @@ export interface CounterResult {
 export interface GenerateResponse {
   success: boolean;
   results?: CounterResult[];
+  filteredHotSpecs?: { id: string; name: string }[];
   error?: string;
 }
 

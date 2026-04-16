@@ -56,6 +56,22 @@ function drawPlaceholder(
 }
 
 /**
+ * 均匀分布：将 total 个规格均匀分配到 rows 行
+ * 多出的放在前面的行（视觉上顶部更满）
+ *
+ * 示例：
+ *   31/4 → [8, 8, 8, 7]
+ *   30/4 → [8, 8, 7, 7]
+ *   32/4 → [8, 8, 8, 8]
+ */
+function uniformDistribute(total: number, rows: number): number[] {
+  if (rows <= 0) return [];
+  const base = Math.floor(total / rows);
+  const extra = total % rows;
+  return Array.from({ length: rows }, (_, i) => base + (i < extra ? 1 : 0));
+}
+
+/**
  * 交错分布：将 total 个规格分配到 rows 行
  * 把"多余"的行均匀散布，避免在两端集中，形成砖墙错位视觉
  *
@@ -152,7 +168,10 @@ export async function generateCounterImage(
       ? calcMaxPerRow(canvasW, 1, layout.gapCm)
       : singleMaxPerRow;
     const totalUsed = Math.min(maxPerRow * levels, sorted.length);
-    const perRow = staggeredDistribute(totalUsed, levels);
+    // standard（资源匮乏）用均匀分布，expanded 用交错分布
+    const perRow = layout.mode === 'standard'
+      ? uniformDistribute(totalUsed, levels)
+      : staggeredDistribute(totalUsed, levels);
     rowLayouts = perRow.map(n => ({ specCount: n, packsPerSpec: 1 }));
   }
 

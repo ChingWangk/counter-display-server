@@ -31,6 +31,7 @@ router.post('/', async (req: Request, res: Response) => {
     // ---- 确定品规列表和布局策略 ----
     let specs: Category[];
     let layout: LayoutConfig;
+    let filteredHotSpecs: { id: string; name: string }[] = [];
 
     if (mode === 'smart') {
       // 智能推荐：确定品规池
@@ -72,6 +73,8 @@ router.post('/', async (req: Request, res: Response) => {
 
       if (specCount > totalSlots) {
         // ---- 陈列资源匮乏：去掉紧俏烟 ----
+        const hotSpecs = withImages.filter(c => c.is_hot);
+        filteredHotSpecs = hotSpecs.map(c => ({ id: c.id, name: c.name }));
         withImages = withImages.filter(c => !c.is_hot);
         layout = { mode: 'standard', gapCm: 0 };
       } else if (specCount < totalSlots / 2) {
@@ -98,19 +101,51 @@ router.post('/', async (req: Request, res: Response) => {
       layout = { mode: 'standard', gapCm: 0 };
     }
 
-    // ---- 生成前柜/吊柜图片（多柜台去重） ----
+    // ---- 按容量比例分配品规到各柜台 ----
     const results: CounterResult[] = [];
-    let remaining = [...specs];
 
-    for (const counter of displayCounters) {
-      const { imageUrl, usedCount } = await generateCounterImage(counter, remaining, layout);
+    const capacities = displayCounters.map((c: any) =>
+      Math.floor(c.length / PACK_WIDTH_CM) * c.levels
+    );
+    const totalCapacity = capacities.reduce((s: number, v: number) => s + v, 0);
+    const totalSpecs = specs.length;
+
+    // 按比例分配，不足时按容量比例缩放；超出时各柜台取满
+    let allocations: number[];
+    if (totalSpecs >= totalCapacity) {
+      allocations = [...capacities];
+    } else {
+      allocations = capacities.map((cap: number) =>
+        Math.round(totalSpecs * cap / totalCapacity)
+      );
+      // 修正四舍五入误差
+      let diff = totalSpecs - allocations.reduce((s, v) => s + v, 0);
+      // 按容量从大到小调整
+      const sortedIdx = capacities
+        .map((_: number, i: number) => i)
+        .sort((a: number, b: number) => capacities[b] - capacities[a]);
+      for (let k = 0; diff !== 0; k = (k + 1) % sortedIdx.length) {
+        const idx = sortedIdx[k];
+        if (diff > 0 && allocations[idx] < capacities[idx]) {
+          allocations[idx]++;
+          diff--;
+        } else if (diff < 0 && allocations[idx] > 0) {
+          allocations[idx]--;
+          diff++;
+        }
+      }
+    }
+
+    let offset = 0;
+    for (let i = 0; i < displayCounters.length; i++) {
+      const cabinetSpecs = specs.slice(offset, offset + allocations[i]);
+      const { imageUrl } = await generateCounterImage(displayCounters[i], cabinetSpecs, layout);
       results.push({
-        counterId: counter.id,
-        counterType: counter.type,
+        counterId: displayCounters[i].id,
+        counterType: displayCounters[i].type,
         imageUrl,
       });
-      // 去重：已分配的品规不再用于下一个柜台
-      remaining = remaining.slice(usedCount);
+      offset += allocations[i];
     }
 
     // ---- 背柜占位（主题陈列由前端背柜自选页处理） ----
@@ -122,7 +157,11 @@ router.post('/', async (req: Request, res: Response) => {
       });
     }
 
-    const body: GenerateResponse = { success: true, results };
+    const body: GenerateResponse = {
+      success: true,
+      results,
+      ...(filteredHotSpecs.length > 0 ? { filteredHotSpecs } : {}),
+    };
     res.json(body);
   } catch (err) {
     console.error('Generate error:', err);
