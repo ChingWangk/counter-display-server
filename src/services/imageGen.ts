@@ -22,6 +22,12 @@ const OUTPUT_DIR = '/www/wwwroot/47.103.65.4/images/generated';
 // 品类图片根目录
 const CATEGORY_IMG_ROOT = '/www/wwwroot/47.103.65.4';
 
+// ---- 每行布局描述 ----
+interface RowLayout {
+  specCount: number;     // 该行放几个规格
+  packsPerSpec: number;  // 1（单包）或 2（双包）
+}
+
 /**
  * 绘制"未收录"占位图：灰底 + 商品名前三字 + "未收录"
  */
@@ -33,11 +39,9 @@ function drawPlaceholder(
   w: number,
   h: number,
 ) {
-  // 灰色背景
   ctx.fillStyle = '#E0D8CC';
   ctx.fillRect(x, y, w, h);
 
-  // 文字
   const label = name.slice(0, 3) + '\n未收录';
   const lines = label.split('\n');
   ctx.fillStyle = '#888';
@@ -52,6 +56,42 @@ function drawPlaceholder(
 }
 
 /**
+ * 交错分布：将 total 个规格分配到 rows 行
+ * 把"多余"的行均匀散布，避免在两端集中，形成砖墙错位视觉
+ *
+ * 示例：
+ *   35/4 → [9, 8, 9, 9]（thin row 在中间偏上，相邻行数量不同）
+ *   34/4 → [8, 9, 8, 9]（完美交替）
+ *   33/4 → [8, 8, 9, 8]（long row 在中间）
+ *   36/4 → [9, 9, 9, 9]（正好整除）
+ */
+function staggeredDistribute(total: number, rows: number): number[] {
+  if (rows <= 0) return [];
+  const base = Math.floor(total / rows);
+  const extra = total % rows;
+  const result: number[] = new Array(rows).fill(base);
+
+  if (extra === 0) return result;
+
+  // 把 extra 个 +1 位置均匀散布：第 i 个 +1 放在 floor((i + 0.5) * rows / extra)
+  for (let i = 0; i < extra; i++) {
+    const idx = Math.min(Math.floor((i + 0.5) * rows / extra), rows - 1);
+    result[idx]++;
+  }
+
+  return result;
+}
+
+/**
+ * 计算某种模式下每行最多能放几个规格
+ */
+function calcMaxPerRow(counterLengthPx: number, packsPerSpec: number, gapCm: number): number {
+  const gapPx = Math.max(Math.round(gapCm * PX_PER_CM), 0);
+  const slotW = packsPerSpec * CELL_W + gapPx;
+  return Math.max(1, Math.floor((counterLengthPx + gapPx) / slotW));
+}
+
+/**
  * 为单个柜台生成陈列图片
  * @returns imageUrl 和消耗的品规数 usedCount（用于多柜台去重）
  */
@@ -60,49 +100,70 @@ export async function generateCounterImage(
   sorted: Category[],
   layout: LayoutConfig = { mode: 'standard', gapCm: 0 }
 ): Promise<{ imageUrl: string; usedCount: number }> {
-  // ---- 根据布局模式计算每行放几个规格 ----
-  let specsPerRow: number;
-  let packsPerSpec: number; // 每个规格放几包
-  let gapPx: number;       // 规格间像素间隙
+  const canvasW = Math.round(counter.length * PX_PER_CM);
+  const levels = counter.levels;
 
-  if (layout.mode === 'double') {
-    packsPerSpec = 2;
-    gapPx = Math.max(Math.round(layout.gapCm * PX_PER_CM), 0);
-    const slotW = packsPerSpec * CELL_W + gapPx;
-    specsPerRow = Math.max(1, Math.floor((counter.length * PX_PER_CM + gapPx) / slotW));
-  } else if (layout.mode === 'expanded') {
-    packsPerSpec = 1;
-    gapPx = Math.max(Math.round(layout.gapCm * PX_PER_CM), 0);
-    const slotW = CELL_W + gapPx;
-    specsPerRow = Math.max(1, Math.floor((counter.length * PX_PER_CM + gapPx) / slotW));
-  } else {
-    // standard：原有逻辑——紧排，间隙由填充率决定
-    packsPerSpec = 1;
-    gapPx = 0; // 后面单独计算
-    specsPerRow = Math.floor(counter.length / PACK_WIDTH_CM);
-  }
-
-  if (specsPerRow <= 0 || counter.levels <= 0) {
+  if (canvasW <= 0 || levels <= 0) {
     throw new Error(`柜台 ${counter.id} 参数无效: length=${counter.length}, levels=${counter.levels}`);
   }
 
-  const totalSpecSlots = specsPerRow * counter.levels;
-  const usedCount = Math.min(totalSpecSlots, sorted.length);
-  const placed = sorted.slice(0, usedCount);
+  const singleMaxPerRow = Math.floor(counter.length / PACK_WIDTH_CM);
 
-  // ---- standard 模式：保留原有的动态间隙计算 ----
-  if (layout.mode === 'standard') {
-    const fillRatio = placed.length / totalSpecSlots;
-    const MAX_GAP = Math.floor(CELL_W / 4);
-    gapPx = Math.round(MAX_GAP * (1 - fillRatio));
+  // ---- 确定每行布局 ----
+  let rowLayouts: RowLayout[];
+
+  if (layout.mode === 'double') {
+    const doublePerRow = calcMaxPerRow(canvasW, 2, layout.gapCm);
+    const doubleCapacity = doublePerRow * levels;
+
+    if (doubleCapacity >= sorted.length) {
+      // 全部双包，交错分布
+      const totalUsed = Math.min(doubleCapacity, sorted.length);
+      const perRow = staggeredDistribute(totalUsed, levels);
+      rowLayouts = perRow.map(n => ({ specCount: n, packsPerSpec: 2 }));
+    } else {
+      // 部分降级：从底部开始将若干行改为单包
+      let numSingle = 1;
+      while (
+        numSingle < levels &&
+        doublePerRow * (levels - numSingle) + singleMaxPerRow * numSingle < sorted.length
+      ) {
+        numSingle++;
+      }
+      const doubleRowCount = levels - numSingle;
+
+      // 双包行分配
+      const specsInDouble = Math.min(doublePerRow * doubleRowCount, sorted.length);
+      const dPerRow = doubleRowCount > 0 ? staggeredDistribute(specsInDouble, doubleRowCount) : [];
+
+      // 单包行分配（剩余规格）
+      const specsInSingle = Math.min(sorted.length - specsInDouble, singleMaxPerRow * numSingle);
+      const sPerRow = staggeredDistribute(specsInSingle, numSingle);
+
+      rowLayouts = [
+        ...dPerRow.map(n => ({ specCount: n, packsPerSpec: 2 })),
+        ...sPerRow.map(n => ({ specCount: n, packsPerSpec: 1 })),
+      ];
+    }
+
+  } else {
+    // expanded / standard：全部单包
+    const maxPerRow = layout.mode === 'expanded'
+      ? calcMaxPerRow(canvasW, 1, layout.gapCm)
+      : singleMaxPerRow;
+    const totalUsed = Math.min(maxPerRow * levels, sorted.length);
+    const perRow = staggeredDistribute(totalUsed, levels);
+    rowLayouts = perRow.map(n => ({ specCount: n, packsPerSpec: 1 }));
   }
 
+  // ---- 汇总实际使用的规格数 ----
+  const usedCount = rowLayouts.reduce((s, r) => s + r.specCount, 0);
+  const placed = sorted.slice(0, usedCount);
+
   // ---- 画布尺寸 ----
-  const slotW = packsPerSpec * CELL_W + gapPx;
-  const canvasW = specsPerRow * slotW;
-  const shelfBoards = counter.levels - 1;
+  const shelfBoards = levels - 1;
   const PADDING_TOP = 2;
-  const canvasH = counter.levels * CELL_H + shelfBoards * SHELF_BOARD_H + PADDING_TOP * 2;
+  const canvasH = levels * CELL_H + shelfBoards * SHELF_BOARD_H + PADDING_TOP * 2;
 
   const canvas = createCanvas(canvasW, canvasH);
   const ctx = canvas.getContext('2d');
@@ -111,29 +172,36 @@ export async function generateCounterImage(
   ctx.fillStyle = '#F5F0E8';
   ctx.fillRect(0, 0, canvasW, canvasH);
 
-  // ---- 填充品规图片 ----
-  for (let i = 0; i < placed.length; i++) {
-    const row = Math.floor(i / specsPerRow);
-    const col = i % specsPerRow;
-    const baseX = col * slotW;
+  // ---- 逐行绘制品规 ----
+  let specIdx = 0;
+  for (let row = 0; row < levels; row++) {
+    const rl = rowLayouts[row];
+    if (rl.specCount === 0) continue;
+
+    const slotW = canvasW / rl.specCount;
+    const packW = rl.packsPerSpec * CELL_W;
     const baseY = PADDING_TOP + row * (CELL_H + SHELF_BOARD_H);
 
-    const imgPath = path.join(CATEGORY_IMG_ROOT, placed[i].imageUrl);
-    const hasFile = fs.existsSync(imgPath);
+    for (let col = 0; col < rl.specCount && specIdx < placed.length; col++) {
+      const centerX = col * slotW + (slotW - packW) / 2;
+      const imgPath = path.join(CATEGORY_IMG_ROOT, placed[specIdx].imageUrl);
+      const hasFile = fs.existsSync(imgPath);
 
-    // 绘制 packsPerSpec 包
-    for (let p = 0; p < packsPerSpec; p++) {
-      const x = baseX + p * CELL_W;
-      if (hasFile) {
-        try {
-          const img = await loadImage(imgPath);
-          ctx.drawImage(img, x, baseY, CELL_W, CELL_H);
-        } catch {
-          drawPlaceholder(ctx, placed[i].name, x, baseY, CELL_W, CELL_H);
+      for (let p = 0; p < rl.packsPerSpec; p++) {
+        const x = centerX + p * CELL_W;
+        if (hasFile) {
+          try {
+            const img = await loadImage(imgPath);
+            ctx.drawImage(img, x, baseY, CELL_W, CELL_H);
+          } catch {
+            drawPlaceholder(ctx, placed[specIdx].name, x, baseY, CELL_W, CELL_H);
+          }
+        } else {
+          drawPlaceholder(ctx, placed[specIdx].name, x, baseY, CELL_W, CELL_H);
         }
-      } else {
-        drawPlaceholder(ctx, placed[i].name, x, baseY, CELL_W, CELL_H);
       }
+
+      specIdx++;
     }
   }
 
