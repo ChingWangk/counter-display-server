@@ -23,13 +23,32 @@ const OUTPUT_DIR = '/www/wwwroot/47.103.65.4/images/generated';
 const CATEGORY_IMG_ROOT = '/www/wwwroot/47.103.65.4';
 
 /**
- * 过滤掉服务器上没有图片文件的品规
+ * 绘制"未收录"占位图：灰底 + 商品名前三字 + "未收录"
  */
-export function filterWithImages(categories: Category[]): Category[] {
-  return categories.filter(c => {
-    const imgPath = path.join(CATEGORY_IMG_ROOT, c.imageUrl);
-    return fs.existsSync(imgPath);
-  });
+function drawPlaceholder(
+  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
+  name: string,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+) {
+  // 灰色背景
+  ctx.fillStyle = '#E0D8CC';
+  ctx.fillRect(x, y, w, h);
+
+  // 文字
+  const label = name.slice(0, 3) + '\n未收录';
+  const lines = label.split('\n');
+  ctx.fillStyle = '#888';
+  ctx.font = 'bold 18px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const lineH = 24;
+  const startY = y + h / 2 - ((lines.length - 1) * lineH) / 2;
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillText(lines[i], x + w / 2, startY + i * lineH);
+  }
 }
 
 /**
@@ -100,16 +119,20 @@ export async function generateCounterImage(
     const baseY = PADDING_TOP + row * (CELL_H + SHELF_BOARD_H);
 
     const imgPath = path.join(CATEGORY_IMG_ROOT, placed[i].imageUrl);
+    const hasFile = fs.existsSync(imgPath);
 
     // 绘制 packsPerSpec 包
     for (let p = 0; p < packsPerSpec; p++) {
       const x = baseX + p * CELL_W;
-      try {
-        const img = await loadImage(imgPath);
-        ctx.drawImage(img, x, baseY, CELL_W, CELL_H);
-      } catch {
-        ctx.fillStyle = '#E8E0D0';
-        ctx.fillRect(x, baseY, CELL_W, CELL_H);
+      if (hasFile) {
+        try {
+          const img = await loadImage(imgPath);
+          ctx.drawImage(img, x, baseY, CELL_W, CELL_H);
+        } catch {
+          drawPlaceholder(ctx, placed[i].name, x, baseY, CELL_W, CELL_H);
+        }
+      } else {
+        drawPlaceholder(ctx, placed[i].name, x, baseY, CELL_W, CELL_H);
       }
     }
   }

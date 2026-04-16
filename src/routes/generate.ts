@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { GenerateResponse, CounterResult, Category, LayoutConfig } from '../types';
 import { sortCategories } from '../services/sortCategories';
-import { generateCounterImage, filterWithImages, PACK_WIDTH_CM } from '../services/imageGen';
+import { generateCounterImage, PACK_WIDTH_CM } from '../services/imageGen';
 import pool from '../db';
 import { RowDataPacket } from 'mysql2';
 
@@ -57,7 +57,7 @@ router.post('/', async (req: Request, res: Response) => {
       }
 
       const sorted = sortCategories(pool_);
-      let withImages = filterWithImages(sorted);
+      let withImages = sorted;
 
       // 计算陈列资源（前柜+吊柜总容量）
       const totalSlots = displayCounters.reduce((sum: number, c: any) => {
@@ -94,7 +94,7 @@ router.post('/', async (req: Request, res: Response) => {
         .map(id => categoryMap.get(id))
         .filter((c): c is Category => c !== undefined);
 
-      specs = filterWithImages(sortCategories(available));
+      specs = sortCategories(available);
       layout = { mode: 'standard', gapCm: 0 };
     }
 
