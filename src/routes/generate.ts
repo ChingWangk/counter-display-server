@@ -7,6 +7,8 @@ import { generateCounterImage, PACK_WIDTH_CM } from '../services/imageGen';
 import pool from '../db';
 import { RowDataPacket } from 'mysql2';
 
+
+
 // 加载完整品类数据，建立 id → Category 映射
 const categoriesFile = path.join(__dirname, '../data/categories.json');
 const allCategories: Category[] = JSON.parse(fs.readFileSync(categoriesFile, 'utf-8'));
@@ -16,6 +18,7 @@ const router = Router();
 
 router.post('/', async (req: Request, res: Response) => {
   try {
+    console.log('[DEBUG] 收到 req.body:', JSON.stringify(req.body));
     const { counters, categories, mode = 'manual', customer_id } = req.body;
 
     if (!Array.isArray(counters) || counters.length === 0) {
