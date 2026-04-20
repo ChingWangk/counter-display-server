@@ -45,20 +45,37 @@ router.get('/', async (_req: Request, res: Response) => {
 /** POST /api/customer-specs — 新增或更新客户规格（upsert） */
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { customer_id, spec_count, spec_detail } = req.body;
+    const { customer_id, spec_detail } = req.body;
     if (!customer_id) {
       res.status(400).json({ success: false, error: 'customer_id 不能为空' });
       return;
+    }
+
+    // 去重（保留首次出现顺序）：重复品规会让智能推荐误判进货深度
+    let normalizedDetail: string | null = null;
+    let normalizedCount = 0;
+    if (typeof spec_detail === 'string' && spec_detail.trim()) {
+      const ids = spec_detail.split(',').map((s: string) => s.trim()).filter((s: string) => s);
+      const seen = new Set<string>();
+      const deduped: string[] = [];
+      for (const id of ids) {
+        if (!seen.has(id)) {
+          seen.add(id);
+          deduped.push(id);
+        }
+      }
+      normalizedDetail = deduped.length > 0 ? deduped.join(',') : null;
+      normalizedCount = deduped.length;
     }
 
     await pool.execute<ResultSetHeader>(
       `INSERT INTO customer_specs (customer_id, spec_count, spec_detail)
        VALUES (?, ?, ?)
        ON DUPLICATE KEY UPDATE spec_count = VALUES(spec_count), spec_detail = VALUES(spec_detail)`,
-      [customer_id, spec_count || 0, spec_detail || null]
+      [customer_id, normalizedCount, normalizedDetail]
     );
 
-    res.json({ success: true });
+    res.json({ success: true, spec_count: normalizedCount });
   } catch (err) {
     console.error('Upsert customer_specs error:', err);
     res.status(500).json({ success: false, error: '保存失败' });

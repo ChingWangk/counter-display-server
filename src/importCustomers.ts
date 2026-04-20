@@ -56,10 +56,28 @@ async function main() {
     }
 
     // B 列起：收集所有非空品规 ID
-    const specIds: string[] = [];
+    const rawSpecIds: string[] = [];
     for (let col = 1; col < row.length; col++) {
       const val = String(row[col] ?? '').trim();
-      if (val) specIds.push(val);
+      if (val) rawSpecIds.push(val);
+    }
+
+    // 去重（保留首次出现顺序）：同一客户同一品规多次出现是脏数据，会让智能推荐误判
+    const seen = new Set<string>();
+    const specIds: string[] = [];
+    const duplicates: string[] = [];
+    for (const id of rawSpecIds) {
+      if (seen.has(id)) {
+        duplicates.push(id);
+      } else {
+        seen.add(id);
+        specIds.push(id);
+      }
+    }
+    if (duplicates.length > 0) {
+      console.warn(
+        `第 ${rowNum} 行 [${customerId}]: 去除 ${duplicates.length} 个重复品规 (${duplicates.join(',')})`
+      );
     }
 
     const specCount = specIds.length;

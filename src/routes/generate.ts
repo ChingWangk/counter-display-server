@@ -36,6 +36,14 @@ router.post('/', async (req: Request, res: Response) => {
     let layout: LayoutConfig;
     let filteredHotSpecs: { id: string; name: string }[] = [];
 
+    // 陈列资源（前柜+吊柜），smart/manual 共用
+    const totalSlots = displayCounters.reduce((sum: number, c: any) => {
+      return sum + Math.floor(c.length / PACK_WIDTH_CM) * c.levels;
+    }, 0);
+    const totalLayerLength = displayCounters.reduce((sum: number, c: any) => {
+      return sum + c.length * c.levels;
+    }, 0);
+
     if (mode === 'smart') {
       // 智能推荐：确定品规池
       let pool_: Category[];
@@ -60,39 +68,18 @@ router.post('/', async (req: Request, res: Response) => {
         pool_ = [...allCategories];
       }
 
-      const sorted = sortCategories(pool_);
-      let withImages = sorted;
+      let withImages = sortCategories(pool_);
 
-      // 计算陈列资源（前柜+吊柜总容量）
-      const totalSlots = displayCounters.reduce((sum: number, c: any) => {
-        return sum + Math.floor(c.length / PACK_WIDTH_CM) * c.levels;
-      }, 0);
-      // 各层长度之和（cm）
-      const totalLayerLength = displayCounters.reduce((sum: number, c: any) => {
-        return sum + c.length * c.levels;
-      }, 0);
-
-      const specCount = withImages.length;
-
-      if (specCount > totalSlots) {
-        // ---- 陈列资源匮乏：去掉紧俏烟 ----
+      // 资源匮乏时过滤紧俏烟（仅智能推荐模式），过滤后仍按统一规则决定布局
+      if (withImages.length > totalSlots) {
         const hotSpecs = withImages.filter(c => c.is_hot);
         filteredHotSpecs = hotSpecs.map(c => ({ id: c.id, name: c.name }));
         withImages = withImages.filter(c => !c.is_hot);
-        layout = { mode: 'standard', gapCm: 0 };
-      } else if (specCount < totalSlots / 2) {
-        // ---- 充足 · 情况一：双包陈列 ----
-        const gapCm = totalLayerLength / specCount - 2 * PACK_WIDTH_CM;
-        layout = { mode: 'double', gapCm: Math.max(gapCm, 0) };
-      } else {
-        // ---- 充足 · 情况二：扩大单包间距 ----
-        const gapCm = totalLayerLength / specCount - PACK_WIDTH_CM;
-        layout = { mode: 'expanded', gapCm: Math.max(gapCm, 0) };
       }
 
       specs = withImages;
     } else {
-      // 自选规格：使用用户勾选的品类
+      // 自选规格：使用用户勾选的品类（允许同一品类重复，表示多包陈列）
       const ids: string[] = Array.isArray(categories)
         ? categories.map((c: { id: string }) => c.id)
         : [];
@@ -101,7 +88,21 @@ router.post('/', async (req: Request, res: Response) => {
         .filter((c): c is Category => c !== undefined);
 
       specs = sortCategories(available);
+    }
+
+    // ---- 布局决策（smart / manual 共享）：基于品规数 vs 陈列总容量 ----
+    const specCount = specs.length;
+    if (specCount >= totalSlots) {
+      // 资源刚好或不足：紧贴标准布局
       layout = { mode: 'standard', gapCm: 0 };
+    } else if (specCount < totalSlots / 2) {
+      // 资源充足：双包陈列
+      const gapCm = totalLayerLength / specCount - 2 * PACK_WIDTH_CM;
+      layout = { mode: 'double', gapCm: Math.max(gapCm, 0) };
+    } else {
+      // 资源中等：扩大单包间距
+      const gapCm = totalLayerLength / specCount - PACK_WIDTH_CM;
+      layout = { mode: 'expanded', gapCm: Math.max(gapCm, 0) };
     }
 
     // ---- 按容量比例分配品规到各柜台 ----

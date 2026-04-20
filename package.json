@@ -7,7 +7,8 @@
     "build": "tsc && cp -r src/data dist/",
     "start": "node dist/app.js",
     "migrate": "ts-node src/migrate.ts",
-    "import-customers": "ts-node src/importCustomers.ts"
+    "import-customers": "ts-node src/importCustomers.ts",
+    "dedupe-customers": "ts-node src/dedupeCustomerSpecs.ts"
   },
   "dependencies": {
     "canvas": "^2.11.2",
