@@ -70,11 +70,14 @@ router.post('/', async (req: Request, res: Response) => {
 
       let withImages = sortCategories(pool_);
 
-      // 资源匮乏时过滤紧俏烟（仅智能推荐模式），过滤后仍按统一规则决定布局
+      // 资源匮乏时过滤紧俏烟（仅智能推荐模式）
+      // 例外：批发价 > 600 元/条的高价烟必须保留（门店刚需），即便是紧俏烟也不剔除
       if (withImages.length > totalSlots) {
-        const hotSpecs = withImages.filter(c => c.is_hot);
+        const HIGH_PRICE_PROTECT = 600;
+        const hotSpecs = withImages.filter(c => c.is_hot && c.price <= HIGH_PRICE_PROTECT);
         filteredHotSpecs = hotSpecs.map(c => ({ id: c.id, name: c.name }));
-        withImages = withImages.filter(c => !c.is_hot);
+        const removeIds = new Set(hotSpecs.map(c => c.id));
+        withImages = withImages.filter(c => !removeIds.has(c.id));
       }
 
       specs = withImages;
