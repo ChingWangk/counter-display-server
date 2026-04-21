@@ -36,28 +36,34 @@ export function sortCategories(available: Category[]): Category[] {
     else foreign.push(c);
   }
 
-  // 集团产品：按品牌优先级，同品牌按价格降序
+  // 集团产品：按品牌优先级，同品牌按价格降序，同价按 id
+  // （末位 id tiebreaker 是为了让同品规重复项在排序后必相邻）
   group.sort((a, b) => {
     const ai = GROUP_BRAND_ORDER.indexOf(a.brand);
     const bi = GROUP_BRAND_ORDER.indexOf(b.brand);
     const aOrder = ai === -1 ? GROUP_BRAND_ORDER.length : ai;
     const bOrder = bi === -1 ? GROUP_BRAND_ORDER.length : bi;
     if (aOrder !== bOrder) return aOrder - bOrder;
-    return b.price - a.price;
+    if (a.price !== b.price) return b.price - a.price;
+    return a.id.localeCompare(b.id);
   });
 
-  // 省外烟：按产地优先级，同产地按价格降序
+  // 省外烟：按产地优先级，同产地按价格降序，同价按 id
   provincial.sort((a, b) => {
     const ai = PROVINCE_ORDER.indexOf(a.province || '');
     const bi = PROVINCE_ORDER.indexOf(b.province || '');
     const aOrder = ai === -1 ? PROVINCE_ORDER.length : ai;
     const bOrder = bi === -1 ? PROVINCE_ORDER.length : bi;
     if (aOrder !== bOrder) return aOrder - bOrder;
-    return b.price - a.price;
+    if (a.price !== b.price) return b.price - a.price;
+    return a.id.localeCompare(b.id);
   });
 
-  // 外烟：按价格降序
-  foreign.sort((a, b) => b.price - a.price);
+  // 外烟：按价格降序，同价按 id
+  foreign.sort((a, b) => {
+    if (a.price !== b.price) return b.price - a.price;
+    return a.id.localeCompare(b.id);
+  });
 
   return [...group, ...provincial, ...foreign];
 }
