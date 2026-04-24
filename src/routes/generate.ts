@@ -45,28 +45,28 @@ router.post('/', async (req: Request, res: Response) => {
     }, 0);
 
     if (mode === 'smart') {
-      // 智能推荐：确定品规池
-      let pool_: Category[];
-
-      if (customer_id) {
-        // 有客户ID → 从数据库查该客户的规格明细
-        const [rows] = await pool.execute<RowDataPacket[]>(
-          'SELECT spec_detail FROM customer_specs WHERE customer_id = ?',
-          [customer_id]
-        );
-        if (rows.length > 0 && rows[0].spec_detail) {
-          // spec_detail 存的是逗号分隔的品规 ID
-          const ids: string[] = rows[0].spec_detail.split(',').map((s: string) => s.trim());
-          pool_ = ids
-            .map(id => categoryMap.get(id))
-            .filter((c): c is Category => c !== undefined);
-        } else {
-          pool_ = [...allCategories];
-        }
-      } else {
-        // 无客户ID → 使用全部品类
-        pool_ = [...allCategories];
+      // 智能推荐：必须有客户数据支撑，不能默认全规格
+      if (!customer_id) {
+        const body: GenerateResponse = { success: false, error: '智能推荐需要客户代码，请先填写' };
+        res.status(400).json(body);
+        return;
       }
+
+      const [rows] = await pool.execute<RowDataPacket[]>(
+        'SELECT spec_detail FROM customer_specs WHERE customer_id = ?',
+        [customer_id]
+      );
+
+      if (!rows.length || !rows[0].spec_detail) {
+        const body: GenerateResponse = { success: false, error: '后台无数据，请检查所填客户代码是否正确' };
+        res.status(400).json(body);
+        return;
+      }
+
+      const ids: string[] = rows[0].spec_detail.split(',').map((s: string) => s.trim());
+      const pool_ = ids
+        .map(id => categoryMap.get(id))
+        .filter((c): c is Category => c !== undefined);
 
       let withImages = sortCategories(pool_);
 
@@ -141,6 +141,27 @@ router.post('/', async (req: Request, res: Response) => {
           diff++;
         }
       }
+    }
+
+    // ---- 按各柜台分配量收紧 gap，避免 calcMaxPerRow 的 floor() 静默截断 ----
+    // 原 gap 按"平均"反算，但每行可容量 = floor((canvasW+gap)/slotW) 会吃掉小数位，导致某些柜台放不下
+    // 取所有柜台"能塞下各自分配量的最大 gap"的最小值作为统一 gap
+    if (layout.mode === 'expanded' || layout.mode === 'double') {
+      const packsPerSpec = layout.mode === 'double' ? 2 : 1;
+      let tightestGap = layout.gapCm;
+      for (let i = 0; i < displayCounters.length; i++) {
+        const cabinet = displayCounters[i];
+        const assigned = allocations[i];
+        if (assigned === 0) continue;
+        const neededPerRow = Math.ceil(assigned / cabinet.levels);
+        // 由 n*(packW+gap) ≤ canvasW + gap  →  gap ≤ (canvasW - n*packW)/(n-1)
+        const maxFittingGapCm = neededPerRow > 1
+          ? (cabinet.length - neededPerRow * packsPerSpec * PACK_WIDTH_CM) / (neededPerRow - 1)
+          : Infinity;
+        const fit = Math.max(maxFittingGapCm, 0);
+        if (fit < tightestGap) tightestGap = fit;
+      }
+      layout = { ...layout, gapCm: tightestGap };
     }
 
     let offset = 0;
