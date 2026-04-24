@@ -29,6 +29,7 @@ export interface CounterResult {
   counterId: string;
   counterType: CounterType;
   imageUrl: string;
+  layerImages?: string[];
 }
 
 export interface GenerateResponse {

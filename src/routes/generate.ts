@@ -14,6 +14,12 @@ const categoriesFile = path.join(__dirname, '../data/categories.json');
 const allCategories: Category[] = JSON.parse(fs.readFileSync(categoriesFile, 'utf-8'));
 const categoryMap = new Map<string, Category>(allCategories.map(c => [c.id, c]));
 
+// 加载背柜主题组数据
+interface ThemeGroup { id: string; label: string; specIds: string[]; images: string[]; }
+const themesFile = path.join(__dirname, '../data/back-cabinet-themes.json');
+const allThemes: ThemeGroup[] = JSON.parse(fs.readFileSync(themesFile, 'utf-8'));
+const IMAGE_PREFIX = '/images/back-themes/';
+
 const router = Router();
 
 router.post('/', async (req: Request, res: Response) => {
@@ -35,6 +41,7 @@ router.post('/', async (req: Request, res: Response) => {
     let specs: Category[];
     let layout: LayoutConfig;
     let filteredHotSpecs: { id: string; name: string }[] = [];
+    let usedSpecIds: Set<string> = new Set();
 
     // 陈列资源（前柜+吊柜），smart/manual 共用
     const totalSlots = displayCounters.reduce((sum: number, c: any) => {
@@ -64,6 +71,7 @@ router.post('/', async (req: Request, res: Response) => {
       }
 
       const ids: string[] = rows[0].spec_detail.split(',').map((s: string) => s.trim());
+      usedSpecIds = new Set(ids);
       const pool_ = ids
         .map(id => categoryMap.get(id))
         .filter((c): c is Category => c !== undefined);
@@ -86,6 +94,7 @@ router.post('/', async (req: Request, res: Response) => {
       const ids: string[] = Array.isArray(categories)
         ? categories.map((c: { id: string }) => c.id)
         : [];
+      usedSpecIds = new Set(ids);
       const available = ids
         .map(id => categoryMap.get(id))
         .filter((c): c is Category => c !== undefined);
@@ -176,12 +185,26 @@ router.post('/', async (req: Request, res: Response) => {
       offset += allocations[i];
     }
 
-    // ---- 背柜占位（主题陈列由前端背柜自选页处理） ----
+    // ---- 背柜：根据品规匹配主题组，为每层分配主题图 ----
+    const matchedThemes = allThemes.filter(
+      t => t.specIds.some(id => usedSpecIds.has(id))
+    );
+    const allThemeImages = matchedThemes.flatMap(
+      t => t.images.map(img => IMAGE_PREFIX + img)
+    );
+
     for (const counter of backCounters) {
+      const layerImages: string[] = [];
+      for (let li = 0; li < counter.levels; li++) {
+        if (allThemeImages.length > 0) {
+          layerImages.push(allThemeImages[li % allThemeImages.length]);
+        }
+      }
       results.push({
         counterId: counter.id,
         counterType: counter.type,
-        imageUrl: 'mock:back',
+        imageUrl: layerImages.length > 0 ? layerImages[0] : 'mock:back',
+        layerImages,
       });
     }
 
