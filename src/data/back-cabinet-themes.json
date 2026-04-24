@@ -1,0 +1,68 @@
+[
+  {
+    "id": "zhonghua",
+    "label": "中华",
+    "specIds": ["310101","310102","310126","310131","310132","310133","310137","310138","310139","310140","310141","310142"],
+    "images": ["back_中华_硬_1.jpg","back_中华_硬_2.jpg","back_中华_硬_3.jpg","back_中华_6mg_1.jpg","back_中华_6mg_2.jpg","back_中华_6mg_3.jpg"]
+  },
+  {
+    "id": "mudan_hong",
+    "label": "牡丹(红中支)",
+    "specIds": ["310311"],
+    "images": ["back_牡丹_红中支_1.jpg","back_牡丹_红中支_2.jpg","back_牡丹_红中支_3.jpg"]
+  },
+  {
+    "id": "mudan_lan",
+    "label": "牡丹(蓝中支)",
+    "specIds": ["310310"],
+    "images": ["back_牡丹_蓝中支_1.jpg","back_牡丹_蓝中支_2.jpg","back_牡丹_蓝中支_3.jpg"]
+  },
+  {
+    "id": "xiongmao",
+    "label": "熊猫",
+    "specIds": ["310408","310409","310410"],
+    "images": ["back_熊猫_1.jpg","back_熊猫_2.jpg","back_熊猫_3.jpg"]
+  },
+  {
+    "id": "nanjing_jiuwu",
+    "label": "南京(九五)",
+    "specIds": ["320513","320514","320516"],
+    "images": ["back_南京_九五_1.jpg","back_南京_九五_2.jpg","back_南京_九五_3.jpg"]
+  },
+  {
+    "id": "liqun",
+    "label": "利群",
+    "specIds": ["330423","330430","330432","330433"],
+    "images": ["back_利群_1.jpg","back_利群_2.jpg","back_利群_3.jpg"]
+  },
+  {
+    "id": "huangshan_huishang",
+    "label": "黄山(徽商)",
+    "specIds": ["340136","340139","340141"],
+    "images": ["back_黄山_徽商_1.jpg","back_黄山_徽商_2.jpg"]
+  },
+  {
+    "id": "huangjinye_tianye",
+    "label": "黄金叶(天叶)",
+    "specIds": ["410609","410617","410618","410626","410628","410630"],
+    "images": ["back_黄金叶_天叶_1.jpg","back_黄金叶_天叶_2.jpg","back_黄金叶_天叶_3.jpg"]
+  },
+  {
+    "id": "baisha_hetianxia",
+    "label": "白沙(和天下)",
+    "specIds": ["430117","430121","430123"],
+    "images": ["back_白沙_和天下_1.jpg","back_白沙_和天下_2.jpg","back_白沙_和天下_3.jpg"]
+  },
+  {
+    "id": "yunyan_chongjiu",
+    "label": "云烟(重九)",
+    "specIds": ["530115","530125","530128","530129"],
+    "images": ["back_云烟_重九_1.jpg"]
+  },
+  {
+    "id": "yuxi",
+    "label": "玉溪",
+    "specIds": ["530904"],
+    "images": ["back_玉溪_1.jpg","back_玉溪_2.jpg","back_玉溪_3.jpg"]
+  }
+]
