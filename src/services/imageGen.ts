@@ -192,31 +192,38 @@ export async function generateCounterImage(
   ctx.fillRect(0, 0, canvasW, canvasH);
 
   // ---- 逐行绘制品规 ----
-  // 规则：同 id 品规在行内紧贴（无缝），不同 id 保持原本的 slot 间距；
-  //      将压缩后剩余的空间作为左右对称的边距，视觉居中。
+  // 规则：同 id 品规在行内紧贴（无缝）；
+  //      首包贴左边 (x=0)、末包右边贴 canvasW，行间首末严格对齐；
+  //      剩余空间均分到"不同 id 之间"的间隔上，避免同 id 压缩导致的视觉缩进。
+  //      行内全为同 id 或仅 1 个品规时（极端情况）退化为居中。
   let specIdx = 0;
   for (let row = 0; row < levels; row++) {
     const rl = rowLayouts[row];
     if (rl.specCount === 0) continue;
 
-    const slotW = canvasW / rl.specCount;           // 原规则下单品规槽宽（含间距）
     const packW = rl.packsPerSpec * CELL_W;         // 单品规实际占用宽度
     const baseY = PADDING_TOP + row * (CELL_H + SHELF_BOARD_H);
 
     // 本行的品规切片
     const rowSpecs = placed.slice(specIdx, specIdx + rl.specCount);
 
-    // 累加内容总宽度：首个品规贡献 packW；后续同 id 贡献 packW（紧贴），不同 id 贡献 slotW（保原间距）
-    let contentWidth = packW;
+    // 统计行内"不同 id 之间"的过渡数（同 id 不计）
+    let diffTransitions = 0;
     for (let i = 1; i < rowSpecs.length; i++) {
-      contentWidth += rowSpecs[i].id === rowSpecs[i - 1].id ? packW : slotW;
+      if (rowSpecs[i].id !== rowSpecs[i - 1].id) diffTransitions++;
     }
-    const startX = (canvasW - contentWidth) / 2;    // 居中
+
+    const totalPackW = rowSpecs.length * packW;
+    const gapBudget = Math.max(canvasW - totalPackW, 0);
+    // 不同 id 之间均分剩余空间；行内全部同 id 时退化为居中
+    const interGap = diffTransitions > 0 ? gapBudget / diffTransitions : 0;
+    const startX = diffTransitions > 0 ? 0 : (canvasW - totalPackW) / 2;
 
     let cursor = startX;
     for (let col = 0; col < rowSpecs.length; col++) {
       if (col > 0) {
-        cursor += rowSpecs[col].id === rowSpecs[col - 1].id ? packW : slotW;
+        cursor += packW;
+        if (rowSpecs[col].id !== rowSpecs[col - 1].id) cursor += interGap;
       }
 
       const imgPath = path.join(CATEGORY_IMG_ROOT, rowSpecs[col].imageUrl);
