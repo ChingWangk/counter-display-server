@@ -174,9 +174,14 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     let offset = 0;
+    // 全局 id→出现次数（用于 imageGen 在 double 模式下区分多选/单选品规）
+    const occurrenceCounts = new Map<string, number>();
+    for (const sp of specs) {
+      occurrenceCounts.set(sp.id, (occurrenceCounts.get(sp.id) || 0) + 1);
+    }
     for (let i = 0; i < displayCounters.length; i++) {
       const cabinetSpecs = specs.slice(offset, offset + allocations[i]);
-      const { imageUrl } = await generateCounterImage(displayCounters[i], cabinetSpecs, layout);
+      const { imageUrl } = await generateCounterImage(displayCounters[i], cabinetSpecs, layout, occurrenceCounts);
       results.push({
         counterId: displayCounters[i].id,
         counterType: displayCounters[i].type,

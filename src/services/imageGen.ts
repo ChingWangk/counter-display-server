@@ -109,12 +109,14 @@ function calcMaxPerRow(counterLengthPx: number, packsPerSpec: number, gapCm: num
 
 /**
  * 为单个柜台生成陈列图片
+ * @param occurrenceCounts 全局 id→出现次数。double 模式下，count>1 的多选品规按勾选数量陈列（packsPerSpec=1），count=1 的单选品规按双包陈列（packsPerSpec=2）
  * @returns imageUrl 和消耗的品规数 usedCount（用于多柜台去重）
  */
 export async function generateCounterImage(
   counter: Counter,
   sorted: Category[],
-  layout: LayoutConfig = { mode: 'standard', gapCm: 0 }
+  layout: LayoutConfig = { mode: 'standard', gapCm: 0 },
+  occurrenceCounts?: Map<string, number>,
 ): Promise<{ imageUrl: string; usedCount: number }> {
   const canvasW = Math.round(counter.length * PX_PER_CM);
   const levels = counter.levels;
@@ -196,16 +198,26 @@ export async function generateCounterImage(
   //      首包贴左边 (x=0)、末包右边贴 canvasW，行间首末严格对齐；
   //      剩余空间均分到"不同 id 之间"的间隔上，避免同 id 压缩导致的视觉缩进。
   //      行内全为同 id 或仅 1 个品规时（极端情况）退化为居中。
+  // double 模式下：多选品规（occurrenceCounts.get(id) > 1）按勾选数量陈列（packsPerSpec=1），
+  //                单选品规仍按双包陈列（packsPerSpec=2）。
+  const getPacksForSpec = (spec: Category, rowDefault: number): number => {
+    if (rowDefault === 2 && occurrenceCounts && (occurrenceCounts.get(spec.id) || 1) > 1) {
+      return 1;
+    }
+    return rowDefault;
+  };
+
   let specIdx = 0;
   for (let row = 0; row < levels; row++) {
     const rl = rowLayouts[row];
     if (rl.specCount === 0) continue;
 
-    const packW = rl.packsPerSpec * CELL_W;         // 单品规实际占用宽度
     const baseY = PADDING_TOP + row * (CELL_H + SHELF_BOARD_H);
 
     // 本行的品规切片
     const rowSpecs = placed.slice(specIdx, specIdx + rl.specCount);
+    // 行内每个品规的实际包数（双包模式下多选品规返回 1，否则按 rl.packsPerSpec）
+    const specPacks = rowSpecs.map(s => getPacksForSpec(s, rl.packsPerSpec));
 
     // 统计行内"不同 id 之间"的过渡数（同 id 不计）
     let diffTransitions = 0;
@@ -213,7 +225,7 @@ export async function generateCounterImage(
       if (rowSpecs[i].id !== rowSpecs[i - 1].id) diffTransitions++;
     }
 
-    const totalPackW = rowSpecs.length * packW;
+    const totalPackW = specPacks.reduce((s, p) => s + p * CELL_W, 0);
     const gapBudget = Math.max(canvasW - totalPackW, 0);
     // 不同 id 之间均分剩余空间；行内全部同 id 时退化为居中
     const interGap = diffTransitions > 0 ? gapBudget / diffTransitions : 0;
@@ -222,14 +234,14 @@ export async function generateCounterImage(
     let cursor = startX;
     for (let col = 0; col < rowSpecs.length; col++) {
       if (col > 0) {
-        cursor += packW;
+        cursor += specPacks[col - 1] * CELL_W;
         if (rowSpecs[col].id !== rowSpecs[col - 1].id) cursor += interGap;
       }
 
       const imgPath = path.join(CATEGORY_IMG_ROOT, rowSpecs[col].imageUrl);
       const hasFile = fs.existsSync(imgPath);
 
-      for (let p = 0; p < rl.packsPerSpec; p++) {
+      for (let p = 0; p < specPacks[col]; p++) {
         const x = cursor + p * CELL_W;
         if (hasFile) {
           try {
