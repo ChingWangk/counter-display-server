@@ -2,17 +2,12 @@ import { Router, Request, Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
 import { GenerateResponse, CounterResult, Category, LayoutConfig } from '../types';
-import { sortCategories } from '../services/sortCategories';
 import { generateCounterImage, PACK_WIDTH_CM } from '../services/imageGen';
-import pool from '../db';
-import { RowDataPacket } from 'mysql2';
-
-
-
-// 加载完整品类数据，建立 id → Category 映射
-const categoriesFile = path.join(__dirname, '../data/categories.json');
-const allCategories: Category[] = JSON.parse(fs.readFileSync(categoriesFile, 'utf-8'));
-const categoryMap = new Map<string, Category>(allCategories.map(c => [c.id, c]));
+import { SelectionContext, SelectionResult, ValidationError } from '../services/strategies/types';
+import { manualStrategy } from '../services/strategies/manualStrategy';
+import { newCustomerStrategy } from '../services/strategies/newCustomerStrategy';
+import { regularCustomerStrategy } from '../services/strategies/regularCustomerStrategy';
+import { getCustomerClass } from '../services/customerClass';
 
 // 加载背柜主题组数据
 interface ThemeGroup { id: string; label: string; specIds: string[]; images: string[]; }
@@ -37,12 +32,6 @@ router.post('/', async (req: Request, res: Response) => {
     const displayCounters = counters.filter((c: any) => c.type === 'front' || c.type === 'hanging');
     const backCounters = counters.filter((c: any) => c.type === 'back');
 
-    // ---- 确定品规列表和布局策略 ----
-    let specs: Category[];
-    let layout: LayoutConfig;
-    let filteredHotSpecs: { id: string; name: string }[] = [];
-    let usedSpecIds: Set<string> = new Set();
-
     // 陈列资源（前柜+吊柜），smart/manual 共用
     const totalSlots = displayCounters.reduce((sum: number, c: any) => {
       return sum + Math.floor(c.length / PACK_WIDTH_CM) * c.levels;
@@ -51,58 +40,40 @@ router.post('/', async (req: Request, res: Response) => {
       return sum + c.length * c.levels;
     }, 0);
 
-    if (mode === 'smart') {
-      // 智能推荐：必须有客户数据支撑，不能默认全规格
-      if (!customer_id) {
-        const body: GenerateResponse = { success: false, error: '智能推荐需要客户代码，请先填写' };
+    // ---- 调度选品策略：manual / newCustomer / regularCustomer 三选一 ----
+    const ctx: SelectionContext = {
+      customerId: customer_id,
+      totalSlots,
+      totalLayerLength,
+      requestCategories: Array.isArray(categories) ? categories : [],
+    };
+
+    let selection: SelectionResult;
+    try {
+      if (mode === 'manual') {
+        selection = await manualStrategy(ctx);
+      } else {
+        // mode === 'smart'：按客户类型分发
+        const customerClass = await getCustomerClass(customer_id || '');
+        selection = customerClass === 'regular'
+          ? await regularCustomerStrategy(ctx)
+          : await newCustomerStrategy(ctx);
+      }
+    } catch (err) {
+      if (err instanceof ValidationError) {
+        const body: GenerateResponse = { success: false, error: err.message };
         res.status(400).json(body);
         return;
       }
-
-      const [rows] = await pool.execute<RowDataPacket[]>(
-        'SELECT spec_detail FROM customer_specs WHERE customer_id = ?',
-        [customer_id]
-      );
-
-      if (!rows.length || !rows[0].spec_detail) {
-        const body: GenerateResponse = { success: false, error: '后台无数据，请检查所填客户代码是否正确' };
-        res.status(400).json(body);
-        return;
-      }
-
-      const ids: string[] = rows[0].spec_detail.split(',').map((s: string) => s.trim());
-      usedSpecIds = new Set(ids);
-      const pool_ = ids
-        .map(id => categoryMap.get(id))
-        .filter((c): c is Category => c !== undefined);
-
-      let withImages = sortCategories(pool_);
-
-      // 资源匮乏时过滤紧俏烟（仅智能推荐模式）
-      // 例外：批发价 > 600 元/条的高价烟必须保留（门店刚需），即便是紧俏烟也不剔除
-      if (withImages.length > totalSlots) {
-        const HIGH_PRICE_PROTECT = 600;
-        const hotSpecs = withImages.filter(c => c.is_hot && c.price <= HIGH_PRICE_PROTECT);
-        filteredHotSpecs = hotSpecs.map(c => ({ id: c.id, name: c.name }));
-        const removeIds = new Set(hotSpecs.map(c => c.id));
-        withImages = withImages.filter(c => !removeIds.has(c.id));
-      }
-
-      specs = withImages;
-    } else {
-      // 自选规格：使用用户勾选的品类（允许同一品类重复，表示多包陈列）
-      const ids: string[] = Array.isArray(categories)
-        ? categories.map((c: { id: string }) => c.id)
-        : [];
-      usedSpecIds = new Set(ids);
-      const available = ids
-        .map(id => categoryMap.get(id))
-        .filter((c): c is Category => c !== undefined);
-
-      specs = sortCategories(available);
+      throw err;
     }
 
+    const specs: Category[] = selection.specs;
+    const usedSpecIds: Set<string> = selection.usedSpecIds;
+    const filteredHotSpecs: { id: string; name: string }[] = selection.filteredHotSpecs || [];
+
     // ---- 布局决策（smart / manual 共享）：基于品规数 vs 陈列总容量 ----
+    let layout: LayoutConfig;
     const specCount = specs.length;
     if (specCount >= totalSlots) {
       // 资源刚好或不足：紧贴标准布局
