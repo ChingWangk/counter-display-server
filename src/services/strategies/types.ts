@@ -21,6 +21,28 @@ export interface SpecInventoryInfo {
   snapshot_date: string;  // YYYY-MM-DD
 }
 
+/** 专区单条规格的展示数据；不同专区按需填充扩展字段。 */
+export interface ZoneSpec {
+  id: string;
+  name: string;
+  imageUrl: string;
+  /** 滞销专区：积压天数 */
+  stock_days?: number;
+  /** 滞销专区：当前库存条数 */
+  stock_qty?: number;
+  /** 怀旧专区：继任规格 id（可为 null 表示无继任） */
+  successor_id?: string | null;
+  /** 尝鲜专区：上市日期 YYYY-MM-DD */
+  launch_date?: string | null;
+}
+
+/** 常规客户专区分类结果。任一专区为空数组表示当前数据下无匹配规格。 */
+export interface ZoneClassification {
+  slowMoving: ZoneSpec[];   // 滞销夸夸角：stock_days ≥ 30 且 stock_qty ≥ 3
+  nostalgia: ZoneSpec[];    // 怀旧专区：is_delisted = true
+  newProduct: ZoneSpec[];   // 尝鲜专区：launch_date 在窗口期内（一二类 24 月，其他 12 月）
+}
+
 /** 选品策略的输出。布局判定、柜台分配、imageGen 由路由层基于此结果继续处理。 */
 export interface SelectionResult {
   /** 已排序的待陈列品规列表 */
@@ -31,6 +53,8 @@ export interface SelectionResult {
   filteredHotSpecs?: { id: string; name: string }[];
   /** spec_id → 最新库存快照。仅常规客户策略会填充，其它策略缺省。 */
   inventoryById?: Map<string, SpecInventoryInfo>;
+  /** 专区分类结果。仅常规客户策略会填充，其它策略缺省。 */
+  zones?: ZoneClassification;
 }
 
 export type StrategyFn = (ctx: SelectionContext) => Promise<SelectionResult>;

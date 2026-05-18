@@ -188,6 +188,7 @@ router.post('/', async (req: Request, res: Response) => {
       success: true,
       results,
       ...(filteredHotSpecs.length > 0 ? { filteredHotSpecs } : {}),
+      ...(selection.zones ? { zones: selection.zones } : {}),
     };
     res.json(body);
   } catch (err) {

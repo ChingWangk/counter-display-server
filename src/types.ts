@@ -17,6 +17,15 @@ export interface Category {
   category: 'group' | 'provincial' | 'foreign';  // 集团产品 / 省外烟 / 外烟
   province: string | null;  // 省外烟的省份，其他为 null
   is_hot: boolean;          // 是否为紧俏烟
+  // 以下字段来自 dim_category_ext（运行时通过 getExtendedCategoryMap 合并），
+  // 在表未就绪 / 该规格未补录时为 undefined。专区策略需要做空值判断。
+  pack_type?: string;             // 支型：常规 / 中支 / 细支 / 短支 / 爆珠
+  flavor?: string | null;         // 口味：烤烟 / 混合 / 薄荷 / 香甜
+  tier?: string | null;           // 价类：一类 / 二类 / 三类 / 四类 / 五类
+  launch_date?: string | null;    // 上市日期 YYYY-MM-DD（用于尝鲜专区）
+  is_industrial_coop?: boolean;   // 是否工商共育
+  is_delisted?: boolean;          // 是否已退市（用于怀旧专区）
+  successor_id?: string | null;   // 退市后的继任规格 id
 }
 
 export interface GenerateRequest {
@@ -36,6 +45,7 @@ export interface GenerateResponse {
   success: boolean;
   results?: CounterResult[];
   filteredHotSpecs?: { id: string; name: string }[];
+  zones?: import('./services/strategies/types').ZoneClassification;
   error?: string;
 }
 
