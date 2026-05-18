@@ -12,6 +12,15 @@ export interface SelectionContext {
   requestCategories: { id: string }[];
 }
 
+/** 单个 spec 的库存快照信息，由常规客户策略从 cust_inventory 提取后随结果回传，
+ *  供后续滞销 / 脱销 / 平替等专区策略使用。 */
+export interface SpecInventoryInfo {
+  spec_id: string;
+  stock_qty: number;
+  stock_days: number;
+  snapshot_date: string;  // YYYY-MM-DD
+}
+
 /** 选品策略的输出。布局判定、柜台分配、imageGen 由路由层基于此结果继续处理。 */
 export interface SelectionResult {
   /** 已排序的待陈列品规列表 */
@@ -20,6 +29,8 @@ export interface SelectionResult {
   usedSpecIds: Set<string>;
   /** 资源不足时被过滤的紧俏烟（仅 smart 模式可能产生），前端展示提示 */
   filteredHotSpecs?: { id: string; name: string }[];
+  /** spec_id → 最新库存快照。仅常规客户策略会填充，其它策略缺省。 */
+  inventoryById?: Map<string, SpecInventoryInfo>;
 }
 
 export type StrategyFn = (ctx: SelectionContext) => Promise<SelectionResult>;
