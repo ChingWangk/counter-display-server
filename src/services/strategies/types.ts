@@ -44,11 +44,11 @@ export interface AvailableZone extends ZoneMeta {
   specs: ZoneSpec[];
 }
 
-/** 用户在 zone-select 页面给出的单条分配。row_count ∈ {1,2,3,4}，单柜台累计行数 ≤ 4。 */
+/** 用户在 zone-select 页面给出的单条分配。row_count ≥ 1，单柜台累计不超过该柜台空闲层数。 */
 export interface ZoneAssignment {
   zone_id: ZoneId;
   counter_id: string;
-  row_count: 1 | 2 | 3 | 4;
+  row_count: number;
 }
 
 /** 策略层根据 zoneAssignments 计算的最终落位:具体哪些 spec 落到哪个柜台的几行。 */
@@ -57,7 +57,7 @@ export interface ZonePlacement {
   /** 专区显示名（由 ZONE_META.label 填充，避免前端硬编码映射） */
   label: string;
   counterId: string;
-  rowCount: 1 | 2 | 3 | 4;
+  rowCount: number;
   /** sortCategories 排好序的 zone specs。imageGen 据此绘制 zone 行。 */
   specs: Category[];
   barColor: string;

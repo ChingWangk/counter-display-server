@@ -17,13 +17,14 @@ type Scene = '滞销夸夸' | '新品推荐' | '怀旧专区' | '沪产专区' |
 /** GET /api/praise-script — 经营话术
  *
  * 查询参数（至少传一个）：
- *  - spec_id=110105  → 优先匹配 target_type=spec 的话术
- *  - brand=中华      → 匹配 target_type=brand
- *  - tag=细支        → 匹配 target_type=tag
- *  - scene=怀旧专区  → 限定场景
+ *  - scene=怀旧专区  → 按场景过滤,返回该场景下所有 target_type 的话术
+ *  - spec_id=110105  → 进一步过滤 target_type=spec
+ *  - brand=中华      → 进一步过滤 target_type=brand
+ *  - tag=细支        → 进一步过滤 target_type=tag
  *
- * 匹配优先级：spec > brand > tag
- * 返回所有匹配的话术（前端可随机挑一条）。
+ * scene 为常用场景级查询(可单独使用);spec_id/brand/tag 用于更细颗粒过滤,
+ * 多个一起传时取并集(OR)。
+ * 返回所有匹配话术,按 target_type 优先级排序(spec > brand > tag)。
  */
 router.get('/', async (req: Request, res: Response) => {
   const specId = req.query.spec_id as string | undefined;
@@ -31,8 +32,8 @@ router.get('/', async (req: Request, res: Response) => {
   const tag = req.query.tag as string | undefined;
   const scene = req.query.scene as Scene | undefined;
 
-  if (!specId && !brand && !tag) {
-    res.status(400).json({ success: false, error: '至少传 spec_id / brand / tag 之一' });
+  if (!specId && !brand && !tag && !scene) {
+    res.status(400).json({ success: false, error: '至少传 scene / spec_id / brand / tag 之一' });
     return;
   }
 
@@ -52,7 +53,10 @@ router.get('/', async (req: Request, res: Response) => {
     orParts.push('(target_type = ? AND target_value = ?)');
     params.push('tag', tag);
   }
-  conditions.push(`(${orParts.join(' OR ')})`);
+  // orParts 为空(仅传 scene)时跳过此条件,即返回该场景下所有 target_type 的话术
+  if (orParts.length > 0) {
+    conditions.push(`(${orParts.join(' OR ')})`);
+  }
 
   if (scene) {
     conditions.push('scene = ?');

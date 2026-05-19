@@ -126,7 +126,7 @@ router.post('/', async (req: Request, res: Response) => {
       );
     }
 
-    // ---- 校验:用户分配的 zone 行数必须落在「常规之外的空闲层」内 + 单柜台 ≤ 4 ----
+    // ---- 校验:用户分配的 zone 行数必须落在「常规之外的空闲层」内 ----
     const initialZoneRowsByCounter = new Map<string, number>();
     for (const p of initialZonePlacements) {
       initialZoneRowsByCounter.set(
@@ -138,14 +138,6 @@ router.post('/', async (req: Request, res: Response) => {
       const zRows = initialZoneRowsByCounter.get(c.id) || 0;
       const regRows = regularRowsByCounter.get(c.id) || 0;
       const freeRows = c.levels - regRows;
-      if (zRows > 4) {
-        const body: GenerateResponse = {
-          success: false,
-          error: `柜台 ${c.id} 的专区行数 ${zRows} 超过单柜台上限 4 行`,
-        };
-        res.status(400).json(body);
-        return;
-      }
       if (zRows > freeRows) {
         const body: GenerateResponse = {
           success: false,
