@@ -32,6 +32,8 @@ export interface GenerateRequest {
   counters: Counter[];
   categories: Category[];   // 用户勾选的品规，同一品规可重复出现（多选计数）
   mode?: 'smart' | 'manual';  // smart=智能推荐（后端自动选品），manual=自选规格
+  customer_id?: string;
+  zone_assignments?: import('./services/strategies/types').ZoneAssignment[];
 }
 
 export interface CounterResult {
@@ -45,7 +47,7 @@ export interface GenerateResponse {
   success: boolean;
   results?: CounterResult[];
   filteredHotSpecs?: { id: string; name: string }[];
-  zones?: import('./services/strategies/types').ZoneClassification;
+  zonePlacements?: import('./services/strategies/types').ZonePlacement[];
   error?: string;
 }
 

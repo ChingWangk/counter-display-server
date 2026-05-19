@@ -3,7 +3,7 @@ import { RowDataPacket } from 'mysql2';
 import { Category } from '../../types';
 import { sortCategories } from '../sortCategories';
 import { getExtendedCategoryMap } from '../categoryCatalog';
-import { classifyZones } from './zones';
+import { classifyZones, buildZonePlacements } from './zones';
 import {
   SelectionContext,
   SelectionResult,
@@ -30,10 +30,9 @@ interface InventoryRow extends RowDataPacket {
  *  - 第 2 步【已完成】：脱离 customer_specs 依赖，直接读 cust_inventory（取每个 spec 最新
  *    snapshot_date），把"客户在售品规"作为陈列候选集；同时把 stock_qty/stock_days 通过
  *    inventoryById 一并回传，供后续专区策略使用。
- *  - 第 3 步【当前】：滞销夸夸角 / 怀旧专区 / 尝鲜专区 三个低成本分类器（zones.ts），
- *    输出挂在 SelectionResult.zones，路由层透传到 GenerateResponse.zones。
- *  - 第 4 步【规划】：根据前端传入的 zone_ids 启用更多专区（平替 / 价签 / 节日 / 沪产 /
- *    短中细爆），并参与柜台容量分配（目前 zones 不占用陈列槽位，仅作为附加展示数据）。
+ *  - 第 3 步【已完成】：滞销夸夸角 / 怀旧专区 / 尝鲜专区 三个低成本分类器（zones.ts）。
+ *  - 第 4 步【当前】：新增工商共育专区,并按用户在 zone-select 选的 zoneAssignments 把 zone specs
+ *    从常规陈列区扣除,返回 zonePlacements 供 imageGen 顶部行渲染。
  *
  * 隔离原则：本文件的任何变化都不应回流到 newCustomerStrategy；新增依赖（cust_inventory、
  * ref_co_purchase_rules 等）只在本模块内部使用。
@@ -83,7 +82,7 @@ export const regularCustomerStrategy: StrategyFn = async (ctx: SelectionContext)
   const usedSpecIds = new Set(ids);
 
   // 通过 categoryMap 转换为 Category 列表（过滤未收录的 id）
-  // 使用扩展版（含 dim_category_ext 字段），供 classifyZones 判断 is_delisted / launch_date / tier
+  // 使用扩展版（含 dim_category_ext 字段），供 classifyZones 判断 is_delisted / launch_date / tier / is_industrial_coop
   const extendedCategoryMap = await getExtendedCategoryMap();
   const carriedSpecs = ids
     .map(id => extendedCategoryMap.get(id))
@@ -102,15 +101,20 @@ export const regularCustomerStrategy: StrategyFn = async (ctx: SelectionContext)
     }
   }
 
-  // 专区分类：滞销夸夸角 / 怀旧专区 / 尝鲜专区
-  // 在 hot 过滤后运行，让滞销专区基于"实际陈列范围"；怀旧 / 尝鲜以 customer 在售品规为准
-  const zones = classifyZones(withImages, inventoryById);
+  // 专区分类(已优先级 dedupe):工商共育 / 滞销 / 怀旧 / 尝鲜
+  // 在 hot 过滤后运行,让滞销专区基于"实际陈列范围"
+  const classification = classifyZones(withImages, inventoryById);
+
+  // 根据用户的 zoneAssignments 把 zone specs 从常规陈列扣除
+  const zonePlacements = buildZonePlacements(classification, ctx.zoneAssignments ?? [], withImages);
+  const zoneSpecIds = new Set(zonePlacements.flatMap(p => p.specs.map(s => s.id)));
+  withImages = withImages.filter(c => !zoneSpecIds.has(c.id));
 
   return {
     specs: withImages,
     usedSpecIds,
     filteredHotSpecs,
     inventoryById,
-    zones,
+    zonePlacements,
   };
 };

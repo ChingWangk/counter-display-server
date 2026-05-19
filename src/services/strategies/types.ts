@@ -10,6 +10,8 @@ export interface SelectionContext {
   totalLayerLength: number;
   /** manual 模式下用户勾选的品类（按 id 引用 categoryCatalog），其他模式留空数组 */
   requestCategories: { id: string }[];
+  /** 用户在 zone-select 页面给出的专区分配。空数组或缺省表示不启用任何专区。 */
+  zoneAssignments?: ZoneAssignment[];
 }
 
 /** 单个 spec 的库存快照信息，由常规客户策略从 cust_inventory 提取后随结果回传，
@@ -19,6 +21,47 @@ export interface SpecInventoryInfo {
   stock_qty: number;
   stock_days: number;
   snapshot_date: string;  // YYYY-MM-DD
+}
+
+/** 专区 id 枚举（与前端 ZoneId 对齐） */
+export type ZoneId = 'industrialCoop' | 'slowMoving' | 'nostalgia' | 'newProduct';
+
+/** 专区静态元信息：名称、图标、说明、优先组、色条颜色。 */
+export interface ZoneMeta {
+  id: ZoneId;
+  label: string;
+  icon: string;
+  description: string;
+  /** 1=政策导向（最高优先），2=现实困难。柜台内排序按 (priorityRank ASC, specCount DESC) */
+  priorityRank: 1 | 2;
+  /** 行最左侧色条颜色，与前端预览/result 卡片 chip 颜色一致 */
+  barColor: string;
+}
+
+/** /api/zones/available 返回的可用专区项（含 spec 列表）。 */
+export interface AvailableZone extends ZoneMeta {
+  specCount: number;
+  specs: ZoneSpec[];
+}
+
+/** 用户在 zone-select 页面给出的单条分配。 */
+export interface ZoneAssignment {
+  zone_id: ZoneId;
+  counter_id: string;
+  row_count: 1 | 2;
+}
+
+/** 策略层根据 zoneAssignments 计算的最终落位:具体哪些 spec 落到哪个柜台的几行。 */
+export interface ZonePlacement {
+  zoneId: ZoneId;
+  counterId: string;
+  rowCount: 1 | 2;
+  /** sortCategories 排好序的 zone specs。imageGen 据此绘制 zone 行。 */
+  specs: Category[];
+  barColor: string;
+  priorityRank: number;
+  /** 用于柜台内子专区按品规数降序排序 */
+  specCount: number;
 }
 
 /** 专区单条规格的展示数据；不同专区按需填充扩展字段。 */
@@ -36,25 +79,27 @@ export interface ZoneSpec {
   launch_date?: string | null;
 }
 
-/** 常规客户专区分类结果。任一专区为空数组表示当前数据下无匹配规格。 */
+/** 常规客户专区分类结果。任一专区为空数组表示当前数据下无匹配规格。
+ *  注：经 classifyZones 优先级 dedupe 后,同一 spec 只会出现在一个专区里。 */
 export interface ZoneClassification {
-  slowMoving: ZoneSpec[];   // 滞销夸夸角：stock_days ≥ 30 且 stock_qty ≥ 3
-  nostalgia: ZoneSpec[];    // 怀旧专区：is_delisted = true
-  newProduct: ZoneSpec[];   // 尝鲜专区：launch_date 在窗口期内（一二类 24 月，其他 12 月）
+  industrialCoop: ZoneSpec[];  // 工商共育：is_industrial_coop = true
+  slowMoving: ZoneSpec[];      // 滞销夸夸角：stock_days ≥ 30 且 stock_qty ≥ 3
+  nostalgia: ZoneSpec[];       // 怀旧专区：is_delisted = true
+  newProduct: ZoneSpec[];      // 尝鲜专区：launch_date 在窗口期内（一二类 24 月，其他 12 月）
 }
 
 /** 选品策略的输出。布局判定、柜台分配、imageGen 由路由层基于此结果继续处理。 */
 export interface SelectionResult {
-  /** 已排序的待陈列品规列表 */
+  /** 已排序的待陈列品规列表（已扣除被划入 zonePlacements 的 spec） */
   specs: Category[];
-  /** 参与过陈列的 spec_id 集合，供背柜主题匹配使用 */
+  /** 参与过陈列的 spec_id 集合（含 zone specs + regular specs），供背柜主题匹配使用 */
   usedSpecIds: Set<string>;
   /** 资源不足时被过滤的紧俏烟（仅 smart 模式可能产生），前端展示提示 */
   filteredHotSpecs?: { id: string; name: string }[];
   /** spec_id → 最新库存快照。仅常规客户策略会填充，其它策略缺省。 */
   inventoryById?: Map<string, SpecInventoryInfo>;
-  /** 专区分类结果。仅常规客户策略会填充，其它策略缺省。 */
-  zones?: ZoneClassification;
+  /** 根据 ctx.zoneAssignments 落位后的专区结果。生成图像时顶部行用此数据。 */
+  zonePlacements?: ZonePlacement[];
 }
 
 export type StrategyFn = (ctx: SelectionContext) => Promise<SelectionResult>;
@@ -67,3 +112,47 @@ export class ValidationError extends Error {
     this.name = 'ValidationError';
   }
 }
+
+/** 4 个专区的元信息。供 /api/zones/available 返回 + 策略层落位查表 + imageGen 取色。 */
+export const ZONE_META: Record<ZoneId, ZoneMeta> = {
+  industrialCoop: {
+    id: 'industrialCoop',
+    label: '工商共育',
+    icon: '🤝',
+    description: '工商共育规格，建议放在柜台第 1-2 行优先曝光',
+    priorityRank: 1,
+    barColor: '#1976D2',
+  },
+  slowMoving: {
+    id: 'slowMoving',
+    label: '滞销夸夸角',
+    icon: '🛒',
+    description: '积压 ≥ 30 天且库存 ≥ 3 条的规格，集中展示便于推广',
+    priorityRank: 2,
+    barColor: '#F9A825',
+  },
+  nostalgia: {
+    id: 'nostalgia',
+    label: '怀旧专区',
+    icon: '📷',
+    description: '已退市但门店仍有库存的经典规格',
+    priorityRank: 2,
+    barColor: '#8D6E63',
+  },
+  newProduct: {
+    id: 'newProduct',
+    label: '尝鲜专区',
+    icon: '✨',
+    description: '近期上市的新规格（一/二类 24 月内，其他 12 月内）',
+    priorityRank: 2,
+    barColor: '#2D6A4F',
+  },
+};
+
+/** 用于 dedupe 和 classifyZones 内部顺序的 ZoneId 优先级数组。 */
+export const ZONE_PRIORITY_ORDER: ZoneId[] = [
+  'industrialCoop',
+  'slowMoving',
+  'nostalgia',
+  'newProduct',
+];
