@@ -10,7 +10,7 @@ import { RowDataPacket } from 'mysql2';
  * 用 Map<spec_id_a, spec_id_b[]> 组装 ZoneGroup,便于单测。
  */
 
-const TOP_N_SUBSTITUTES = 3;
+const TOP_N_SUBSTITUTES = 2;
 
 interface InventoryStockoutRow extends RowDataPacket {
   spec_id: string;

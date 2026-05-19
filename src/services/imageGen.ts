@@ -20,6 +20,10 @@ const SHELF_BOARD_SHADOW = '#6B4F10';
 // 专区左侧色条宽度
 const ZONE_BAR_WIDTH = 12;
 
+// 分组专区组与组之间至少留出的空隙(像素)。
+// bin-packing 时把此值计入下一组的占用宽度,避免组与组紧贴显得拥挤。
+const MIN_INTER_GROUP_GAP_PX = CELL_W;
+
 // 价签尺寸（贴在烟包底部）
 const PRICE_TAG_H = 26;
 const PRICE_TAG_FONT = 'bold 16px sans-serif';
@@ -141,8 +145,10 @@ function staggeredDistribute(total: number, rows: number): number[] {
  * 行布局自上而下:
  *   层 0..regularRows-1: 常规陈列(单包,行内 staggered 分布;行内空隙由 canvas 均分)
  *   层 regularRows..regularRows+zoneRowCount-1: 功能专区(左侧 12px 色条)
- *     - 单品专区(industrialCoop/slowMoving/newProduct):每包紧贴,按 id 切换处留 gap
- *     - 分组专区(substitute/nostalgia):primary 占双倍宽 + alternatives 紧随,组与组之间留 gap
+ *     - 单品专区(industrialCoop/slowMoving/newProduct):自适应密度,稀疏时双包陈列,
+ *       否则单包并保证至少 1 包宽的 gap budget,避免过度拥挤
+ *     - 分组专区(substitute/nostalgia):primary 双包陈列 + alternatives 紧随,
+ *       组与组之间至少留 MIN_INTER_GROUP_GAP_PX 宽空隙
  *   层 regularRows+zoneRowCount..levels-1: 空闲层(仅画层板,不放品规)
  *
  * 单柜台多个 zone 按 (priorityRank ASC, groupCount DESC) 排序,每个占用 rowCount 行(已含 autoExpand)。
@@ -194,36 +200,53 @@ export async function generateCounterImage(
       let off = 0;
       for (let r = 0; r < zone.rowCount; r++) {
         const want = perRow[r];
-        const fit = Math.min(want, singleMaxPerRow);
+        const rowSpecs = flatSpecs.slice(off, off + want);
+        off += want;
+        // 自适应密度,避免行内过于稀疏或过度拥挤:
+        //  - 双包陈列:specs * 2 <= packsPerRow,每个 spec 重复出现 2 次紧贴,
+        //    drawFlatRow 会在 id 切换处自动留 gap
+        //  - 单包陈列:cap = packsPerRow - 1,保证至少 1 包宽度的 gap budget,
+        //    避免 specs 满行时 gap=0 出现"紧贴无缝"的拥挤观感
+        let renderSpecs: Category[];
+        if (rowSpecs.length > 0 && rowSpecs.length * 2 <= singleMaxPerRow) {
+          renderSpecs = rowSpecs.flatMap(s => [s, s]);
+        } else {
+          const cap = Math.max(1, singleMaxPerRow - 1);
+          renderSpecs = rowSpecs.slice(0, cap);
+        }
         zoneRowSlots.push({
           type: 'zone-single',
-          specs: flatSpecs.slice(off, off + fit),
+          specs: renderSpecs,
           barColor: zone.barColor,
         });
-        off += want;
       }
     } else {
       // 分组专区:按行宽贪心分组,整组不可拆,超出本行行宽就换行
-      //   primary 占 2 包宽, alternatives 各占 1 包宽 → 一组宽度 = 2 + alts.length
+      //   primary 占 2 包宽(双包陈列), alternatives 各占 1 包宽 → 一组宽度 = 2 + alts.length
+      //   组与组之间预留 MIN_INTER_GROUP_GAP_PX,bin-packing 时把它计入下一组占用
       const rowsOfGroups: ZonePlacementGroup[][] = [];
       let curRow: ZonePlacementGroup[] = [];
-      let curWidth = 0;
+      let curWidthPx = 0;
       for (const g of zone.groups) {
-        const gWidth = 2 + g.alternatives.length;
-        if (gWidth > singleMaxPerRow) continue;  // 一组都放不下整行,跳过该组
-        if (curWidth + gWidth > singleMaxPerRow && curRow.length > 0) {
+        const gWidthPx = (2 + g.alternatives.length) * CELL_W;
+        if (gWidthPx > canvasW) continue;  // 一组都放不下整行,跳过
+        const need = curRow.length === 0
+          ? gWidthPx
+          : curWidthPx + MIN_INTER_GROUP_GAP_PX + gWidthPx;
+        if (need > canvasW) {
           rowsOfGroups.push(curRow);
-          curRow = [];
-          curWidth = 0;
+          curRow = [g];
+          curWidthPx = gWidthPx;
+        } else {
+          curRow.push(g);
+          curWidthPx = need;
         }
-        curRow.push(g);
-        curWidth += gWidth;
       }
       if (curRow.length > 0) rowsOfGroups.push(curRow);
 
       // 把 rowsOfGroups 映射到 zone.rowCount 行:
       //   - 若 rowsOfGroups.length <= rowCount:按顺序填,末行 padding 空行(只有色条)
-      //   - 若 > rowCount:超出部分丢弃(autoExpand 应该已经给够行数,正常不会触发)
+      //   - 若 > rowCount:超出部分丢弃(autoExpand 应该已给够行数,正常不会触发)
       for (let r = 0; r < zone.rowCount; r++) {
         zoneRowSlots.push({
           type: 'zone-group',
@@ -350,11 +373,14 @@ async function drawFlatRow(
 }
 
 /**
- * 绘制分组专区行:每组 primary 占 2*CELL_W 双倍宽,alternatives 各占 CELL_W;
+ * 绘制分组专区行:每组 primary 双包陈列(同一图片左右紧贴绘制 2 次),alternatives 各占 CELL_W;
  * 组内紧贴,组与组之间留 gap = gapBudget / (groups.length - 1)。
  *
- * primary 双倍宽的画法:把 primary 图片拉伸到 2*CELL_W × CELL_H(loadImage 保持原宽高比)。
- * 价签按"双倍宽"贴满 primary 底部。
+ * primary 双包陈列说明:不是把单张图片拉伸到 2*CELL_W,而是把同一张图绘制 2 次,
+ * 视觉上等同于"主规格双包陈列",与常规 double 布局保持一致。价签贴在每个包底部。
+ *
+ * 进入此函数前 bin-packing 已确保 (totalGroupW + (nGaps × MIN_INTER_GROUP_GAP_PX)) <= canvasW,
+ * 因此 interGap = gapBudget / nGaps 必 >= MIN_INTER_GROUP_GAP_PX,组间总能留出可见空隙。
  */
 async function drawGroupedZoneRow(
   ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
@@ -367,17 +393,28 @@ async function drawGroupedZoneRow(
 
   const groupWidths = groups.map(g => (2 + g.alternatives.length) * CELL_W);
   const totalGroupW = groupWidths.reduce((s, w) => s + w, 0);
+  const nGaps = groups.length - 1;
   const gapBudget = Math.max(canvasW - totalGroupW, 0);
-  const interGap = groups.length > 1 ? gapBudget / (groups.length - 1) : 0;
-  const startX = groups.length > 1 ? 0 : (canvasW - totalGroupW) / 2;
+
+  let interGap: number;
+  let startX: number;
+  if (nGaps === 0) {
+    interGap = 0;
+    startX = (canvasW - totalGroupW) / 2;  // 单组居中
+  } else {
+    interGap = gapBudget / nGaps;
+    startX = 0;
+  }
 
   let cursor = startX;
   for (let gi = 0; gi < groups.length; gi++) {
     if (gi > 0) cursor += interGap;
     const g = groups[gi];
-    // primary: 双倍宽
-    await drawSpec(ctx, g.primary, cursor, baseY, CELL_W * 2, CELL_H, priceTagMap);
-    cursor += CELL_W * 2;
+    // primary 双包陈列:同一张图绘制 2 次紧贴,而不是 1 张图拉伸 2 倍
+    await drawSpec(ctx, g.primary, cursor, baseY, CELL_W, CELL_H, priceTagMap);
+    cursor += CELL_W;
+    await drawSpec(ctx, g.primary, cursor, baseY, CELL_W, CELL_H, priceTagMap);
+    cursor += CELL_W;
     // alternatives: 单倍宽,紧贴
     for (const alt of g.alternatives) {
       await drawSpec(ctx, alt, cursor, baseY, CELL_W, CELL_H, priceTagMap);
@@ -387,7 +424,7 @@ async function drawGroupedZoneRow(
 }
 
 /**
- * 画单个 spec(图片或占位)+ 价签。w/h 为绘制目标尺寸,允许非 CELL_W × CELL_H(供 primary 双倍宽)。
+ * 画单个 spec(图片或占位)+ 价签。w/h 为绘制目标尺寸,通常为 CELL_W × CELL_H。
  */
 async function drawSpec(
   ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
