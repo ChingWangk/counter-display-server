@@ -51,8 +51,8 @@ export interface GenerateResponse {
   error?: string;
 }
 
-// 陈列布局策略
+// 陈列布局策略：取消双包，统一单包；expanded=有间距均匀分布，standard=紧贴均匀分布
 export interface LayoutConfig {
-  mode: 'double' | 'expanded' | 'standard';
+  mode: 'expanded' | 'standard';
   gapCm: number;  // 规格间隙（cm），standard 模式下忽略
 }

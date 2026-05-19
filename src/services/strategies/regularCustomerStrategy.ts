@@ -105,10 +105,9 @@ export const regularCustomerStrategy: StrategyFn = async (ctx: SelectionContext)
   // 在 hot 过滤后运行,让滞销专区基于"实际陈列范围"
   const classification = classifyZones(withImages, inventoryById);
 
-  // 根据用户的 zoneAssignments 把 zone specs 从常规陈列扣除
+  // 按用户的 zoneAssignments 计算 zone 落位。注意:zone specs 同时保留在常规陈列 withImages 中,
+  // 不再从常规池中扣除——同一规格会在 zone 行(带色条)与常规行各出现一次。
   const zonePlacements = buildZonePlacements(classification, ctx.zoneAssignments ?? [], withImages);
-  const zoneSpecIds = new Set(zonePlacements.flatMap(p => p.specs.map(s => s.id)));
-  withImages = withImages.filter(c => !zoneSpecIds.has(c.id));
 
   return {
     specs: withImages,

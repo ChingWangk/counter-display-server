@@ -88,7 +88,7 @@ router.post('/', async (req: Request, res: Response) => {
     } else {
       // manual:用前端传入的 categories(只需要 id),通过 extendedMap 合并 ext 字段
       if (!Array.isArray(categories) || categories.length === 0) {
-        res.json({ success: true, zones: [] });
+        res.json({ success: true, zones: [], customerSpecCount: 0 });
         return;
       }
       // 去重 id,manual 模式同一品类可能被多次选中
@@ -98,6 +98,12 @@ router.post('/', async (req: Request, res: Response) => {
         if (c) sourceSpecs.push(c);
       }
     }
+
+    // 客户总品规数(用于前端计算每柜台最多可分配的专区行数):
+    // smart 模式 = cust_inventory 去重 spec 数; manual 模式 = 用户勾选总数(含重复,即陈列包数)
+    const customerSpecCount = mode === 'smart'
+      ? sourceSpecs.length
+      : (categories?.length ?? 0);
 
     // ---- 2. 分类 + dedupe ----
     const zoneCls: ZoneClassification = classifyZones(sourceSpecs, inventoryById);
@@ -114,7 +120,7 @@ router.post('/', async (req: Request, res: Response) => {
       });
     }
 
-    res.json({ success: true, zones: result });
+    res.json({ success: true, zones: result, customerSpecCount });
   } catch (err) {
     console.error('zones/available error:', err);
     const message = err instanceof Error ? err.message : '获取专区失败';

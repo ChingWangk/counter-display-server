@@ -6,7 +6,7 @@ export interface SelectionContext {
   customerId?: string;
   /** 前柜 + 吊柜的总容量（包数） */
   totalSlots: number;
-  /** 前柜 + 吊柜的"长度 × 层数"总和（cm），用于 expanded/double 间距反算 */
+  /** 前柜 + 吊柜的"长度 × 层数"总和（cm），用于 expanded 间距反算 */
   totalLayerLength: number;
   /** manual 模式下用户勾选的品类（按 id 引用 categoryCatalog），其他模式留空数组 */
   requestCategories: { id: string }[];
@@ -44,18 +44,18 @@ export interface AvailableZone extends ZoneMeta {
   specs: ZoneSpec[];
 }
 
-/** 用户在 zone-select 页面给出的单条分配。 */
+/** 用户在 zone-select 页面给出的单条分配。row_count ∈ {1,2,3,4}，单柜台累计行数 ≤ 4。 */
 export interface ZoneAssignment {
   zone_id: ZoneId;
   counter_id: string;
-  row_count: 1 | 2;
+  row_count: 1 | 2 | 3 | 4;
 }
 
 /** 策略层根据 zoneAssignments 计算的最终落位:具体哪些 spec 落到哪个柜台的几行。 */
 export interface ZonePlacement {
   zoneId: ZoneId;
   counterId: string;
-  rowCount: 1 | 2;
+  rowCount: 1 | 2 | 3 | 4;
   /** sortCategories 排好序的 zone specs。imageGen 据此绘制 zone 行。 */
   specs: Category[];
   barColor: string;
@@ -119,7 +119,7 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     id: 'industrialCoop',
     label: '工商共育',
     icon: '🤝',
-    description: '工商共育规格，建议放在柜台第 1-2 行优先曝光',
+    description: '工商共育规格，独立行陈列以提升曝光',
     priorityRank: 1,
     barColor: '#1976D2',
   },

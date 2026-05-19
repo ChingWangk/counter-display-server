@@ -109,6 +109,14 @@ router.post('/', async (req: Request, res: Response) => {
     }
     for (const c of displayCounters) {
       const z = cabinetZoneRows.get(c.id) || 0;
+      if (z > 4) {
+        const body: GenerateResponse = {
+          success: false,
+          error: `柜台 ${c.id} 的专区行数 ${z} 超过单柜台上限 4 行`,
+        };
+        res.status(400).json(body);
+        return;
+      }
       if (z > c.levels) {
         const body: GenerateResponse = {
           success: false,
@@ -137,10 +145,8 @@ router.post('/', async (req: Request, res: Response) => {
       layout = { mode: 'standard', gapCm: 0 };
     } else if (specCount >= totalRegularCapacity) {
       layout = { mode: 'standard', gapCm: 0 };
-    } else if (specCount > 0 && specCount < totalRegularCapacity / 2) {
-      const gapCm = totalRegularLayerLength / specCount - 2 * PACK_WIDTH_CM;
-      layout = { mode: 'double', gapCm: Math.max(gapCm, 0) };
     } else if (specCount > 0) {
+      // 取消双包陈列:即便规格稀疏也只用单包,间距按"单包等距"反算
       const gapCm = totalRegularLayerLength / specCount - PACK_WIDTH_CM;
       layout = { mode: 'expanded', gapCm: Math.max(gapCm, 0) };
     } else {
@@ -174,8 +180,7 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     // ---- 按各柜台分配量收紧 gap，避免 calcMaxPerRow 的 floor() 静默截断 ----
-    if (layout.mode === 'expanded' || layout.mode === 'double') {
-      const packsPerSpec = layout.mode === 'double' ? 2 : 1;
+    if (layout.mode === 'expanded') {
       let tightestGap = layout.gapCm;
       for (let i = 0; i < displayCounters.length; i++) {
         const cabinet = displayCounters[i];
@@ -186,18 +191,12 @@ router.post('/', async (req: Request, res: Response) => {
         if (availableLevels <= 0) continue;
         const neededPerRow = Math.ceil(assigned / availableLevels);
         const maxFittingGapCm = neededPerRow > 1
-          ? (cabinet.length - neededPerRow * packsPerSpec * PACK_WIDTH_CM) / (neededPerRow - 1)
+          ? (cabinet.length - neededPerRow * PACK_WIDTH_CM) / (neededPerRow - 1)
           : Infinity;
         const fit = Math.max(maxFittingGapCm, 0);
         if (fit < tightestGap) tightestGap = fit;
       }
       layout = { ...layout, gapCm: tightestGap };
-    }
-
-    // ---- 全局 id→出现次数（用于 imageGen 在 double 模式下区分多选/单选品规） ----
-    const occurrenceCounts = new Map<string, number>();
-    for (const sp of specs) {
-      occurrenceCounts.set(sp.id, (occurrenceCounts.get(sp.id) || 0) + 1);
     }
 
     // ---- 逐柜台生成图片 ----
@@ -211,7 +210,7 @@ router.post('/', async (req: Request, res: Response) => {
       for (const p of cabinetZones) {
         for (const s of p.specs) usedSpecIds.add(s.id);
       }
-      const { imageUrl } = await generateCounterImage(cabinet, cabinetSpecs, layout, occurrenceCounts, cabinetZones);
+      const { imageUrl } = await generateCounterImage(cabinet, cabinetSpecs, layout, cabinetZones);
       results.push({
         counterId: cabinet.id,
         counterType: cabinet.type,

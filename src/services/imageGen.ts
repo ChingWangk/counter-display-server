@@ -31,12 +31,10 @@ interface ZoneRowSlot {
   type: 'zone';
   specs: Category[];
   barColor: string;
-  packsPerSpec: 1;
 }
 interface RegularRowSlot {
   type: 'regular';
   specCount: number;
-  packsPerSpec: 1 | 2;
 }
 type RowSlot = ZoneRowSlot | RegularRowSlot;
 
@@ -99,22 +97,22 @@ function staggeredDistribute(total: number, rows: number): number[] {
 }
 
 /**
- * 计算某种模式下每行最多能放几个规格
+ * 计算某种模式下每行最多能放几个规格（单包模式：packsPerSpec=1）
  */
-function calcMaxPerRow(counterLengthPx: number, packsPerSpec: number, gapCm: number): number {
+function calcMaxPerRow(counterLengthPx: number, gapCm: number): number {
   const gapPx = Math.max(Math.round(gapCm * PX_PER_CM), 0);
-  const slotW = packsPerSpec * CELL_W + gapPx;
+  const slotW = CELL_W + gapPx;
   return Math.max(1, Math.floor((counterLengthPx + gapPx) / slotW));
 }
 
 /**
  * 为单个柜台生成陈列图片
  *
- * 顶部 N 行是 zone 行(若有 zonePlacements):按 (priorityRank ASC, specCount DESC) 排,
- * 每个 zone 占用 rowCount 行,行内 packsPerSpec=1 紧贴排列,行最左侧画 12px 色条;
- * 剩余行用 layout(double/expanded/standard)绘制 regularSpecs。
+ * 行顺序:常规陈列行在上,zone 行紧贴底部。zone 行最左侧画 12px 色条标识专区。
+ * 单柜台内多个 zone 按 (priorityRank ASC, specCount DESC) 排序,每个占用 rowCount 行
+ * (1-4 行,单柜台累计 ≤ 4),行内 packsPerSpec=1 紧贴排列。
+ * 常规陈列按 layout(expanded 留间距 / standard 紧贴)绘制 regularSpecs。
  *
- * @param occurrenceCounts 全局 id→出现次数。double 模式下,count>1 的多选品规按勾选数量陈列(packsPerSpec=1),count=1 的单选品规按双包陈列(packsPerSpec=2)
  * @param zonePlacements 本柜台的专区落位列表(由 generate 路由按 counterId 筛选后传入)
  * @returns imageUrl 和消耗的 regular 品规数 usedCount(用于多柜台 offset)
  */
@@ -122,7 +120,6 @@ export async function generateCounterImage(
   counter: Counter,
   regularSpecs: Category[],
   layout: LayoutConfig = { mode: 'standard', gapCm: 0 },
-  occurrenceCounts?: Map<string, number>,
   zonePlacements?: ZonePlacement[],
 ): Promise<{ imageUrl: string; usedCount: number }> {
   const canvasW = Math.round(counter.length * PX_PER_CM);
@@ -134,7 +131,7 @@ export async function generateCounterImage(
 
   const singleMaxPerRow = Math.floor(counter.length / PACK_WIDTH_CM);
 
-  // ---- 1. 排序 zonePlacements,展开为 zone 行 ----
+  // ---- 1. 排序 zonePlacements,展开为 zone 行(每个 zone 占 rowCount 行) ----
   const sortedZones = (zonePlacements ?? [])
     .slice()
     .sort((a, b) => a.priorityRank - b.priorityRank || b.specCount - a.specCount);
@@ -150,7 +147,6 @@ export async function generateCounterImage(
         type: 'zone',
         specs: zone.specs.slice(off, off + fit),
         barColor: zone.barColor,
-        packsPerSpec: 1,
       });
       off += want;
     }
@@ -159,51 +155,24 @@ export async function generateCounterImage(
   const zoneRowCount = zoneRowSlots.length;
   const regularLevels = Math.max(0, levels - zoneRowCount);
 
-  // ---- 2. 计算 regular 行布局 ----
+  // ---- 2. 计算 regular 行布局(单包模式,expanded 或 standard) ----
   let regularRowLayouts: RegularRowSlot[];
 
   if (regularLevels === 0) {
     regularRowLayouts = [];
-  } else if (layout.mode === 'double') {
-    const doublePerRow = calcMaxPerRow(canvasW, 2, layout.gapCm);
-    const doubleCapacity = doublePerRow * regularLevels;
-
-    if (doubleCapacity >= regularSpecs.length) {
-      const totalUsed = Math.min(doubleCapacity, regularSpecs.length);
-      const perRow = staggeredDistribute(totalUsed, regularLevels);
-      regularRowLayouts = perRow.map(n => ({ type: 'regular' as const, specCount: n, packsPerSpec: 2 as const }));
-    } else {
-      // 部分降级：底部若干行改为单包
-      let numSingle = 1;
-      while (
-        numSingle < regularLevels &&
-        doublePerRow * (regularLevels - numSingle) + singleMaxPerRow * numSingle < regularSpecs.length
-      ) {
-        numSingle++;
-      }
-      const doubleRowCount = regularLevels - numSingle;
-      const specsInDouble = Math.min(doublePerRow * doubleRowCount, regularSpecs.length);
-      const dPerRow = doubleRowCount > 0 ? staggeredDistribute(specsInDouble, doubleRowCount) : [];
-      const specsInSingle = Math.min(regularSpecs.length - specsInDouble, singleMaxPerRow * numSingle);
-      const sPerRow = staggeredDistribute(specsInSingle, numSingle);
-      regularRowLayouts = [
-        ...dPerRow.map(n => ({ type: 'regular' as const, specCount: n, packsPerSpec: 2 as const })),
-        ...sPerRow.map(n => ({ type: 'regular' as const, specCount: n, packsPerSpec: 1 as const })),
-      ];
-    }
   } else {
-    // expanded / standard：全部单包
     const maxPerRow = layout.mode === 'expanded'
-      ? calcMaxPerRow(canvasW, 1, layout.gapCm)
+      ? calcMaxPerRow(canvasW, layout.gapCm)
       : singleMaxPerRow;
     const totalUsed = Math.min(maxPerRow * regularLevels, regularSpecs.length);
     const perRow = layout.mode === 'standard'
       ? uniformDistribute(totalUsed, regularLevels)
       : staggeredDistribute(totalUsed, regularLevels);
-    regularRowLayouts = perRow.map(n => ({ type: 'regular' as const, specCount: n, packsPerSpec: 1 as const }));
+    regularRowLayouts = perRow.map(n => ({ type: 'regular' as const, specCount: n }));
   }
 
-  const rowSlots: RowSlot[] = [...zoneRowSlots, ...regularRowLayouts];
+  // 行槽顺序:常规在上,zone 在下(专区不再放在常规陈列之上层)
+  const rowSlots: RowSlot[] = [...regularRowLayouts, ...zoneRowSlots];
 
   // ---- 实际使用的 regular 规格数 ----
   const usedCount = regularRowLayouts.reduce((s, r) => s + r.specCount, 0);
@@ -223,14 +192,6 @@ export async function generateCounterImage(
 
   // ---- 逐行绘制品规 ----
   // 同 id 品规在行内紧贴(无缝);剩余空间均分到"不同 id 之间"的间隔;行内全同 id 或仅 1 个时退化为居中。
-  // double 模式下:多选品规(occurrenceCounts.get(id) > 1)按勾选数量陈列(packsPerSpec=1),单选品规仍按双包陈列。
-  const getPacksForSpec = (spec: Category, rowDefault: number): number => {
-    if (rowDefault === 2 && occurrenceCounts && (occurrenceCounts.get(spec.id) || 1) > 1) {
-      return 1;
-    }
-    return rowDefault;
-  };
-
   let regularIdx = 0;
   for (let row = 0; row < levels; row++) {
     const slot = rowSlots[row];
@@ -246,14 +207,13 @@ export async function generateCounterImage(
     if (rowSpecs.length === 0) continue;
 
     const baseY = PADDING_TOP + row * (CELL_H + SHELF_BOARD_H);
-    const specPacks = rowSpecs.map(s => getPacksForSpec(s, slot.packsPerSpec));
 
     let diffTransitions = 0;
     for (let i = 1; i < rowSpecs.length; i++) {
       if (rowSpecs[i].id !== rowSpecs[i - 1].id) diffTransitions++;
     }
 
-    const totalPackW = specPacks.reduce((s, p) => s + p * CELL_W, 0);
+    const totalPackW = rowSpecs.length * CELL_W;
     const gapBudget = Math.max(canvasW - totalPackW, 0);
     const interGap = diffTransitions > 0 ? gapBudget / diffTransitions : 0;
     const startX = diffTransitions > 0 ? 0 : (canvasW - totalPackW) / 2;
@@ -261,25 +221,22 @@ export async function generateCounterImage(
     let cursor = startX;
     for (let col = 0; col < rowSpecs.length; col++) {
       if (col > 0) {
-        cursor += specPacks[col - 1] * CELL_W;
+        cursor += CELL_W;
         if (rowSpecs[col].id !== rowSpecs[col - 1].id) cursor += interGap;
       }
 
       const imgPath = path.join(CATEGORY_IMG_ROOT, rowSpecs[col].imageUrl);
       const hasFile = fs.existsSync(imgPath);
 
-      for (let p = 0; p < specPacks[col]; p++) {
-        const x = cursor + p * CELL_W;
-        if (hasFile) {
-          try {
-            const img = await loadImage(imgPath);
-            ctx.drawImage(img, x, baseY, CELL_W, CELL_H);
-          } catch {
-            drawPlaceholder(ctx, rowSpecs[col].name, x, baseY, CELL_W, CELL_H);
-          }
-        } else {
-          drawPlaceholder(ctx, rowSpecs[col].name, x, baseY, CELL_W, CELL_H);
+      if (hasFile) {
+        try {
+          const img = await loadImage(imgPath);
+          ctx.drawImage(img, cursor, baseY, CELL_W, CELL_H);
+        } catch {
+          drawPlaceholder(ctx, rowSpecs[col].name, cursor, baseY, CELL_W, CELL_H);
         }
+      } else {
+        drawPlaceholder(ctx, rowSpecs[col].name, cursor, baseY, CELL_W, CELL_H);
       }
     }
   }
@@ -294,9 +251,10 @@ export async function generateCounterImage(
   }
 
   // ---- 绘制 zone 行左侧色条(最后绘制以盖在烟包之上,确保可见) ----
-  for (let row = 0; row < zoneRowCount; row++) {
+  // zone 行位于柜台底部 zoneRowCount 行,即 rowSlots 索引 regularLevels..levels-1
+  for (let row = regularLevels; row < levels; row++) {
     const slot = rowSlots[row];
-    if (slot.type !== 'zone') continue;
+    if (!slot || slot.type !== 'zone') continue;
     const baseY = PADDING_TOP + row * (CELL_H + SHELF_BOARD_H);
     ctx.fillStyle = slot.barColor;
     ctx.fillRect(0, baseY, ZONE_BAR_WIDTH, CELL_H);

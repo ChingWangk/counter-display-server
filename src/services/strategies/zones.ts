@@ -153,8 +153,8 @@ export function classifyZones(
  * sortedSourceSpecs 应是 sortCategories 排好序的完整 Category 列表(允许重复——
  * manual 模式下用户对同一品类的多次选择会保留)。filter 后,zone specs 保留原有顺序与重复。
  *
- * 注意:caller 在拿到 placements 后需要从 sortedSourceSpecs 中扣除已进入 zone 的 spec_id,
- *      避免常规陈列区重复出现。
+ * 注意:zone specs 同时保留在 sortedSourceSpecs(常规陈列池)中,不再从中扣除——同一规格
+ * 会在 zone 行(带色条)与常规行各出现一次,体现"专区品规也出现在专区外的常规陈列区"。
  */
 export function buildZonePlacements(
   classification: ZoneClassification,

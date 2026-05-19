@@ -8,9 +8,10 @@ import { SelectionContext, SelectionResult, StrategyFn } from './types';
  * 自选规格：直接按用户勾选的 id 列表取品规，允许同一 id 重复出现（表示多包陈列）。
  * 不做紧俏烟过滤（manual 尊重用户选择）。
  *
- * 专区支持:若 ctx.zoneAssignments 非空,按 classifyZones 命中结果落位 zonePlacements,
- * 并从常规陈列区扣除已进入专区的 spec_id(所有重复出现一并扣除)。manual 模式无 inventory,
- * 滞销专区会自然返回 [];其他专区(工商共育/怀旧/尝鲜)依然可用。
+ * 专区支持:若 ctx.zoneAssignments 非空,按 classifyZones 命中结果落位 zonePlacements。
+ * 注意:zone specs 同时保留在常规陈列区,不再从 sorted 中扣除——同一规格会在 zone 行
+ * (带色条)与常规行各出现一次。manual 模式无 inventory,滞销专区会自然返回 [];
+ * 其他专区(工商共育/怀旧/尝鲜)依然可用。
  */
 export const manualStrategy: StrategyFn = async (ctx: SelectionContext): Promise<SelectionResult> => {
   const ids: string[] = ctx.requestCategories.map(c => c.id);
@@ -22,14 +23,12 @@ export const manualStrategy: StrategyFn = async (ctx: SelectionContext): Promise
     .map(id => extendedCategoryMap.get(id))
     .filter((c): c is Category => c !== undefined);
 
-  let sorted = sortCategories(available);
+  const sorted = sortCategories(available);
 
   // 专区分类(无 inventory,slowMoving 返回 [])+ 按 zoneAssignments 落位
   if (ctx.zoneAssignments && ctx.zoneAssignments.length > 0) {
     const classification = classifyZones(sorted);
     const zonePlacements = buildZonePlacements(classification, ctx.zoneAssignments, sorted);
-    const zoneSpecIds = new Set(zonePlacements.flatMap(p => p.specs.map(s => s.id)));
-    sorted = sorted.filter(c => !zoneSpecIds.has(c.id));
     return { specs: sorted, usedSpecIds, zonePlacements };
   }
 
