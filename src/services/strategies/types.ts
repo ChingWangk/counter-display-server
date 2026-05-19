@@ -24,7 +24,7 @@ export interface SpecInventoryInfo {
 }
 
 /** 专区 id 枚举（与前端 ZoneId 对齐） */
-export type ZoneId = 'industrialCoop' | 'slowMoving' | 'nostalgia' | 'newProduct';
+export type ZoneId = 'industrialCoop' | 'substitute' | 'slowMoving' | 'nostalgia' | 'newProduct';
 
 /** 专区静态元信息：名称、图标、说明、优先组、色条颜色。 */
 export interface ZoneMeta {
@@ -54,6 +54,8 @@ export interface ZoneAssignment {
 /** 策略层根据 zoneAssignments 计算的最终落位:具体哪些 spec 落到哪个柜台的几行。 */
 export interface ZonePlacement {
   zoneId: ZoneId;
+  /** 专区显示名（由 ZONE_META.label 填充，避免前端硬编码映射） */
+  label: string;
   counterId: string;
   rowCount: 1 | 2 | 3 | 4;
   /** sortCategories 排好序的 zone specs。imageGen 据此绘制 zone 行。 */
@@ -83,6 +85,7 @@ export interface ZoneSpec {
  *  注：经 classifyZones 优先级 dedupe 后,同一 spec 只会出现在一个专区里。 */
 export interface ZoneClassification {
   industrialCoop: ZoneSpec[];  // 工商共育：is_industrial_coop = true
+  substitute: ZoneSpec[];      // 平替专区：脱销规格的 ref_co_purchase_rules 推荐
   slowMoving: ZoneSpec[];      // 滞销夸夸角：stock_days ≥ 30 且 stock_qty ≥ 3
   nostalgia: ZoneSpec[];       // 怀旧专区：is_delisted = true
   newProduct: ZoneSpec[];      // 尝鲜专区：launch_date 在窗口期内（一二类 24 月，其他 12 月）
@@ -123,6 +126,14 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     priorityRank: 1,
     barColor: '#1976D2',
   },
+  substitute: {
+    id: 'substitute',
+    label: '平替专区',
+    icon: '🔄',
+    description: '门店脱销规格的强弱适配推荐，把"好卖的不够卖"转为可售品规',
+    priorityRank: 2,
+    barColor: '#C2185B',
+  },
   slowMoving: {
     id: 'slowMoving',
     label: '滞销夸夸角',
@@ -149,9 +160,12 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
   },
 };
 
-/** 用于 dedupe 和 classifyZones 内部顺序的 ZoneId 优先级数组。 */
+/** 用于 dedupe 和 classifyZones 内部顺序的 ZoneId 优先级数组。
+ *  industrialCoop 是 1 组（政策导向），其余四个为 2 组（现实困难/趋势顺应）。
+ *  substitute 排在 slowMoving 之前：平替推荐的是"卖得好但缺货"的强适配品，比滞销更值得优先曝光。 */
 export const ZONE_PRIORITY_ORDER: ZoneId[] = [
   'industrialCoop',
+  'substitute',
   'slowMoving',
   'nostalgia',
   'newProduct',

@@ -15,6 +15,8 @@ import { manualStrategy } from '../services/strategies/manualStrategy';
 import { newCustomerStrategy } from '../services/strategies/newCustomerStrategy';
 import { regularCustomerStrategy } from '../services/strategies/regularCustomerStrategy';
 import { getCustomerClass } from '../services/customerClass';
+import { getCustomerHasPos } from '../services/strategies/substitute';
+import { getPriceTagMap } from '../services/priceTag';
 
 // 加载背柜主题组数据
 interface ThemeGroup { id: string; label: string; specIds: string[]; images: string[]; }
@@ -161,6 +163,14 @@ router.post('/', async (req: Request, res: Response) => {
       regularRowsByCounter,
     );
 
+    // ---- 拉价签白名单:根据 cust_info.has_pos 决定 ref_yangpu_avg_price 子集 ----
+    // 有 customer_id 才有比对依据;无 customer_id 时空 Map,imageGen 不画价签。
+    let priceTagMap = new Map<string, number>();
+    if (customer_id) {
+      const hasPos = await getCustomerHasPos(customer_id);
+      priceTagMap = await getPriceTagMap(hasPos);
+    }
+
     // ---- 逐柜台生成图片 ----
     const results: CounterResult[] = [];
     let offset = 0;
@@ -173,7 +183,7 @@ router.post('/', async (req: Request, res: Response) => {
         for (const s of p.specs) usedSpecIds.add(s.id);
       }
       const regRows = regularRowsByCounter.get(cabinet.id) || 0;
-      const { imageUrl } = await generateCounterImage(cabinet, cabinetSpecs, regRows, cabinetZones);
+      const { imageUrl } = await generateCounterImage(cabinet, cabinetSpecs, regRows, cabinetZones, priceTagMap);
       results.push({
         counterId: cabinet.id,
         counterType: cabinet.type,

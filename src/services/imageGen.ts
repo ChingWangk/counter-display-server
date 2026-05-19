@@ -20,6 +20,10 @@ const SHELF_BOARD_SHADOW = '#6B4F10';
 // 专区左侧色条宽度
 const ZONE_BAR_WIDTH = 12;
 
+// 价签尺寸（贴在烟包底部）
+const PRICE_TAG_H = 26;
+const PRICE_TAG_FONT = 'bold 16px sans-serif';
+
 // 图片输出目录（服务器上 Nginx 静态文件目录）
 const OUTPUT_DIR = '/www/wwwroot/47.103.65.4/images/generated';
 
@@ -66,6 +70,34 @@ function drawPlaceholder(
 }
 
 /**
+ * 绘制价签：贴在烟包底部的黄底红字"¥XX.X"小标签。
+ * 仅当 spec_id 命中 priceTagMap 时调用,用于直接展示售价 < 杨浦区均价的规格。
+ */
+function drawPriceTag(
+  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
+  price: number,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+) {
+  const tagY = y + h - PRICE_TAG_H;
+  // 黄底
+  ctx.fillStyle = '#FFD54F';
+  ctx.fillRect(x, tagY, w, PRICE_TAG_H);
+  // 黑色边框,1 px
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, tagY + 0.5, w - 1, PRICE_TAG_H - 1);
+  // 红字
+  ctx.fillStyle = '#C62828';
+  ctx.font = PRICE_TAG_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`¥${price.toFixed(1)}`, x + w / 2, tagY + PRICE_TAG_H / 2);
+}
+
+/**
  * 均匀分布：将 total 个规格均匀分配到 rows 行
  * 多出的放在前面的行（视觉上顶部更满）
  */
@@ -108,12 +140,14 @@ function staggeredDistribute(total: number, rows: number): number[] {
  *
  * @param regularRows 常规陈列实际占用的行数(由 generate 顺序分配后确定)
  * @param zonePlacements 本柜台的专区落位(rowCount 已经过 autoExpand 扩展)
+ * @param priceTagMap spec_id → avg_price 映射;命中时在烟包底部画价签;缺省/空时不画
  */
 export async function generateCounterImage(
   counter: Counter,
   regularSpecs: Category[],
   regularRows: number,
   zonePlacements?: ZonePlacement[],
+  priceTagMap?: ReadonlyMap<string, number>,
 ): Promise<{ imageUrl: string; usedCount: number }> {
   const canvasW = Math.round(counter.length * PX_PER_CM);
   const levels = counter.levels;
@@ -230,6 +264,12 @@ export async function generateCounterImage(
         }
       } else {
         drawPlaceholder(ctx, rowSpecs[col].name, cursor, baseY, CELL_W, CELL_H);
+      }
+
+      // 价签:命中白名单时贴底部(显示售价低于杨浦区均价的规格)
+      const price = priceTagMap?.get(rowSpecs[col].id);
+      if (price !== undefined) {
+        drawPriceTag(ctx, price, cursor, baseY, CELL_W, CELL_H);
       }
     }
   }
