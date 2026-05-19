@@ -145,9 +145,10 @@ function staggeredDistribute(total: number, rows: number): number[] {
  * 行布局自上而下:
  *   层 0..regularRows-1: 常规陈列(单包,行内 staggered 分布;行内空隙由 canvas 均分)
  *   层 regularRows..regularRows+zoneRowCount-1: 功能专区(左侧 12px 色条)
- *     - 单品专区(industrialCoop/slowMoving/newProduct):自适应密度,稀疏时双包陈列,
- *       否则单包并保证至少 1 包宽的 gap budget,避免过度拥挤
- *     - 分组专区(substitute/nostalgia):primary 双包陈列 + alternatives 紧随,
+ *     - 单品专区(industrialCoop/slowMoving/newProduct):
+ *       · industrialCoop / newProduct:自适应密度,稀疏时双包陈列,否则单包并保证至少 1 包宽 gap budget
+ *       · slowMoving:始终单包,cap = packsPerRow - 1
+ *     - 分组专区(substitute/nostalgia):primary 单包 + 每个 alternative 双包陈列,
  *       组与组之间至少留 MIN_INTER_GROUP_GAP_PX 宽空隙
  *   层 regularRows+zoneRowCount..levels-1: 空闲层(仅画层板,不放品规)
  *
@@ -197,18 +198,21 @@ export async function generateCounterImage(
       // 单品专区:拉平 groups 为 primary 列表,等同于旧的 specs
       const flatSpecs = zone.groups.map(g => g.primary);
       const perRow = uniformDistribute(flatSpecs.length, zone.rowCount);
+      // 仅工商共育 / 新品尝鲜支持根据柜台余量自适应双包陈列;
+      // 滞销夸夸角始终单包陈列(每个 spec 独立曝光,不强调"重复抢占"视觉效果)
+      const canDoublePack = zone.zoneId === 'industrialCoop' || zone.zoneId === 'newProduct';
       let off = 0;
       for (let r = 0; r < zone.rowCount; r++) {
         const want = perRow[r];
         const rowSpecs = flatSpecs.slice(off, off + want);
         off += want;
         // 自适应密度,避免行内过于稀疏或过度拥挤:
-        //  - 双包陈列:specs * 2 <= packsPerRow,每个 spec 重复出现 2 次紧贴,
+        //  - 双包陈列(仅 industrialCoop / newProduct):specs * 2 <= packsPerRow,每个 spec 重复 2 次紧贴,
         //    drawFlatRow 会在 id 切换处自动留 gap
         //  - 单包陈列:cap = packsPerRow - 1,保证至少 1 包宽度的 gap budget,
         //    避免 specs 满行时 gap=0 出现"紧贴无缝"的拥挤观感
         let renderSpecs: Category[];
-        if (rowSpecs.length > 0 && rowSpecs.length * 2 <= singleMaxPerRow) {
+        if (canDoublePack && rowSpecs.length > 0 && rowSpecs.length * 2 <= singleMaxPerRow) {
           renderSpecs = rowSpecs.flatMap(s => [s, s]);
         } else {
           const cap = Math.max(1, singleMaxPerRow - 1);
@@ -222,13 +226,14 @@ export async function generateCounterImage(
       }
     } else {
       // 分组专区:按行宽贪心分组,整组不可拆,超出本行行宽就换行
-      //   primary 占 2 包宽(双包陈列), alternatives 各占 1 包宽 → 一组宽度 = 2 + alts.length
+      //   primary 占 1 包宽(单包陈列), 每个 alternative 占 2 包宽(双包陈列)
+      //   一组宽度 = 1 + 2 * alts.length(2 个替代 → 5 包宽; 1 个替代 → 3 包宽,残缺组已排到末尾)
       //   组与组之间预留 MIN_INTER_GROUP_GAP_PX,bin-packing 时把它计入下一组占用
       const rowsOfGroups: ZonePlacementGroup[][] = [];
       let curRow: ZonePlacementGroup[] = [];
       let curWidthPx = 0;
       for (const g of zone.groups) {
-        const gWidthPx = (2 + g.alternatives.length) * CELL_W;
+        const gWidthPx = (1 + 2 * g.alternatives.length) * CELL_W;
         if (gWidthPx > canvasW) continue;  // 一组都放不下整行,跳过
         const need = curRow.length === 0
           ? gWidthPx
@@ -373,11 +378,12 @@ async function drawFlatRow(
 }
 
 /**
- * 绘制分组专区行:每组 primary 双包陈列(同一图片左右紧贴绘制 2 次),alternatives 各占 CELL_W;
+ * 绘制分组专区行:primary 单包陈列(1 cell),每个 alternative 双包陈列(2 cell,同图绘制 2 次);
  * 组内紧贴,组与组之间留 gap = gapBudget / (groups.length - 1)。
  *
- * primary 双包陈列说明:不是把单张图片拉伸到 2*CELL_W,而是把同一张图绘制 2 次,
- * 视觉上等同于"主规格双包陈列",与常规 double 布局保持一致。价签贴在每个包底部。
+ * 布局说明:
+ *   primary 单包后面紧跟 alternative,每个 alternative 用 2 个紧贴的相同包,视觉强调"替代规格主推"。
+ *   平替/怀旧专区都遵循"原品快脱销/退市,替代品要顶上去"的语义,所以替代品视觉权重高于 primary。
  *
  * 进入此函数前 bin-packing 已确保 (totalGroupW + (nGaps × MIN_INTER_GROUP_GAP_PX)) <= canvasW,
  * 因此 interGap = gapBudget / nGaps 必 >= MIN_INTER_GROUP_GAP_PX,组间总能留出可见空隙。
@@ -391,7 +397,7 @@ async function drawGroupedZoneRow(
 ): Promise<void> {
   if (groups.length === 0) return;
 
-  const groupWidths = groups.map(g => (2 + g.alternatives.length) * CELL_W);
+  const groupWidths = groups.map(g => (1 + 2 * g.alternatives.length) * CELL_W);
   const totalGroupW = groupWidths.reduce((s, w) => s + w, 0);
   const nGaps = groups.length - 1;
   const gapBudget = Math.max(canvasW - totalGroupW, 0);
@@ -410,13 +416,13 @@ async function drawGroupedZoneRow(
   for (let gi = 0; gi < groups.length; gi++) {
     if (gi > 0) cursor += interGap;
     const g = groups[gi];
-    // primary 双包陈列:同一张图绘制 2 次紧贴,而不是 1 张图拉伸 2 倍
+    // primary 单包陈列:1 cell
     await drawSpec(ctx, g.primary, cursor, baseY, CELL_W, CELL_H, priceTagMap);
     cursor += CELL_W;
-    await drawSpec(ctx, g.primary, cursor, baseY, CELL_W, CELL_H, priceTagMap);
-    cursor += CELL_W;
-    // alternatives: 单倍宽,紧贴
+    // 每个 alternative 双包陈列:同图绘制 2 次紧贴
     for (const alt of g.alternatives) {
+      await drawSpec(ctx, alt, cursor, baseY, CELL_W, CELL_H, priceTagMap);
+      cursor += CELL_W;
       await drawSpec(ctx, alt, cursor, baseY, CELL_W, CELL_H, priceTagMap);
       cursor += CELL_W;
     }

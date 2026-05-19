@@ -10,7 +10,14 @@ import { RowDataPacket } from 'mysql2';
  * 用 Map<spec_id_a, spec_id_b[]> 组装 ZoneGroup,便于单测。
  */
 
-const TOP_N_SUBSTITUTES = 2;
+/**
+ * 候选池大小:从 ref_co_purchase_rules 拉取的每个脱销规格 Top N 候选。
+ *
+ * 这是"原始推荐池"的大小,业务层(zones.ts classifySubstitute)会在该池内
+ * 按价格/产地/支型/库存等业务维度二次排序后选取 Top 2 作为最终展示。
+ * 池过小 → 二次排序无空间;过大 → SQL 拉取浪费。20 是经验值,可调。
+ */
+const CANDIDATE_POOL_SIZE = 20;
 
 interface InventoryStockoutRow extends RowDataPacket {
   spec_id: string;
@@ -52,18 +59,19 @@ export async function getCustomerHasPos(customerId: string): Promise<boolean> {
 }
 
 /**
- * 为客户挖掘脱销规格 → Top N 平替候选的映射。
+ * 为客户挖掘脱销规格 → 候选平替池(每个 spec_id_a 最多 CANDIDATE_POOL_SIZE 个候选)。
  *
  * 数据来源:
  *  - hasPos=true:  cust_inventory 中 stock_qty=0 的规格作为脱销源 spec_id_a
  *  - hasPos=false: ref_yangpu_stockout 全表作为脱销源 spec_id_a
  *
- * 对每个 spec_id_a,从 ref_co_purchase_rules 取 target_type 含 'stockout' 的 Top N 推荐(rank_in_a ASC)。
- * 返回 Map<spec_id_a, spec_id_b[]>:value 是按 rank_in_a 升序的 spec_id_b 数组(最多 N 个)。
+ * 对每个 spec_id_a,从 ref_co_purchase_rules 取 target_type 含 'stockout' 的 Top N 候选(rank_in_a ASC)。
+ * 返回 Map<spec_id_a, spec_id_b[]>:value 是按 rank_in_a 升序的候选池(最多 CANDIDATE_POOL_SIZE 个)。
  *
  * 调用方(zones.ts classifySubstitute)负责:
- *   - 过滤 spec_id_b 必须在客户在售品规集合内
- *   - alternatives 至少 1 个在售才组队
+ *   - 过滤 spec_id_b 必须在客户在售品规集合内(stock_qty > 0)
+ *   - 业务排序(价格、产地、支型、库存)并选 Top 2
+ *   - 候选不足时整组淘汰
  *
  * 任一阶段表缺失/数据为空时返回 Empty Map,不抛错,使专区静默退场。
  */
@@ -121,7 +129,7 @@ export async function fetchSubstituteRules(
         AND rank_in_a <= ?
       ORDER BY spec_id_a, rank_in_a
       `,
-      [...stockoutIds, TOP_N_SUBSTITUTES],
+      [...stockoutIds, CANDIDATE_POOL_SIZE],
     );
     const map = new Map<string, string[]>();
     for (const r of rows) {

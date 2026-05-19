@@ -69,40 +69,78 @@ export function classifyIndustrialCoop(specs: ReadonlyArray<Category>): ZoneSpec
 }
 
 /**
- * 平替专区:每个脱销规格 spec_id_a → Top N 平替候选(spec_id_b[])构成一组。
+ * 平替专区:每个脱销规格 spec_id_a → 候选池 → 业务排序后选 Top 2 → 组成 ZoneGroup。
  *
  * 入参:
- *  - extendedMap: 全量 categoryCatalog,用于查找 primary(脱销规格本身可能不在客户在售范围内,
- *    但其图片/名称仍需展示让消费者知道"这位被替代")
- *  - customerOnSaleIds: 客户在售规格 id 集合,alternatives 必须在此集合内
- *  - rules: Map<spec_id_a, spec_id_b[]>(已按 rank 升序),来自 substitute.fetchSubstituteRules
+ *  - extendedMap: 全量 categoryCatalog,用于查找 primary 与候选的 Category(含 price/province/pack_type)
+ *  - customerOnSaleIds: 客户在售规格 id 集合(stock_qty > 0),候选必须在此集合内
+ *  - rules: Map<spec_id_a, candidateIds[]>(已按 rank 升序),来自 substitute.fetchSubstituteRules
+ *  - inventoryById: 候选的库存信息,业务排序最末位用 stock_qty 排序
  *
- * 出参:ZoneGroup[]。要求 primary 在 extendedMap 中可查到、alternatives 至少 1 个在售。
- * primary 是否在客户在售并不重要 —— 平替专区的本意就是展示"曾经在售/即将脱销的 A → 现在还在卖的 B/C/D"。
+ * 业务排序优先级(价格 > 产地 > 支型 > 库存):
+ *  1. 价格:|alt.price - primary.price| 越小越优
+ *  2. 产地:province 与 primary 相同者优
+ *  3. 支型:pack_type 与 primary 相同者优
+ *  4. 库存:stock_qty 越大越优(在售前提下"库存厚"的更适合主推)
+ * tie 时保留 rules 入参顺序(JS sort 已稳定),即原 ref_co_purchase_rules 的 rank。
+ *
+ * 残缺组(只找到 1 个替代,候选池过滤后不足 2)排到结果末尾,避免与 5 格完整组混排破坏视觉。
+ * 候选池过滤后为 0 → 整组淘汰。
+ *
+ * primary 是否在客户在售并不重要 —— 平替专区本意就是展示"曾经在售/即将脱销的 A → 现在还在卖的 B/C"。
  */
 export function classifySubstitute(
   extendedMap: ReadonlyMap<string, Category>,
   customerOnSaleIds: ReadonlySet<string>,
   rules: ReadonlyMap<string, ReadonlyArray<string>>,
+  inventoryById: ReadonlyMap<string, SpecInventoryInfo> = new Map(),
 ): ZoneGroup[] {
-  const result: ZoneGroup[] = [];
-  for (const [primaryId, altIds] of rules) {
+  const fullGroups: ZoneGroup[] = [];
+  const partialGroups: ZoneGroup[] = [];
+  for (const [primaryId, candidateIds] of rules) {
     const primary = extendedMap.get(primaryId);
     if (!primary) continue;
-    const alternatives: ZoneSpec[] = [];
-    for (const aid of altIds) {
+
+    // 1. 过滤候选:在客户在售集合内 + 在 extendedMap 中有 Category
+    const candidates: Category[] = [];
+    for (const aid of candidateIds) {
       if (!customerOnSaleIds.has(aid)) continue;
-      const alt = extendedMap.get(aid);
-      if (!alt) continue;
-      alternatives.push(toZoneSpec(alt));
+      const cat = extendedMap.get(aid);
+      if (cat) candidates.push(cat);
     }
-    if (alternatives.length === 0) continue;  // 无在售替代 → 整组淘汰
-    result.push({
-      primary: toZoneSpec(primary),
-      alternatives,
+    if (candidates.length === 0) continue;  // 无在售替代 → 整组淘汰
+
+    // 2. 业务多准则排序
+    candidates.sort((a, b) => {
+      const aPriceDiff = Math.abs((a.price ?? 0) - (primary.price ?? 0));
+      const bPriceDiff = Math.abs((b.price ?? 0) - (primary.price ?? 0));
+      if (aPriceDiff !== bPriceDiff) return aPriceDiff - bPriceDiff;
+
+      const aProv = a.province === primary.province ? 0 : 1;
+      const bProv = b.province === primary.province ? 0 : 1;
+      if (aProv !== bProv) return aProv - bProv;
+
+      const aPack = (a.pack_type ?? '') === (primary.pack_type ?? '') ? 0 : 1;
+      const bPack = (b.pack_type ?? '') === (primary.pack_type ?? '') ? 0 : 1;
+      if (aPack !== bPack) return aPack - bPack;
+
+      const aStock = inventoryById.get(a.id)?.stock_qty ?? 0;
+      const bStock = inventoryById.get(b.id)?.stock_qty ?? 0;
+      return bStock - aStock;
     });
+
+    // 3. 业务排序后取 Top 2
+    const top = candidates.slice(0, 2);
+    const group: ZoneGroup = {
+      primary: toZoneSpec(primary),
+      alternatives: top.map(toZoneSpec),
+    };
+
+    // 4. 完整组(2 个替代)与残缺组(1 个替代)分桶,残缺组放到末尾
+    if (top.length >= 2) fullGroups.push(group);
+    else partialGroups.push(group);
   }
-  return result;
+  return [...fullGroups, ...partialGroups];
 }
 
 /** 滞销夸夸角：积压库存 ≥ 30 天且数量 ≥ 3 条的规格，按 stock_days 降序。 */
@@ -212,7 +250,7 @@ export function classifyZones(
   industrialCoop.forEach(s => usedPrimary.add(s.id));
 
   // substitute 的 primary 是脱销规格,可能不在 specs(客户在售)中,但需要参与 dedupe
-  const substituteRaw = classifySubstitute(extendedMap, customerOnSaleIds, substituteRules);
+  const substituteRaw = classifySubstitute(extendedMap, customerOnSaleIds, substituteRules, inventoryById);
   const substitute = substituteRaw.filter(g => !usedPrimary.has(g.primary.id));
   substitute.forEach(g => usedPrimary.add(g.primary.id));
 

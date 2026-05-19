@@ -44,7 +44,7 @@ export interface ZoneMeta {
 }
 
 /** 一组陈列单元：主规格 + N 个替代规格。
- *  - substitute：primary = 脱销规格，alternatives = ref_co_purchase_rules Top 3 在售平替
+ *  - substitute：primary = 脱销规格，alternatives = 业务排序后 Top 2 在售平替
  *  - nostalgia： primary = 退市规格，alternatives = [successor]（在售）
  *  - 未来 productUpgrade：primary = 老规格，alternatives = 新品/紧俏组合
  */
@@ -117,7 +117,7 @@ export interface ZoneSpec {
  *  最多归属一个分组专区;alternatives 不参与 dedupe(允许跨专区作为 primary 出现)。 */
 export interface ZoneClassification {
   industrialCoop: ZoneSpec[];  // 工商共育：is_industrial_coop = true
-  substitute: ZoneGroup[];     // 平替专区：{primary: 脱销规格, alternatives: Top 3 在售平替}
+  substitute: ZoneGroup[];     // 平替专区：{primary: 脱销规格, alternatives: 业务排序后 Top 2 在售平替}
   slowMoving: ZoneSpec[];      // 滞销夸夸角：stock_days ≥ 30 且 stock_qty ≥ 3
   nostalgia: ZoneGroup[];      // 怀旧专区：{primary: 退市规格, alternatives: [在售 successor]}
   newProduct: ZoneSpec[];      // 尝鲜专区：launch_date 在窗口期内（一二类 24 月，其他 12 月）
