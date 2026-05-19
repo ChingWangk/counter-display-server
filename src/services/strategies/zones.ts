@@ -186,3 +186,68 @@ export function buildZonePlacements(
   }
   return placements;
 }
+
+/**
+ * 单柜台单 zone 行数上限（业务规则）。auto-expand 也遵守。
+ */
+const MAX_ROWS_PER_ZONE = 4;
+/**
+ * 单柜台累计专区行数上限（业务规则）。auto-expand 也遵守。
+ */
+const MAX_ZONE_ROWS_PER_CABINET = 4;
+
+/**
+ * 在常规陈列已铺完(regularRowsByCounter 已确定)的前提下,把每个柜台剩余空行
+ * 用该柜台已启用的专区填满。轮询分配,按 specCount 优先级:specCount 越大越先获得额外行。
+ *
+ * 规则:
+ *  - 仅扩展已启用(在 placements 中存在)的专区;无 placement 的柜台不会新增 zone
+ *  - 单条专区 ≤ 4 行(MAX_ROWS_PER_ZONE)
+ *  - 单柜台累计专区 ≤ 4 行(MAX_ZONE_ROWS_PER_CABINET)
+ *  - 剩余无法被分配时(全部达到 4 行上限),柜台底部保留空层
+ *
+ * 算法对专区数量不做硬编码,适配后续新增专区。
+ */
+export function autoExpandZonePlacements(
+  placements: ReadonlyArray<ZonePlacement>,
+  cabinets: ReadonlyArray<{ id: string; levels: number }>,
+  regularRowsByCounter: ReadonlyMap<string, number>,
+): ZonePlacement[] {
+  // 浅拷贝每个 placement,避免修改入参
+  const cloned: ZonePlacement[] = placements.map(p => ({ ...p }));
+
+  const byCounter = new Map<string, ZonePlacement[]>();
+  for (const p of cloned) {
+    const arr = byCounter.get(p.counterId) || [];
+    arr.push(p);
+    byCounter.set(p.counterId, arr);
+  }
+
+  for (const cabinet of cabinets) {
+    const zones = byCounter.get(cabinet.id);
+    if (!zones || zones.length === 0) continue;
+
+    const regularRows = regularRowsByCounter.get(cabinet.id) || 0;
+    const currentZoneRows = zones.reduce((s, z) => s + z.rowCount, 0);
+    const freeRows = Math.max(0, cabinet.levels - regularRows - currentZoneRows);
+    const cabinetRemaining = Math.max(0, MAX_ZONE_ROWS_PER_CABINET - currentZoneRows);
+    let leftover = Math.min(freeRows, cabinetRemaining);
+    if (leftover <= 0) continue;
+
+    // specCount 高 → 优先获得额外行;轮询直至 leftover 用完或所有专区都到 4 行
+    const sorted = [...zones].sort((a, b) => b.specCount - a.specCount);
+    while (leftover > 0) {
+      let progressed = false;
+      for (const z of sorted) {
+        if (leftover === 0) break;
+        if (z.rowCount >= MAX_ROWS_PER_ZONE) continue;
+        z.rowCount = (z.rowCount + 1) as 1 | 2 | 3 | 4;
+        leftover--;
+        progressed = true;
+      }
+      if (!progressed) break;
+    }
+  }
+
+  return cloned;
+}

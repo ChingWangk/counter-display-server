@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { createCanvas, loadImage } from 'canvas';
-import { Counter, Category, LayoutConfig } from '../types';
+import { Counter, Category } from '../types';
 import { ZonePlacement } from './strategies/types';
 
 const PACK_WIDTH_CM = 6; // 每包宽度 cm
@@ -97,29 +97,22 @@ function staggeredDistribute(total: number, rows: number): number[] {
 }
 
 /**
- * 计算某种模式下每行最多能放几个规格（单包模式：packsPerSpec=1）
- */
-function calcMaxPerRow(counterLengthPx: number, gapCm: number): number {
-  const gapPx = Math.max(Math.round(gapCm * PX_PER_CM), 0);
-  const slotW = CELL_W + gapPx;
-  return Math.max(1, Math.floor((counterLengthPx + gapPx) / slotW));
-}
-
-/**
  * 为单个柜台生成陈列图片
  *
- * 行顺序:常规陈列行在上,zone 行紧贴底部。zone 行最左侧画 12px 色条标识专区。
- * 单柜台内多个 zone 按 (priorityRank ASC, specCount DESC) 排序,每个占用 rowCount 行
- * (1-4 行,单柜台累计 ≤ 4),行内 packsPerSpec=1 紧贴排列。
- * 常规陈列按 layout(expanded 留间距 / standard 紧贴)绘制 regularSpecs。
+ * 行布局自上而下:
+ *   层 0..regularRows-1: 常规陈列(单包,行内 staggered 分布;行内空隙由 canvas 均分)
+ *   层 regularRows..regularRows+zoneRowCount-1: 功能专区(单包,左侧 12px 色条)
+ *   层 regularRows+zoneRowCount..levels-1: 空闲层(仅画层板,不放品规)
  *
- * @param zonePlacements 本柜台的专区落位列表(由 generate 路由按 counterId 筛选后传入)
- * @returns imageUrl 和消耗的 regular 品规数 usedCount(用于多柜台 offset)
+ * 单柜台多个 zone 按 (priorityRank ASC, specCount DESC) 排序,每个占用 rowCount 行(已含 autoExpand)。
+ *
+ * @param regularRows 常规陈列实际占用的行数(由 generate 顺序分配后确定)
+ * @param zonePlacements 本柜台的专区落位(rowCount 已经过 autoExpand 扩展)
  */
 export async function generateCounterImage(
   counter: Counter,
   regularSpecs: Category[],
-  layout: LayoutConfig = { mode: 'standard', gapCm: 0 },
+  regularRows: number,
   zonePlacements?: ZonePlacement[],
 ): Promise<{ imageUrl: string; usedCount: number }> {
   const canvasW = Math.round(counter.length * PX_PER_CM);
@@ -131,7 +124,18 @@ export async function generateCounterImage(
 
   const singleMaxPerRow = Math.floor(counter.length / PACK_WIDTH_CM);
 
-  // ---- 1. 排序 zonePlacements,展开为 zone 行(每个 zone 占 rowCount 行) ----
+  // ---- 1. 计算常规行布局(staggered 分布到 regularRows 行) ----
+  const clampedRegularRows = Math.max(0, Math.min(regularRows, levels));
+  let regularRowLayouts: RegularRowSlot[];
+  if (clampedRegularRows === 0 || regularSpecs.length === 0) {
+    regularRowLayouts = [];
+  } else {
+    const totalUsed = Math.min(singleMaxPerRow * clampedRegularRows, regularSpecs.length);
+    const perRow = staggeredDistribute(totalUsed, clampedRegularRows);
+    regularRowLayouts = perRow.map(n => ({ type: 'regular' as const, specCount: n }));
+  }
+
+  // ---- 2. 排序 zonePlacements,展开为 zone 行(每个 zone 占 rowCount 行) ----
   const sortedZones = (zonePlacements ?? [])
     .slice()
     .sort((a, b) => a.priorityRank - b.priorityRank || b.specCount - a.specCount);
@@ -151,28 +155,17 @@ export async function generateCounterImage(
       off += want;
     }
   }
-
   const zoneRowCount = zoneRowSlots.length;
-  const regularLevels = Math.max(0, levels - zoneRowCount);
 
-  // ---- 2. 计算 regular 行布局(单包模式,expanded 或 standard) ----
-  let regularRowLayouts: RegularRowSlot[];
-
-  if (regularLevels === 0) {
-    regularRowLayouts = [];
-  } else {
-    const maxPerRow = layout.mode === 'expanded'
-      ? calcMaxPerRow(canvasW, layout.gapCm)
-      : singleMaxPerRow;
-    const totalUsed = Math.min(maxPerRow * regularLevels, regularSpecs.length);
-    const perRow = layout.mode === 'standard'
-      ? uniformDistribute(totalUsed, regularLevels)
-      : staggeredDistribute(totalUsed, regularLevels);
-    regularRowLayouts = perRow.map(n => ({ type: 'regular' as const, specCount: n }));
+  // 行槽:常规在上 → 专区紧贴其后 → 剩余为空闲层(slot 为 undefined)
+  const rowSlots: (RowSlot | undefined)[] = new Array(levels).fill(undefined);
+  for (let i = 0; i < regularRowLayouts.length && i < levels; i++) {
+    rowSlots[i] = regularRowLayouts[i];
   }
-
-  // 行槽顺序:常规在上,zone 在下(专区不再放在常规陈列之上层)
-  const rowSlots: RowSlot[] = [...regularRowLayouts, ...zoneRowSlots];
+  const zoneStart = regularRowLayouts.length;
+  for (let i = 0; i < zoneRowCount && zoneStart + i < levels; i++) {
+    rowSlots[zoneStart + i] = zoneRowSlots[i];
+  }
 
   // ---- 实际使用的 regular 规格数 ----
   const usedCount = regularRowLayouts.reduce((s, r) => s + r.specCount, 0);
@@ -190,8 +183,8 @@ export async function generateCounterImage(
   ctx.fillStyle = '#F5F0E8';
   ctx.fillRect(0, 0, canvasW, canvasH);
 
-  // ---- 逐行绘制品规 ----
-  // 同 id 品规在行内紧贴(无缝);剩余空间均分到"不同 id 之间"的间隔;行内全同 id 或仅 1 个时退化为居中。
+  // ---- 逐行绘制品规(空闲层跳过,只保留背景与层板) ----
+  // 同 id 品规在行内紧贴;剩余空间均分到"不同 id 之间"的间隔。
   let regularIdx = 0;
   for (let row = 0; row < levels; row++) {
     const slot = rowSlots[row];
@@ -251,8 +244,7 @@ export async function generateCounterImage(
   }
 
   // ---- 绘制 zone 行左侧色条(最后绘制以盖在烟包之上,确保可见) ----
-  // zone 行位于柜台底部 zoneRowCount 行,即 rowSlots 索引 regularLevels..levels-1
-  for (let row = regularLevels; row < levels; row++) {
+  for (let row = zoneStart; row < zoneStart + zoneRowCount; row++) {
     const slot = rowSlots[row];
     if (!slot || slot.type !== 'zone') continue;
     const baseY = PADDING_TOP + row * (CELL_H + SHELF_BOARD_H);

@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
-import { GenerateResponse, CounterResult, Category, LayoutConfig } from '../types';
+import { GenerateResponse, CounterResult, Category } from '../types';
 import { generateCounterImage, PACK_WIDTH_CM } from '../services/imageGen';
 import {
   SelectionContext,
@@ -10,6 +10,7 @@ import {
   ZoneAssignment,
   ZonePlacement,
 } from '../services/strategies/types';
+import { autoExpandZonePlacements } from '../services/strategies/zones';
 import { manualStrategy } from '../services/strategies/manualStrategy';
 import { newCustomerStrategy } from '../services/strategies/newCustomerStrategy';
 import { regularCustomerStrategy } from '../services/strategies/regularCustomerStrategy';
@@ -90,12 +91,10 @@ router.post('/', async (req: Request, res: Response) => {
     const specs: Category[] = selection.specs;
     const usedSpecIds: Set<string> = selection.usedSpecIds;
     const filteredHotSpecs: { id: string; name: string }[] = selection.filteredHotSpecs || [];
-    const zonePlacements: ZonePlacement[] = selection.zonePlacements || [];
+    const initialZonePlacements: ZonePlacement[] = selection.zonePlacements || [];
 
-    // ---- 计算每柜台的 zone 行占用 ----
-    // 校验:zonePlacements 必须落在 displayCounters 上,且每柜台总 zone 行 ≤ levels
-    const cabinetZoneRows = new Map<string, number>();
-    for (const p of zonePlacements) {
+    // ---- 校验初始 zonePlacements 落位的柜台合法 ----
+    for (const p of initialZonePlacements) {
       const target = displayCounters.find((c: any) => c.id === p.counterId);
       if (!target) {
         const body: GenerateResponse = {
@@ -105,99 +104,62 @@ router.post('/', async (req: Request, res: Response) => {
         res.status(400).json(body);
         return;
       }
-      cabinetZoneRows.set(p.counterId, (cabinetZoneRows.get(p.counterId) || 0) + p.rowCount);
+    }
+
+    // ---- 顺序分配 regular specs:假设无 zone,前置柜台先吃满 ----
+    // 业务规则:常规陈列先沿前置柜台铺满,被常规填满的层不允许放置专区。
+    const specCount = specs.length;
+    const allocations: number[] = [];
+    const regularRowsByCounter = new Map<string, number>();
+    let remaining = specCount;
+    for (const c of displayCounters) {
+      const packsPerRow = Math.floor(c.length / PACK_WIDTH_CM);
+      const cap = packsPerRow * c.levels;
+      const used = Math.min(remaining, cap);
+      allocations.push(used);
+      remaining -= used;
+      regularRowsByCounter.set(
+        c.id,
+        packsPerRow > 0 ? Math.min(c.levels, Math.ceil(used / packsPerRow)) : 0,
+      );
+    }
+
+    // ---- 校验:用户分配的 zone 行数必须落在「常规之外的空闲层」内 + 单柜台 ≤ 4 ----
+    const initialZoneRowsByCounter = new Map<string, number>();
+    for (const p of initialZonePlacements) {
+      initialZoneRowsByCounter.set(
+        p.counterId,
+        (initialZoneRowsByCounter.get(p.counterId) || 0) + p.rowCount,
+      );
     }
     for (const c of displayCounters) {
-      const z = cabinetZoneRows.get(c.id) || 0;
-      if (z > 4) {
+      const zRows = initialZoneRowsByCounter.get(c.id) || 0;
+      const regRows = regularRowsByCounter.get(c.id) || 0;
+      const freeRows = c.levels - regRows;
+      if (zRows > 4) {
         const body: GenerateResponse = {
           success: false,
-          error: `柜台 ${c.id} 的专区行数 ${z} 超过单柜台上限 4 行`,
+          error: `柜台 ${c.id} 的专区行数 ${zRows} 超过单柜台上限 4 行`,
         };
         res.status(400).json(body);
         return;
       }
-      if (z > c.levels) {
+      if (zRows > freeRows) {
         const body: GenerateResponse = {
           success: false,
-          error: `柜台 ${c.id} 的专区行数 ${z} 超过总层数 ${c.levels}`,
+          error: `柜台 ${c.id} 仅剩 ${freeRows} 行可放专区,无法容纳 ${zRows} 行`,
         };
         res.status(400).json(body);
         return;
       }
     }
 
-    // ---- 布局决策（基于常规陈列区容量,即扣除 zone 行后的剩余容量） ----
-    const regularCapacities = displayCounters.map((c: any) => {
-      const zRows = cabinetZoneRows.get(c.id) || 0;
-      return Math.floor(c.length / PACK_WIDTH_CM) * (c.levels - zRows);
-    });
-    const regularLayerLengths = displayCounters.map((c: any) => {
-      const zRows = cabinetZoneRows.get(c.id) || 0;
-      return c.length * (c.levels - zRows);
-    });
-    const totalRegularCapacity = regularCapacities.reduce((s: number, v: number) => s + v, 0);
-    const totalRegularLayerLength = regularLayerLengths.reduce((s: number, v: number) => s + v, 0);
-
-    let layout: LayoutConfig;
-    const specCount = specs.length;
-    if (totalRegularCapacity === 0) {
-      layout = { mode: 'standard', gapCm: 0 };
-    } else if (specCount >= totalRegularCapacity) {
-      layout = { mode: 'standard', gapCm: 0 };
-    } else if (specCount > 0) {
-      // 取消双包陈列:即便规格稀疏也只用单包,间距按"单包等距"反算
-      const gapCm = totalRegularLayerLength / specCount - PACK_WIDTH_CM;
-      layout = { mode: 'expanded', gapCm: Math.max(gapCm, 0) };
-    } else {
-      layout = { mode: 'standard', gapCm: 0 };
-    }
-
-    // ---- 按常规容量比例分配 regular specs 到各柜台 ----
-    let allocations: number[];
-    if (specCount >= totalRegularCapacity) {
-      allocations = [...regularCapacities];
-    } else if (totalRegularCapacity === 0) {
-      allocations = displayCounters.map(() => 0);
-    } else {
-      allocations = regularCapacities.map((cap: number) =>
-        Math.round(specCount * cap / totalRegularCapacity)
-      );
-      let diff = specCount - allocations.reduce((s, v) => s + v, 0);
-      const sortedIdx = regularCapacities
-        .map((_: number, i: number) => i)
-        .sort((a: number, b: number) => regularCapacities[b] - regularCapacities[a]);
-      for (let k = 0; diff !== 0; k = (k + 1) % sortedIdx.length) {
-        const idx = sortedIdx[k];
-        if (diff > 0 && allocations[idx] < regularCapacities[idx]) {
-          allocations[idx]++;
-          diff--;
-        } else if (diff < 0 && allocations[idx] > 0) {
-          allocations[idx]--;
-          diff++;
-        }
-      }
-    }
-
-    // ---- 按各柜台分配量收紧 gap，避免 calcMaxPerRow 的 floor() 静默截断 ----
-    if (layout.mode === 'expanded') {
-      let tightestGap = layout.gapCm;
-      for (let i = 0; i < displayCounters.length; i++) {
-        const cabinet = displayCounters[i];
-        const assigned = allocations[i];
-        if (assigned === 0) continue;
-        const zRows = cabinetZoneRows.get(cabinet.id) || 0;
-        const availableLevels = cabinet.levels - zRows;
-        if (availableLevels <= 0) continue;
-        const neededPerRow = Math.ceil(assigned / availableLevels);
-        const maxFittingGapCm = neededPerRow > 1
-          ? (cabinet.length - neededPerRow * PACK_WIDTH_CM) / (neededPerRow - 1)
-          : Infinity;
-        const fit = Math.max(maxFittingGapCm, 0);
-        if (fit < tightestGap) tightestGap = fit;
-      }
-      layout = { ...layout, gapCm: tightestGap };
-    }
+    // ---- 自动扩展:把每个柜台剩余空行用已启用的专区填满(specCount 优先,单柜台累计 ≤ 4) ----
+    const zonePlacements: ZonePlacement[] = autoExpandZonePlacements(
+      initialZonePlacements,
+      displayCounters,
+      regularRowsByCounter,
+    );
 
     // ---- 逐柜台生成图片 ----
     const results: CounterResult[] = [];
@@ -210,7 +172,8 @@ router.post('/', async (req: Request, res: Response) => {
       for (const p of cabinetZones) {
         for (const s of p.specs) usedSpecIds.add(s.id);
       }
-      const { imageUrl } = await generateCounterImage(cabinet, cabinetSpecs, layout, cabinetZones);
+      const regRows = regularRowsByCounter.get(cabinet.id) || 0;
+      const { imageUrl } = await generateCounterImage(cabinet, cabinetSpecs, regRows, cabinetZones);
       results.push({
         counterId: cabinet.id,
         counterType: cabinet.type,
