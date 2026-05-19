@@ -4,7 +4,7 @@ import { Category } from '../../types';
 import { sortCategories } from '../sortCategories';
 import { getExtendedCategoryMap } from '../categoryCatalog';
 import { classifyZones, buildZonePlacements } from './zones';
-import { fetchSubstituteSpecIds, getCustomerHasPos } from './substitute';
+import { fetchSubstituteRules, getCustomerHasPos } from './substitute';
 import {
   SelectionContext,
   SelectionResult,
@@ -28,13 +28,14 @@ interface InventoryRow extends RowDataPacket {
  *
  * 演进路线：
  *  - 第 1 步【已完成】：作为 newCustomerStrategy 的别名，行为一致。
- *  - 第 2 步【已完成】：脱离 customer_specs 依赖，直接读 cust_inventory（取每个 spec 最新
- *    snapshot_date），把"客户在售品规"作为陈列候选集；同时把 stock_qty/stock_days 通过
- *    inventoryById 一并回传，供后续专区策略使用。
- *  - 第 3 步【已完成】：滞销夸夸角 / 怀旧专区 / 尝鲜专区 三个低成本分类器（zones.ts）。
+ *  - 第 2 步【已完成】：脱离 customer_specs 依赖，直接读 cust_inventory(取每个 spec 最新
+ *    snapshot_date),把"客户在售品规"作为陈列候选集;同时把 stock_qty/stock_days 通过
+ *    inventoryById 一并回传,供后续专区策略使用。
+ *  - 第 3 步【已完成】：滞销夸夸角 / 怀旧专区 / 尝鲜专区 三个低成本分类器(zones.ts)。
  *  - 第 4 步【已完成】：新增工商共育专区,并按用户在 zone-select 选的 zoneAssignments 把 zone specs
  *    从常规陈列区扣除,返回 zonePlacements 供 imageGen 顶部行渲染。
- *  - 第 5 步【当前】：新增平替专区(substitute),按 cust_info.has_pos 走 POS / 无 POS 两条数据通路。
+ *  - 第 5 步【已完成】：新增平替专区(substitute),按 cust_info.has_pos 走 POS / 无 POS 两条数据通路。
+ *  - 第 6 步【当前】：substitute / nostalgia 改为分组陈列(主规格 + N 个替代),classifyZones 签名扩展。
  *
  * 隔离原则：本文件的任何变化都不应回流到 newCustomerStrategy；新增依赖（cust_inventory、
  * ref_co_purchase_rules 等）只在本模块内部使用。
@@ -106,13 +107,27 @@ export const regularCustomerStrategy: StrategyFn = async (ctx: SelectionContext)
   // 专区分类(已优先级 dedupe):工商共育 / 平替 / 滞销 / 怀旧 / 尝鲜
   // 在 hot 过滤后运行,让滞销专区基于"实际陈列范围"
   // 平替专区:取 ref_co_purchase_rules 推荐(POS 客户用本店脱销, 无 POS 用 ref_yangpu_stockout)
+  //  - substituteRules: Map<spec_id_a, spec_id_b[]>(已按 rank 升序,最多 Top 3)
+  //  - customerOnSaleIds: 客户在售品规集合,alternatives 必须在此集合内才组队
   const hasPos = await getCustomerHasPos(ctx.customerId);
-  const substituteSpecIds = await fetchSubstituteSpecIds(ctx.customerId, hasPos);
-  const classification = classifyZones(withImages, inventoryById, substituteSpecIds);
+  const substituteRules = await fetchSubstituteRules(ctx.customerId, hasPos);
+  const customerOnSaleIds = new Set(withImages.map(c => c.id));
+  const classification = classifyZones(
+    withImages,
+    extendedCategoryMap,
+    customerOnSaleIds,
+    inventoryById,
+    substituteRules,
+  );
 
   // 按用户的 zoneAssignments 计算 zone 落位。注意:zone specs 同时保留在常规陈列 withImages 中,
   // 不再从常规池中扣除——同一规格会在 zone 行(带色条)与常规行各出现一次。
-  const zonePlacements = buildZonePlacements(classification, ctx.zoneAssignments ?? [], withImages);
+  const zonePlacements = buildZonePlacements(
+    classification,
+    ctx.zoneAssignments ?? [],
+    withImages,
+    extendedCategoryMap,
+  );
 
   return {
     specs: withImages,

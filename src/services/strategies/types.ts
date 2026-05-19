@@ -26,22 +26,42 @@ export interface SpecInventoryInfo {
 /** 专区 id 枚举（与前端 ZoneId 对齐） */
 export type ZoneId = 'industrialCoop' | 'substitute' | 'slowMoving' | 'nostalgia' | 'newProduct';
 
-/** 专区静态元信息：名称、图标、说明、优先组、色条颜色。 */
+/** 专区静态元信息：名称、图标、说明、优先组、色条颜色、展示模式。 */
 export interface ZoneMeta {
   id: ZoneId;
   label: string;
   icon: string;
   description: string;
-  /** 1=政策导向（最高优先），2=现实困难。柜台内排序按 (priorityRank ASC, specCount DESC) */
+  /** 1=政策导向（最高优先），2=现实困难。柜台内排序按 (priorityRank ASC, groupCount DESC) */
   priorityRank: 1 | 2;
   /** 行最左侧色条颜色，与前端预览/result 卡片 chip 颜色一致 */
   barColor: string;
+  /** 展示模式：
+   *   single  - 单品陈列(每包紧贴,按 id 切换处留 gap),用于 industrialCoop / slowMoving / newProduct
+   *   grouped - 分组陈列(主规格占双倍宽 + 替代规格紧随,组与组之间留 gap),用于 substitute / nostalgia
+   */
+  displayMode: 'single' | 'grouped';
 }
 
-/** /api/zones/available 返回的可用专区项（含 spec 列表）。 */
+/** 一组陈列单元：主规格 + N 个替代规格。
+ *  - substitute：primary = 脱销规格，alternatives = ref_co_purchase_rules Top 3 在售平替
+ *  - nostalgia： primary = 退市规格，alternatives = [successor]（在售）
+ *  - 未来 productUpgrade：primary = 老规格，alternatives = 新品/紧俏组合
+ */
+export interface ZoneGroup {
+  primary: ZoneSpec;
+  alternatives: ZoneSpec[];
+}
+
+/** /api/zones/available 返回的可用专区项。
+ *  - 单品专区：groups 缺省/空数组；specs 是该专区的规格列表；groupCount = specs.length
+ *  - 分组专区：groups 非空；specs 是 primary 列表(供前端预览展示)；groupCount = groups.length
+ */
 export interface AvailableZone extends ZoneMeta {
-  specCount: number;
+  /** 分组专区 = 组数; 单品专区 = 规格数。前端卡片显示 "X 组"。 */
+  groupCount: number;
   specs: ZoneSpec[];
+  groups?: ZoneGroup[];
 }
 
 /** 用户在 zone-select 页面给出的单条分配。row_count ≥ 1，单柜台累计不超过该柜台空闲层数。 */
@@ -51,19 +71,29 @@ export interface ZoneAssignment {
   row_count: number;
 }
 
-/** 策略层根据 zoneAssignments 计算的最终落位:具体哪些 spec 落到哪个柜台的几行。 */
+/** 策略层根据 zoneAssignments 计算的最终落位：具体哪些 group 落到哪个柜台的几行。 */
 export interface ZonePlacement {
   zoneId: ZoneId;
   /** 专区显示名（由 ZONE_META.label 填充，避免前端硬编码映射） */
   label: string;
   counterId: string;
   rowCount: number;
-  /** sortCategories 排好序的 zone specs。imageGen 据此绘制 zone 行。 */
-  specs: Category[];
+  /** sortCategories 排好序的陈列组。imageGen 据此绘制 zone 行。
+   *  - 单品专区：每个 group 的 alternatives 为 []，primary 即原 spec
+   *  - 分组专区：primary = 主规格，alternatives = 替代规格(已过滤为客户在售) */
+  groups: ZonePlacementGroup[];
+  /** 展示模式：从 ZONE_META.displayMode 透传。imageGen 据此决定 primary 单宽还是双宽。 */
+  displayMode: 'single' | 'grouped';
   barColor: string;
   priorityRank: number;
-  /** 用于柜台内子专区按品规数降序排序 */
-  specCount: number;
+  /** 用于柜台内子专区按组数(或单品专区规格数)降序排序 */
+  groupCount: number;
+}
+
+/** Category 形态的单组陈列单元(供 imageGen 绘制)。 */
+export interface ZonePlacementGroup {
+  primary: Category;
+  alternatives: Category[];
 }
 
 /** 专区单条规格的展示数据；不同专区按需填充扩展字段。 */
@@ -82,12 +112,14 @@ export interface ZoneSpec {
 }
 
 /** 常规客户专区分类结果。任一专区为空数组表示当前数据下无匹配规格。
- *  注：经 classifyZones 优先级 dedupe 后,同一 spec 只会出现在一个专区里。 */
+ *  注：经 classifyZones 优先级 dedupe 后,同一 spec 只会出现在一个专区里。
+ *  分组专区(substitute / nostalgia)的 dedupe 颗粒度按 primary id —— 同一 primary
+ *  最多归属一个分组专区;alternatives 不参与 dedupe(允许跨专区作为 primary 出现)。 */
 export interface ZoneClassification {
   industrialCoop: ZoneSpec[];  // 工商共育：is_industrial_coop = true
-  substitute: ZoneSpec[];      // 平替专区：脱销规格的 ref_co_purchase_rules 推荐
+  substitute: ZoneGroup[];     // 平替专区：{primary: 脱销规格, alternatives: Top 3 在售平替}
   slowMoving: ZoneSpec[];      // 滞销夸夸角：stock_days ≥ 30 且 stock_qty ≥ 3
-  nostalgia: ZoneSpec[];       // 怀旧专区：is_delisted = true
+  nostalgia: ZoneGroup[];      // 怀旧专区：{primary: 退市规格, alternatives: [在售 successor]}
   newProduct: ZoneSpec[];      // 尝鲜专区：launch_date 在窗口期内（一二类 24 月，其他 12 月）
 }
 
@@ -116,7 +148,7 @@ export class ValidationError extends Error {
   }
 }
 
-/** 4 个专区的元信息。供 /api/zones/available 返回 + 策略层落位查表 + imageGen 取色。 */
+/** 5 个专区的元信息。供 /api/zones/available 返回 + 策略层落位查表 + imageGen 取色/取展示模式。 */
 export const ZONE_META: Record<ZoneId, ZoneMeta> = {
   industrialCoop: {
     id: 'industrialCoop',
@@ -125,14 +157,16 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     description: '工商共育规格，独立行陈列以提升曝光',
     priorityRank: 1,
     barColor: '#1976D2',
+    displayMode: 'single',
   },
   substitute: {
     id: 'substitute',
     label: '平替专区',
     icon: '🔄',
-    description: '门店脱销规格的强弱适配推荐，把"好卖的不够卖"转为可售品规',
+    description: '门店脱销规格 + 其强弱适配平替组合陈列，把"好卖的不够卖"转为可售品规',
     priorityRank: 2,
     barColor: '#C2185B',
+    displayMode: 'grouped',
   },
   slowMoving: {
     id: 'slowMoving',
@@ -141,14 +175,16 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     description: '积压 ≥ 30 天且库存 ≥ 3 条的规格，集中展示便于推广',
     priorityRank: 2,
     barColor: '#F9A825',
+    displayMode: 'single',
   },
   nostalgia: {
     id: 'nostalgia',
     label: '怀旧专区',
     icon: '📷',
-    description: '已退市但门店仍有库存的经典规格',
+    description: '已退市但门店仍有库存的经典规格 + 其在售继任规格，按品牌替代成组陈列',
     priorityRank: 2,
     barColor: '#8D6E63',
+    displayMode: 'grouped',
   },
   newProduct: {
     id: 'newProduct',
@@ -157,6 +193,7 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     description: '近期上市的新规格（一/二类 24 月内，其他 12 月内）',
     priorityRank: 2,
     barColor: '#2D6A4F',
+    displayMode: 'single',
   },
 };
 

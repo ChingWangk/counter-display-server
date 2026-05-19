@@ -148,7 +148,7 @@ router.post('/', async (req: Request, res: Response) => {
       }
     }
 
-    // ---- 自动扩展:把每个柜台剩余空行用已启用的专区填满(specCount 优先,单柜台累计 ≤ 4) ----
+    // ---- 自动扩展:把每个柜台剩余空行用已启用的专区填满(groupCount 优先,上限即柜台空闲层数) ----
     const zonePlacements: ZonePlacement[] = autoExpandZonePlacements(
       initialZonePlacements,
       displayCounters,
@@ -170,9 +170,12 @@ router.post('/', async (req: Request, res: Response) => {
       const cabinet = displayCounters[i];
       const cabinetSpecs = specs.slice(offset, offset + allocations[i]);
       const cabinetZones = zonePlacements.filter(p => p.counterId === cabinet.id);
-      // zone usedSpecIds 也要并入,用于背柜主题匹配
+      // zone usedSpecIds 也要并入,用于背柜主题匹配:遍历 groups 收集 primary + alternatives
       for (const p of cabinetZones) {
-        for (const s of p.specs) usedSpecIds.add(s.id);
+        for (const g of p.groups) {
+          usedSpecIds.add(g.primary.id);
+          for (const a of g.alternatives) usedSpecIds.add(a.id);
+        }
       }
       const regRows = regularRowsByCounter.get(cabinet.id) || 0;
       const { imageUrl } = await generateCounterImage(cabinet, cabinetSpecs, regRows, cabinetZones, priceTagMap);

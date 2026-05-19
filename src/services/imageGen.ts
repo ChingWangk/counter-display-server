@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { createCanvas, loadImage } from 'canvas';
 import { Counter, Category } from '../types';
-import { ZonePlacement } from './strategies/types';
+import { ZonePlacement, ZonePlacementGroup } from './strategies/types';
 
 const PACK_WIDTH_CM = 6; // 每包宽度 cm
 export { PACK_WIDTH_CM };
@@ -31,16 +31,23 @@ const OUTPUT_DIR = '/www/wwwroot/47.103.65.4/images/generated';
 const CATEGORY_IMG_ROOT = '/www/wwwroot/47.103.65.4';
 
 // ---- 每行布局描述 ----
-interface ZoneRowSlot {
-  type: 'zone';
+// 单品专区行:specs 是扁平 Category[],每包紧贴,按 id 切换处留 gap(与常规行算法一致)
+interface ZoneSingleRowSlot {
+  type: 'zone-single';
   specs: Category[];
+  barColor: string;
+}
+// 分组专区行:groups 是 ZonePlacementGroup[],primary 占双倍宽 + alternatives 紧随,组与组之间留 gap
+interface ZoneGroupRowSlot {
+  type: 'zone-group';
+  groups: ZonePlacementGroup[];
   barColor: string;
 }
 interface RegularRowSlot {
   type: 'regular';
   specCount: number;
 }
-type RowSlot = ZoneRowSlot | RegularRowSlot;
+type RowSlot = ZoneSingleRowSlot | ZoneGroupRowSlot | RegularRowSlot;
 
 /**
  * 绘制"未收录"占位图：灰底 + 商品名前三字 + "未收录"
@@ -133,10 +140,12 @@ function staggeredDistribute(total: number, rows: number): number[] {
  *
  * 行布局自上而下:
  *   层 0..regularRows-1: 常规陈列(单包,行内 staggered 分布;行内空隙由 canvas 均分)
- *   层 regularRows..regularRows+zoneRowCount-1: 功能专区(单包,左侧 12px 色条)
+ *   层 regularRows..regularRows+zoneRowCount-1: 功能专区(左侧 12px 色条)
+ *     - 单品专区(industrialCoop/slowMoving/newProduct):每包紧贴,按 id 切换处留 gap
+ *     - 分组专区(substitute/nostalgia):primary 占双倍宽 + alternatives 紧随,组与组之间留 gap
  *   层 regularRows+zoneRowCount..levels-1: 空闲层(仅画层板,不放品规)
  *
- * 单柜台多个 zone 按 (priorityRank ASC, specCount DESC) 排序,每个占用 rowCount 行(已含 autoExpand)。
+ * 单柜台多个 zone 按 (priorityRank ASC, groupCount DESC) 排序,每个占用 rowCount 行(已含 autoExpand)。
  *
  * @param regularRows 常规陈列实际占用的行数(由 generate 顺序分配后确定)
  * @param zonePlacements 本柜台的专区落位(rowCount 已经过 autoExpand 扩展)
@@ -169,24 +178,59 @@ export async function generateCounterImage(
     regularRowLayouts = perRow.map(n => ({ type: 'regular' as const, specCount: n }));
   }
 
-  // ---- 2. 排序 zonePlacements,展开为 zone 行(每个 zone 占 rowCount 行) ----
+  // ---- 2. 排序 zonePlacements,展开为 zone 行 ----
+  //   - 单品专区:把 groups 中所有 primary 拉平为 Category[],staggered 分布到 rowCount 行
+  //   - 分组专区:整组不可拆,把 groups 按"行宽优先填满"分到 rowCount 行
   const sortedZones = (zonePlacements ?? [])
     .slice()
-    .sort((a, b) => a.priorityRank - b.priorityRank || b.specCount - a.specCount);
+    .sort((a, b) => a.priorityRank - b.priorityRank || b.groupCount - a.groupCount);
 
-  const zoneRowSlots: ZoneRowSlot[] = [];
+  const zoneRowSlots: (ZoneSingleRowSlot | ZoneGroupRowSlot)[] = [];
   for (const zone of sortedZones) {
-    const perRow = uniformDistribute(zone.specs.length, zone.rowCount);
-    let off = 0;
-    for (let r = 0; r < zone.rowCount; r++) {
-      const want = perRow[r];
-      const fit = Math.min(want, singleMaxPerRow);
-      zoneRowSlots.push({
-        type: 'zone',
-        specs: zone.specs.slice(off, off + fit),
-        barColor: zone.barColor,
-      });
-      off += want;
+    if (zone.displayMode === 'single') {
+      // 单品专区:拉平 groups 为 primary 列表,等同于旧的 specs
+      const flatSpecs = zone.groups.map(g => g.primary);
+      const perRow = uniformDistribute(flatSpecs.length, zone.rowCount);
+      let off = 0;
+      for (let r = 0; r < zone.rowCount; r++) {
+        const want = perRow[r];
+        const fit = Math.min(want, singleMaxPerRow);
+        zoneRowSlots.push({
+          type: 'zone-single',
+          specs: flatSpecs.slice(off, off + fit),
+          barColor: zone.barColor,
+        });
+        off += want;
+      }
+    } else {
+      // 分组专区:按行宽贪心分组,整组不可拆,超出本行行宽就换行
+      //   primary 占 2 包宽, alternatives 各占 1 包宽 → 一组宽度 = 2 + alts.length
+      const rowsOfGroups: ZonePlacementGroup[][] = [];
+      let curRow: ZonePlacementGroup[] = [];
+      let curWidth = 0;
+      for (const g of zone.groups) {
+        const gWidth = 2 + g.alternatives.length;
+        if (gWidth > singleMaxPerRow) continue;  // 一组都放不下整行,跳过该组
+        if (curWidth + gWidth > singleMaxPerRow && curRow.length > 0) {
+          rowsOfGroups.push(curRow);
+          curRow = [];
+          curWidth = 0;
+        }
+        curRow.push(g);
+        curWidth += gWidth;
+      }
+      if (curRow.length > 0) rowsOfGroups.push(curRow);
+
+      // 把 rowsOfGroups 映射到 zone.rowCount 行:
+      //   - 若 rowsOfGroups.length <= rowCount:按顺序填,末行 padding 空行(只有色条)
+      //   - 若 > rowCount:超出部分丢弃(autoExpand 应该已经给够行数,正常不会触发)
+      for (let r = 0; r < zone.rowCount; r++) {
+        zoneRowSlots.push({
+          type: 'zone-group',
+          groups: rowsOfGroups[r] ?? [],
+          barColor: zone.barColor,
+        });
+      }
     }
   }
   const zoneRowCount = zoneRowSlots.length;
@@ -217,15 +261,23 @@ export async function generateCounterImage(
   ctx.fillStyle = '#F5F0E8';
   ctx.fillRect(0, 0, canvasW, canvasH);
 
-  // ---- 逐行绘制品规(空闲层跳过,只保留背景与层板) ----
-  // 同 id 品规在行内紧贴;剩余空间均分到"不同 id 之间"的间隔。
+  // ---- 逐行绘制品规 ----
+  // 常规 / 单品专区:同 id 紧贴,按 id 切换处加 gap
+  // 分组专区:组内紧贴(primary 双倍宽 + alts),组与组之间加 gap
   let regularIdx = 0;
   for (let row = 0; row < levels; row++) {
     const slot = rowSlots[row];
     if (!slot) continue;
 
+    const baseY = PADDING_TOP + row * (CELL_H + SHELF_BOARD_H);
+
+    if (slot.type === 'zone-group') {
+      await drawGroupedZoneRow(ctx, slot.groups, canvasW, baseY, priceTagMap);
+      continue;
+    }
+
     let rowSpecs: Category[];
-    if (slot.type === 'zone') {
+    if (slot.type === 'zone-single') {
       rowSpecs = slot.specs;
     } else {
       rowSpecs = placedRegular.slice(regularIdx, regularIdx + slot.specCount);
@@ -233,45 +285,7 @@ export async function generateCounterImage(
     }
     if (rowSpecs.length === 0) continue;
 
-    const baseY = PADDING_TOP + row * (CELL_H + SHELF_BOARD_H);
-
-    let diffTransitions = 0;
-    for (let i = 1; i < rowSpecs.length; i++) {
-      if (rowSpecs[i].id !== rowSpecs[i - 1].id) diffTransitions++;
-    }
-
-    const totalPackW = rowSpecs.length * CELL_W;
-    const gapBudget = Math.max(canvasW - totalPackW, 0);
-    const interGap = diffTransitions > 0 ? gapBudget / diffTransitions : 0;
-    const startX = diffTransitions > 0 ? 0 : (canvasW - totalPackW) / 2;
-
-    let cursor = startX;
-    for (let col = 0; col < rowSpecs.length; col++) {
-      if (col > 0) {
-        cursor += CELL_W;
-        if (rowSpecs[col].id !== rowSpecs[col - 1].id) cursor += interGap;
-      }
-
-      const imgPath = path.join(CATEGORY_IMG_ROOT, rowSpecs[col].imageUrl);
-      const hasFile = fs.existsSync(imgPath);
-
-      if (hasFile) {
-        try {
-          const img = await loadImage(imgPath);
-          ctx.drawImage(img, cursor, baseY, CELL_W, CELL_H);
-        } catch {
-          drawPlaceholder(ctx, rowSpecs[col].name, cursor, baseY, CELL_W, CELL_H);
-        }
-      } else {
-        drawPlaceholder(ctx, rowSpecs[col].name, cursor, baseY, CELL_W, CELL_H);
-      }
-
-      // 价签:命中白名单时贴底部(显示售价低于杨浦区均价的规格)
-      const price = priceTagMap?.get(rowSpecs[col].id);
-      if (price !== undefined) {
-        drawPriceTag(ctx, price, cursor, baseY, CELL_W, CELL_H);
-      }
-    }
+    await drawFlatRow(ctx, rowSpecs, canvasW, baseY, priceTagMap);
   }
 
   // ---- 绘制层板 ----
@@ -286,7 +300,7 @@ export async function generateCounterImage(
   // ---- 绘制 zone 行左侧色条(最后绘制以盖在烟包之上,确保可见) ----
   for (let row = zoneStart; row < zoneStart + zoneRowCount; row++) {
     const slot = rowSlots[row];
-    if (!slot || slot.type !== 'zone') continue;
+    if (!slot || (slot.type !== 'zone-single' && slot.type !== 'zone-group')) continue;
     const baseY = PADDING_TOP + row * (CELL_H + SHELF_BOARD_H);
     ctx.fillStyle = slot.barColor;
     ctx.fillRect(0, baseY, ZONE_BAR_WIDTH, CELL_H);
@@ -303,4 +317,103 @@ export async function generateCounterImage(
   fs.writeFileSync(outputPath, buffer);
 
   return { imageUrl: `/images/generated/${filename}`, usedCount };
+}
+
+/**
+ * 绘制扁平行(常规 + 单品专区):同 id 紧贴,按 id 切换处加 gap
+ */
+async function drawFlatRow(
+  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
+  rowSpecs: Category[],
+  canvasW: number,
+  baseY: number,
+  priceTagMap?: ReadonlyMap<string, number>,
+): Promise<void> {
+  let diffTransitions = 0;
+  for (let i = 1; i < rowSpecs.length; i++) {
+    if (rowSpecs[i].id !== rowSpecs[i - 1].id) diffTransitions++;
+  }
+
+  const totalPackW = rowSpecs.length * CELL_W;
+  const gapBudget = Math.max(canvasW - totalPackW, 0);
+  const interGap = diffTransitions > 0 ? gapBudget / diffTransitions : 0;
+  const startX = diffTransitions > 0 ? 0 : (canvasW - totalPackW) / 2;
+
+  let cursor = startX;
+  for (let col = 0; col < rowSpecs.length; col++) {
+    if (col > 0) {
+      cursor += CELL_W;
+      if (rowSpecs[col].id !== rowSpecs[col - 1].id) cursor += interGap;
+    }
+    await drawSpec(ctx, rowSpecs[col], cursor, baseY, CELL_W, CELL_H, priceTagMap);
+  }
+}
+
+/**
+ * 绘制分组专区行:每组 primary 占 2*CELL_W 双倍宽,alternatives 各占 CELL_W;
+ * 组内紧贴,组与组之间留 gap = gapBudget / (groups.length - 1)。
+ *
+ * primary 双倍宽的画法:把 primary 图片拉伸到 2*CELL_W × CELL_H(loadImage 保持原宽高比)。
+ * 价签按"双倍宽"贴满 primary 底部。
+ */
+async function drawGroupedZoneRow(
+  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
+  groups: ZonePlacementGroup[],
+  canvasW: number,
+  baseY: number,
+  priceTagMap?: ReadonlyMap<string, number>,
+): Promise<void> {
+  if (groups.length === 0) return;
+
+  const groupWidths = groups.map(g => (2 + g.alternatives.length) * CELL_W);
+  const totalGroupW = groupWidths.reduce((s, w) => s + w, 0);
+  const gapBudget = Math.max(canvasW - totalGroupW, 0);
+  const interGap = groups.length > 1 ? gapBudget / (groups.length - 1) : 0;
+  const startX = groups.length > 1 ? 0 : (canvasW - totalGroupW) / 2;
+
+  let cursor = startX;
+  for (let gi = 0; gi < groups.length; gi++) {
+    if (gi > 0) cursor += interGap;
+    const g = groups[gi];
+    // primary: 双倍宽
+    await drawSpec(ctx, g.primary, cursor, baseY, CELL_W * 2, CELL_H, priceTagMap);
+    cursor += CELL_W * 2;
+    // alternatives: 单倍宽,紧贴
+    for (const alt of g.alternatives) {
+      await drawSpec(ctx, alt, cursor, baseY, CELL_W, CELL_H, priceTagMap);
+      cursor += CELL_W;
+    }
+  }
+}
+
+/**
+ * 画单个 spec(图片或占位)+ 价签。w/h 为绘制目标尺寸,允许非 CELL_W × CELL_H(供 primary 双倍宽)。
+ */
+async function drawSpec(
+  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
+  spec: Category,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  priceTagMap?: ReadonlyMap<string, number>,
+): Promise<void> {
+  const imgPath = path.join(CATEGORY_IMG_ROOT, spec.imageUrl);
+  const hasFile = fs.existsSync(imgPath);
+
+  if (hasFile) {
+    try {
+      const img = await loadImage(imgPath);
+      ctx.drawImage(img, x, y, w, h);
+    } catch {
+      drawPlaceholder(ctx, spec.name, x, y, w, h);
+    }
+  } else {
+    drawPlaceholder(ctx, spec.name, x, y, w, h);
+  }
+
+  const price = priceTagMap?.get(spec.id);
+  if (price !== undefined) {
+    drawPriceTag(ctx, price, x, y, w, h);
+  }
 }

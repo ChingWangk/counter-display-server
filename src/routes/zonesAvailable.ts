@@ -4,20 +4,22 @@ import pool from '../db';
 import { Category } from '../types';
 import { getExtendedCategoryMap } from '../services/categoryCatalog';
 import { classifyZones } from '../services/strategies/zones';
-import { fetchSubstituteSpecIds, getCustomerHasPos } from '../services/strategies/substitute';
+import { fetchSubstituteRules, getCustomerHasPos } from '../services/strategies/substitute';
 import {
   AvailableZone,
   SpecInventoryInfo,
   ZONE_META,
   ZONE_PRIORITY_ORDER,
   ZoneClassification,
+  ZoneGroup,
   ZoneId,
+  ZoneSpec,
 } from '../services/strategies/types';
 
 /**
  * POST /api/zones/available
  *
- * 在用户进入 zone-select 页面时调用,返回当前模式下可用的专区清单(含品规数)。
+ * 在用户进入 zone-select 页面时调用,返回当前模式下可用的专区清单(含组数/规格数)。
  * 前端用此结果展示专区卡片,用户选启用/分配,然后调 /api/generate。
  *
  * - smart 模式:从 cust_inventory 拉客户在售品规
@@ -106,27 +108,45 @@ router.post('/', async (req: Request, res: Response) => {
       ? sourceSpecs.length
       : (categories?.length ?? 0);
 
-    // ---- 2. 拉平替候选 spec_id 集合（仅 smart + 有 customer_id 时生效）----
-    // 与客户在售品规取交集前,先获取所有候选;classifyZones 内部用 substituteSpecIds 过滤 sourceSpecs。
-    let substituteSpecIds = new Set<string>();
+    // ---- 2. 拉平替候选 spec_id_a→spec_id_b[] 映射（仅 smart + 有 customer_id 时生效）----
+    let substituteRules = new Map<string, string[]>();
     if (mode === 'smart' && customer_id) {
       const hasPos = await getCustomerHasPos(customer_id);
-      substituteSpecIds = await fetchSubstituteSpecIds(customer_id, hasPos);
+      substituteRules = await fetchSubstituteRules(customer_id, hasPos);
     }
 
     // ---- 3. 分类 + dedupe ----
-    const zoneCls: ZoneClassification = classifyZones(sourceSpecs, inventoryById, substituteSpecIds);
+    const customerOnSaleIds = new Set(sourceSpecs.map(c => c.id));
+    const zoneCls: ZoneClassification = classifyZones(
+      sourceSpecs,
+      extendedMap,
+      customerOnSaleIds,
+      inventoryById,
+      substituteRules,
+    );
 
-    // ---- 4. 转换为 AvailableZone[],只保留 specCount > 0 ----
+    // ---- 4. 转换为 AvailableZone[],只保留 groupCount > 0 ----
     const result: AvailableZone[] = [];
     for (const zoneId of ZONE_PRIORITY_ORDER) {
-      const specs = zoneCls[zoneId as keyof ZoneClassification];
-      if (specs.length === 0) continue;
-      result.push({
-        ...ZONE_META[zoneId as ZoneId],
-        specCount: specs.length,
-        specs,
-      });
+      const meta = ZONE_META[zoneId as ZoneId];
+      if (meta.displayMode === 'single') {
+        const specs = zoneCls[zoneId as keyof ZoneClassification] as ZoneSpec[];
+        if (specs.length === 0) continue;
+        result.push({
+          ...meta,
+          groupCount: specs.length,
+          specs,
+        });
+      } else {
+        const groups = zoneCls[zoneId as keyof ZoneClassification] as ZoneGroup[];
+        if (groups.length === 0) continue;
+        result.push({
+          ...meta,
+          groupCount: groups.length,
+          specs: groups.map(g => g.primary),  // 卡片预览用 primary 列表
+          groups,
+        });
+      }
     }
 
     res.json({ success: true, zones: result, customerSpecCount });

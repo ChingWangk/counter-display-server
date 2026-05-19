@@ -10,8 +10,10 @@ import { SelectionContext, SelectionResult, StrategyFn } from './types';
  *
  * 专区支持:若 ctx.zoneAssignments 非空,按 classifyZones 命中结果落位 zonePlacements。
  * 注意:zone specs 同时保留在常规陈列区,不再从 sorted 中扣除——同一规格会在 zone 行
- * (带色条)与常规行各出现一次。manual 模式无 inventory,滞销专区会自然返回 [];
- * 其他专区(工商共育/怀旧/尝鲜)依然可用。
+ * (带色条)与常规行各出现一次。manual 模式无 inventory:
+ *  - 滞销专区会自然返回 [](无库存数据)
+ *  - 平替专区也返回 [](manual 模式不查 ref_co_purchase_rules,无脱销源)
+ *  - 工商共育 / 怀旧 / 尝鲜 依然可用,nostalgia 依赖 successor 是否在用户已选规格内
  */
 export const manualStrategy: StrategyFn = async (ctx: SelectionContext): Promise<SelectionResult> => {
   const ids: string[] = ctx.requestCategories.map(c => c.id);
@@ -25,10 +27,16 @@ export const manualStrategy: StrategyFn = async (ctx: SelectionContext): Promise
 
   const sorted = sortCategories(available);
 
-  // 专区分类(无 inventory,slowMoving 返回 [])+ 按 zoneAssignments 落位
+  // 专区分类(无 inventory + 无 substituteRules,slowMoving 和 substitute 返回 [])+ 按 zoneAssignments 落位
   if (ctx.zoneAssignments && ctx.zoneAssignments.length > 0) {
-    const classification = classifyZones(sorted);
-    const zonePlacements = buildZonePlacements(classification, ctx.zoneAssignments, sorted);
+    const customerOnSaleIds = new Set(sorted.map(c => c.id));
+    const classification = classifyZones(sorted, extendedCategoryMap, customerOnSaleIds);
+    const zonePlacements = buildZonePlacements(
+      classification,
+      ctx.zoneAssignments,
+      sorted,
+      extendedCategoryMap,
+    );
     return { specs: sorted, usedSpecIds, zonePlacements };
   }
 
