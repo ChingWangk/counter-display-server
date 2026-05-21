@@ -24,7 +24,36 @@ export interface SpecInventoryInfo {
 }
 
 /** 专区 id 枚举（与前端 ZoneId 对齐） */
-export type ZoneId = 'industrialCoop' | 'substitute' | 'slowMoving' | 'nostalgia' | 'newProduct';
+export type ZoneId = 'industrialCoop' | 'productUpgrade' | 'substitute' | 'slowMoving' | 'nostalgia' | 'newProduct' | 'festivalSeason';
+
+/** 节日 id 枚举(仅 festivalSeason 专区使用,用户在 zone-select 卡片上手动选择)。 */
+export type FestivalId =
+  | 'newYear'         // 元旦
+  | 'springFestival'  // 春节
+  | 'lanternFestival' // 元宵
+  | 'qingming'        // 清明
+  | 'dragonBoat'      // 端午
+  | 'midAutumn'       // 中秋
+  | 'nationalDay'     // 国庆
+  | 'chongyang';      // 重阳
+
+export interface FestivalMeta {
+  id: FestivalId;
+  label: string;
+  icon: string;
+}
+
+/** 8 个传统节日的元信息,供前端 picker 渲染。 */
+export const FESTIVAL_META: Record<FestivalId, FestivalMeta> = {
+  newYear:         { id: 'newYear',         label: '元旦', icon: '🎊' },
+  springFestival:  { id: 'springFestival',  label: '春节', icon: '🧧' },
+  lanternFestival: { id: 'lanternFestival', label: '元宵', icon: '🏮' },
+  qingming:        { id: 'qingming',        label: '清明', icon: '🌳' },
+  dragonBoat:      { id: 'dragonBoat',      label: '端午', icon: '🐉' },
+  midAutumn:       { id: 'midAutumn',       label: '中秋', icon: '🌕' },
+  nationalDay:     { id: 'nationalDay',     label: '国庆', icon: '🇨🇳' },
+  chongyang:       { id: 'chongyang',       label: '重阳', icon: '🌼' },
+};
 
 /** 专区静态元信息：名称、图标、说明、优先组、色条颜色、展示模式。 */
 export interface ZoneMeta {
@@ -32,21 +61,27 @@ export interface ZoneMeta {
   label: string;
   icon: string;
   description: string;
-  /** 1=政策导向（最高优先），2=现实困难。柜台内排序按 (priorityRank ASC, groupCount DESC) */
+  /** 1=政策导向（最高优先），2=现实困难/趋势顺应。柜台内排序按 (priorityRank ASC, groupCount DESC) */
   priorityRank: 1 | 2;
-  /** 行最左侧色条颜色，与前端预览/result 卡片 chip 颜色一致 */
+  /** 行最左侧色条颜色，与前端预览/result 卡片 chip 颜色一致。backFestival 不走 imageGen,此字段仅用于前端 chip。 */
   barColor: string;
   /** 展示模式：
-   *   single  - 单品陈列(每包紧贴,按 id 切换处留 gap),用于 industrialCoop / slowMoving / newProduct
-   *   grouped - 分组陈列(主规格占双倍宽 + 替代规格紧随,组与组之间留 gap),用于 substitute / nostalgia
+   *   single        - 单品陈列(每包紧贴,按 id 切换处留 gap),用于 industrialCoop / slowMoving / newProduct
+   *   grouped       - 分组陈列(primary + 每个 alternative 均单包,组与组之间留 gap),用于 substitute / nostalgia / productUpgrade
+   *   backFestival  - 背柜节日单图直出(整张背柜 = 1 张预拍图,不走 imageGen 绘制流程),用于 festivalSeason
    */
-  displayMode: 'single' | 'grouped';
+  displayMode: 'single' | 'grouped' | 'backFestival';
+  /** 适用的柜台类型。
+   *   displayCabinet - 前柜 / 吊柜(默认),走 imageGen 顶部 zone 行
+   *   backCabinet    - 背柜(仅 festivalSeason),走 generate.ts 背柜分支单图直出
+   */
+  targetCabinetType: 'displayCabinet' | 'backCabinet';
 }
 
 /** 一组陈列单元：主规格 + N 个替代规格。
  *  - substitute：primary = 脱销规格，alternatives = 业务排序后 Top 2 在售平替
  *  - nostalgia： primary = 退市规格，alternatives = [successor]（在售）
- *  - 未来 productUpgrade：primary = 老规格，alternatives = 新品/紧俏组合
+ *  - productUpgrade：primary = 上海集团新品(launch_date 在窗口期), alternatives = 同产地/同品牌的集团紧俏组合 Top 2
  */
 export interface ZoneGroup {
   primary: ZoneSpec;
@@ -64,11 +99,14 @@ export interface AvailableZone extends ZoneMeta {
   groups?: ZoneGroup[];
 }
 
-/** 用户在 zone-select 页面给出的单条分配。row_count ≥ 1，单柜台累计不超过该柜台空闲层数。 */
+/** 用户在 zone-select 页面给出的单条分配。row_count ≥ 1，单柜台累计不超过该柜台空闲层数。
+ *  festivalSeason 的 row_count 实际不被消费(背柜单图直出),前端可恒传 1;但 festival_id 必填。 */
 export interface ZoneAssignment {
   zone_id: ZoneId;
   counter_id: string;
   row_count: number;
+  /** 仅 zone_id === 'festivalSeason' 时填充,选哪个节日。 */
+  festival_id?: FestivalId;
 }
 
 /** 策略层根据 zoneAssignments 计算的最终落位：具体哪些 group 落到哪个柜台的几行。 */
@@ -82,8 +120,9 @@ export interface ZonePlacement {
    *  - 单品专区：每个 group 的 alternatives 为 []，primary 即原 spec
    *  - 分组专区：primary = 主规格，alternatives = 替代规格(已过滤为客户在售) */
   groups: ZonePlacementGroup[];
-  /** 展示模式：从 ZONE_META.displayMode 透传。imageGen 据此决定 primary 单宽还是双宽。 */
-  displayMode: 'single' | 'grouped';
+  /** 展示模式：从 ZONE_META.displayMode 透传。imageGen 据此决定 primary 单宽还是双宽。
+   *  backFestival 走 generate.ts 背柜分支单图直出,不进入 imageGen;仅用于响应 + 前端 result chip 渲染。 */
+  displayMode: 'single' | 'grouped' | 'backFestival';
   barColor: string;
   priorityRank: number;
   /** 用于柜台内子专区按组数(或单品专区规格数)降序排序 */
@@ -117,6 +156,7 @@ export interface ZoneSpec {
  *  最多归属一个分组专区;alternatives 不参与 dedupe(允许跨专区作为 primary 出现)。 */
 export interface ZoneClassification {
   industrialCoop: ZoneSpec[];  // 工商共育：is_industrial_coop = true
+  productUpgrade: ZoneGroup[]; // 产品升级：上海集团新品(launch_date 在窗口期) + 同产地/同品牌的集团紧俏组合 Top 2
   substitute: ZoneGroup[];     // 平替专区：{primary: 脱销规格, alternatives: 业务排序后 Top 2 在售平替}
   slowMoving: ZoneSpec[];      // 滞销夸夸角：stock_days ≥ 30 且 stock_qty ≥ 3
   nostalgia: ZoneGroup[];      // 怀旧专区：{primary: 退市规格, alternatives: [在售 successor]}
@@ -148,7 +188,7 @@ export class ValidationError extends Error {
   }
 }
 
-/** 5 个专区的元信息。供 /api/zones/available 返回 + 策略层落位查表 + imageGen 取色/取展示模式。 */
+/** 7 个专区的元信息。供 /api/zones/available 返回 + 策略层落位查表 + imageGen 取色/取展示模式。 */
 export const ZONE_META: Record<ZoneId, ZoneMeta> = {
   industrialCoop: {
     id: 'industrialCoop',
@@ -158,6 +198,17 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     priorityRank: 1,
     barColor: '#1976D2',
     displayMode: 'single',
+    targetCabinetType: 'displayCabinet',
+  },
+  productUpgrade: {
+    id: 'productUpgrade',
+    label: '产品升级',
+    icon: '📈',
+    description: '上海集团新品搭配同产地/同品牌的集团紧俏组合陈列，借紧俏带动新品销量',
+    priorityRank: 1,
+    barColor: '#00838F',
+    displayMode: 'grouped',
+    targetCabinetType: 'displayCabinet',
   },
   substitute: {
     id: 'substitute',
@@ -167,6 +218,7 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     priorityRank: 2,
     barColor: '#C2185B',
     displayMode: 'grouped',
+    targetCabinetType: 'displayCabinet',
   },
   slowMoving: {
     id: 'slowMoving',
@@ -176,6 +228,7 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     priorityRank: 2,
     barColor: '#F9A825',
     displayMode: 'single',
+    targetCabinetType: 'displayCabinet',
   },
   nostalgia: {
     id: 'nostalgia',
@@ -185,6 +238,7 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     priorityRank: 2,
     barColor: '#8D6E63',
     displayMode: 'grouped',
+    targetCabinetType: 'displayCabinet',
   },
   newProduct: {
     id: 'newProduct',
@@ -194,16 +248,31 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     priorityRank: 2,
     barColor: '#2D6A4F',
     displayMode: 'single',
+    targetCabinetType: 'displayCabinet',
+  },
+  festivalSeason: {
+    id: 'festivalSeason',
+    label: '节日季节',
+    icon: '🎁',
+    description: '节日 + 当季季节匹配，按高价烟批发量 + 季节优先(夏秋爆珠薄荷 / 冬春短支)选图，整张背柜单图直出',
+    priorityRank: 2,
+    barColor: '#9C27B0',
+    displayMode: 'backFestival',
+    targetCabinetType: 'backCabinet',
   },
 };
 
 /** 用于 dedupe 和 classifyZones 内部顺序的 ZoneId 优先级数组。
- *  industrialCoop 是 1 组（政策导向），其余四个为 2 组（现实困难/趋势顺应）。
- *  substitute 排在 slowMoving 之前：平替推荐的是"卖得好但缺货"的强适配品，比滞销更值得优先曝光。 */
+ *  industrialCoop / productUpgrade 是 rank=1 组（政策导向，"工商共育" 和 "产品升级"），其余为 rank=2 组（现实困难/趋势顺应）。
+ *  productUpgrade 紧跟 industrialCoop：同 rank 但 dedupe 先到先得，避免上海集团新品被 newProduct 抢走。
+ *  substitute 排在 slowMoving 之前：平替推荐的是"卖得好但缺货"的强适配品，比滞销更值得优先曝光。
+ *  festivalSeason 排在最后:它不参与 dedupe(数据源与其他 zone 完全不同 — 基于图片目录 + 批发量 + 季节),仅作为 zonesAvailable / zone-select 的展示顺位。 */
 export const ZONE_PRIORITY_ORDER: ZoneId[] = [
   'industrialCoop',
+  'productUpgrade',
   'substitute',
   'slowMoving',
   'nostalgia',
   'newProduct',
+  'festivalSeason',
 ];

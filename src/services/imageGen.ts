@@ -17,8 +17,12 @@ const SHELF_BOARD_H = 12;
 const SHELF_BOARD_COLOR = '#8B6914';
 const SHELF_BOARD_SHADOW = '#6B4F10';
 
-// 专区左侧色条宽度
-const ZONE_BAR_WIDTH = 12;
+// 专区左侧说明标签宽度。标签写竖排专区名,左侧带粗色条强化,
+// 在陈列区域外侧延伸,不挤占柜台陈列容量(包数)。
+const ZONE_LABEL_W = 40;
+const ZONE_LABEL_BAR_W = 4;   // 标签左侧粗色条宽度
+const ZONE_LABEL_FONT_SIZE = 18;
+const ZONE_LABEL_LINE_H = 24; // 竖排每字垂直占位
 
 // 分组专区组与组之间至少留出的空隙(像素)。
 // bin-packing 时把此值计入下一组的占用宽度,避免组与组紧贴显得拥挤。
@@ -39,19 +43,25 @@ const CATEGORY_IMG_ROOT = '/www/wwwroot/47.103.65.4';
 interface ZoneSingleRowSlot {
   type: 'zone-single';
   specs: Category[];
-  barColor: string;
 }
-// 分组专区行:groups 是 ZonePlacementGroup[],primary 占双倍宽 + alternatives 紧随,组与组之间留 gap
+// 分组专区行:groups 是 ZonePlacementGroup[],primary + alternatives 均单包陈列,组与组之间留 gap
 interface ZoneGroupRowSlot {
   type: 'zone-group';
   groups: ZonePlacementGroup[];
-  barColor: string;
 }
 interface RegularRowSlot {
   type: 'regular';
   specCount: number;
 }
 type RowSlot = ZoneSingleRowSlot | ZoneGroupRowSlot | RegularRowSlot;
+
+// 同一专区跨 rowCount 行的合并标签信息:左侧画一条贯穿全部行的竖向 label
+interface ZoneLabelBlock {
+  startRowInZone: number;  // 在 zoneRowSlots 中的起始 index (0-based)
+  rowCount: number;
+  label: string;
+  barColor: string;
+}
 
 /**
  * 绘制"未收录"占位图：灰底 + 商品名前三字 + "未收录"
@@ -142,13 +152,16 @@ function staggeredDistribute(total: number, rows: number): number[] {
 /**
  * 为单个柜台生成陈列图片
  *
+ * 整张画布:左侧 ZONE_LABEL_W 宽的"专区标签栏" + 右侧陈列区域(width = counter.length × PX_PER_CM)。
+ * 标签栏不挤占陈列容量(包数),仅在画布外侧延伸。常规行对应的标签栏区域为空白米白底。
+ *
  * 行布局自上而下:
  *   层 0..regularRows-1: 常规陈列(单包,行内 staggered 分布;行内空隙由 canvas 均分)
- *   层 regularRows..regularRows+zoneRowCount-1: 功能专区(左侧 12px 色条)
+ *   层 regularRows..regularRows+zoneRowCount-1: 功能专区(左侧标签栏画专区名,同专区跨多行合并为一条)
  *     - 单品专区(industrialCoop/slowMoving/newProduct):
  *       · industrialCoop / newProduct:自适应密度,稀疏时双包陈列,否则单包并保证至少 1 包宽 gap budget
  *       · slowMoving:始终单包,cap = packsPerRow - 1
- *     - 分组专区(substitute/nostalgia):primary 单包 + 每个 alternative 双包陈列,
+ *     - 分组专区(substitute/nostalgia):primary + 每个 alternative 均单包陈列,
  *       组与组之间至少留 MIN_INTER_GROUP_GAP_PX 宽空隙
  *   层 regularRows+zoneRowCount..levels-1: 空闲层(仅画层板,不放品规)
  *
@@ -165,7 +178,8 @@ export async function generateCounterImage(
   zonePlacements?: ZonePlacement[],
   priceTagMap?: ReadonlyMap<string, number>,
 ): Promise<{ imageUrl: string; usedCount: number }> {
-  const canvasW = Math.round(counter.length * PX_PER_CM);
+  const displayAreaW = Math.round(counter.length * PX_PER_CM);
+  const canvasW = ZONE_LABEL_W + displayAreaW;
   const levels = counter.levels;
 
   if (canvasW <= 0 || levels <= 0) {
@@ -193,7 +207,9 @@ export async function generateCounterImage(
     .sort((a, b) => a.priorityRank - b.priorityRank || b.groupCount - a.groupCount);
 
   const zoneRowSlots: (ZoneSingleRowSlot | ZoneGroupRowSlot)[] = [];
+  const zoneLabelBlocks: ZoneLabelBlock[] = [];
   for (const zone of sortedZones) {
+    const startRowInZone = zoneRowSlots.length;
     if (zone.displayMode === 'single') {
       // 单品专区:拉平 groups 为 primary 列表,等同于旧的 specs
       const flatSpecs = zone.groups.map(g => g.primary);
@@ -221,24 +237,23 @@ export async function generateCounterImage(
         zoneRowSlots.push({
           type: 'zone-single',
           specs: renderSpecs,
-          barColor: zone.barColor,
         });
       }
     } else {
       // 分组专区:按行宽贪心分组,整组不可拆,超出本行行宽就换行
-      //   primary 占 1 包宽(单包陈列), 每个 alternative 占 2 包宽(双包陈列)
-      //   一组宽度 = 1 + 2 * alts.length(2 个替代 → 5 包宽; 1 个替代 → 3 包宽,残缺组已排到末尾)
+      //   primary 和每个 alternative 均占 1 包宽(单包陈列)
+      //   一组宽度 = 1 + alts.length(2 个替代 → 3 包宽; 1 个替代 → 2 包宽,残缺组已排到末尾)
       //   组与组之间预留 MIN_INTER_GROUP_GAP_PX,bin-packing 时把它计入下一组占用
       const rowsOfGroups: ZonePlacementGroup[][] = [];
       let curRow: ZonePlacementGroup[] = [];
       let curWidthPx = 0;
       for (const g of zone.groups) {
-        const gWidthPx = (1 + 2 * g.alternatives.length) * CELL_W;
-        if (gWidthPx > canvasW) continue;  // 一组都放不下整行,跳过
+        const gWidthPx = (1 + g.alternatives.length) * CELL_W;
+        if (gWidthPx > displayAreaW) continue;  // 一组都放不下整行,跳过
         const need = curRow.length === 0
           ? gWidthPx
           : curWidthPx + MIN_INTER_GROUP_GAP_PX + gWidthPx;
-        if (need > canvasW) {
+        if (need > displayAreaW) {
           rowsOfGroups.push(curRow);
           curRow = [g];
           curWidthPx = gWidthPx;
@@ -250,16 +265,21 @@ export async function generateCounterImage(
       if (curRow.length > 0) rowsOfGroups.push(curRow);
 
       // 把 rowsOfGroups 映射到 zone.rowCount 行:
-      //   - 若 rowsOfGroups.length <= rowCount:按顺序填,末行 padding 空行(只有色条)
+      //   - 若 rowsOfGroups.length <= rowCount:按顺序填,末行只画左侧 label(无陈列)
       //   - 若 > rowCount:超出部分丢弃(autoExpand 应该已给够行数,正常不会触发)
       for (let r = 0; r < zone.rowCount; r++) {
         zoneRowSlots.push({
           type: 'zone-group',
           groups: rowsOfGroups[r] ?? [],
-          barColor: zone.barColor,
         });
       }
     }
+    zoneLabelBlocks.push({
+      startRowInZone,
+      rowCount: zone.rowCount,
+      label: zone.label,
+      barColor: zone.barColor,
+    });
   }
   const zoneRowCount = zoneRowSlots.length;
 
@@ -291,7 +311,8 @@ export async function generateCounterImage(
 
   // ---- 逐行绘制品规 ----
   // 常规 / 单品专区:同 id 紧贴,按 id 切换处加 gap
-  // 分组专区:组内紧贴(primary 双倍宽 + alts),组与组之间加 gap
+  // 分组专区:组内紧贴(primary + alts 均单包),组与组之间加 gap
+  // 所有绘制都偏移 ZONE_LABEL_W,把陈列区域限制在 [ZONE_LABEL_W, canvasW] 内
   let regularIdx = 0;
   for (let row = 0; row < levels; row++) {
     const slot = rowSlots[row];
@@ -300,7 +321,7 @@ export async function generateCounterImage(
     const baseY = PADDING_TOP + row * (CELL_H + SHELF_BOARD_H);
 
     if (slot.type === 'zone-group') {
-      await drawGroupedZoneRow(ctx, slot.groups, canvasW, baseY, priceTagMap);
+      await drawGroupedZoneRow(ctx, slot.groups, ZONE_LABEL_W, displayAreaW, baseY, priceTagMap);
       continue;
     }
 
@@ -313,10 +334,10 @@ export async function generateCounterImage(
     }
     if (rowSpecs.length === 0) continue;
 
-    await drawFlatRow(ctx, rowSpecs, canvasW, baseY, priceTagMap);
+    await drawFlatRow(ctx, rowSpecs, ZONE_LABEL_W, displayAreaW, baseY, priceTagMap);
   }
 
-  // ---- 绘制层板 ----
+  // ---- 绘制层板(横贯整个画布,后续 zone label 会覆盖其在 label 栏内的部分) ----
   for (let r = 0; r < shelfBoards; r++) {
     const boardY = PADDING_TOP + (r + 1) * CELL_H + r * SHELF_BOARD_H;
     ctx.fillStyle = SHELF_BOARD_COLOR;
@@ -325,13 +346,14 @@ export async function generateCounterImage(
     ctx.fillRect(0, boardY + SHELF_BOARD_H - 2, canvasW, 2);
   }
 
-  // ---- 绘制 zone 行左侧色条(最后绘制以盖在烟包之上,确保可见) ----
-  for (let row = zoneStart; row < zoneStart + zoneRowCount; row++) {
-    const slot = rowSlots[row];
-    if (!slot || (slot.type !== 'zone-single' && slot.type !== 'zone-group')) continue;
-    const baseY = PADDING_TOP + row * (CELL_H + SHELF_BOARD_H);
-    ctx.fillStyle = slot.barColor;
-    ctx.fillRect(0, baseY, ZONE_BAR_WIDTH, CELL_H);
+  // ---- 绘制专区左侧说明标签(同专区跨 rowCount 行合并为一条,覆盖层板穿过 label 栏的部分) ----
+  for (const block of zoneLabelBlocks) {
+    const topRow = zoneStart + block.startRowInZone;
+    if (topRow >= levels) continue;
+    const bottomRow = Math.min(topRow + block.rowCount - 1, levels - 1);
+    const startY = PADDING_TOP + topRow * (CELL_H + SHELF_BOARD_H);
+    const endY = PADDING_TOP + bottomRow * (CELL_H + SHELF_BOARD_H) + CELL_H;
+    drawZoneLabel(ctx, 0, startY, ZONE_LABEL_W, endY - startY, block.label, block.barColor);
   }
 
   // ---- 输出文件 ----
@@ -348,12 +370,14 @@ export async function generateCounterImage(
 }
 
 /**
- * 绘制扁平行(常规 + 单品专区):同 id 紧贴,按 id 切换处加 gap
+ * 绘制扁平行(常规 + 单品专区):同 id 紧贴,按 id 切换处加 gap。
+ * 烟包绘制于 [areaStartX, areaStartX + areaW] 区间内,左侧 areaStartX 留给专区标签栏。
  */
 async function drawFlatRow(
   ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
   rowSpecs: Category[],
-  canvasW: number,
+  areaStartX: number,
+  areaW: number,
   baseY: number,
   priceTagMap?: ReadonlyMap<string, number>,
 ): Promise<void> {
@@ -363,9 +387,11 @@ async function drawFlatRow(
   }
 
   const totalPackW = rowSpecs.length * CELL_W;
-  const gapBudget = Math.max(canvasW - totalPackW, 0);
+  const gapBudget = Math.max(areaW - totalPackW, 0);
   const interGap = diffTransitions > 0 ? gapBudget / diffTransitions : 0;
-  const startX = diffTransitions > 0 ? 0 : (canvasW - totalPackW) / 2;
+  const startX = diffTransitions > 0
+    ? areaStartX
+    : areaStartX + (areaW - totalPackW) / 2;
 
   let cursor = startX;
   for (let col = 0; col < rowSpecs.length; col++) {
@@ -378,38 +404,37 @@ async function drawFlatRow(
 }
 
 /**
- * 绘制分组专区行:primary 单包陈列(1 cell),每个 alternative 双包陈列(2 cell,同图绘制 2 次);
+ * 绘制分组专区行:primary 和每个 alternative 都是单包陈列(1 cell);
  * 组内紧贴,组与组之间留 gap = gapBudget / (groups.length - 1)。
  *
- * 布局说明:
- *   primary 单包后面紧跟 alternative,每个 alternative 用 2 个紧贴的相同包,视觉强调"替代规格主推"。
- *   平替/怀旧专区都遵循"原品快脱销/退市,替代品要顶上去"的语义,所以替代品视觉权重高于 primary。
+ * 烟包绘制于 [areaStartX, areaStartX + areaW] 区间内,左侧 areaStartX 留给专区标签栏。
  *
- * 进入此函数前 bin-packing 已确保 (totalGroupW + (nGaps × MIN_INTER_GROUP_GAP_PX)) <= canvasW,
+ * 进入此函数前 bin-packing 已确保 (totalGroupW + (nGaps × MIN_INTER_GROUP_GAP_PX)) <= areaW,
  * 因此 interGap = gapBudget / nGaps 必 >= MIN_INTER_GROUP_GAP_PX,组间总能留出可见空隙。
  */
 async function drawGroupedZoneRow(
   ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
   groups: ZonePlacementGroup[],
-  canvasW: number,
+  areaStartX: number,
+  areaW: number,
   baseY: number,
   priceTagMap?: ReadonlyMap<string, number>,
 ): Promise<void> {
   if (groups.length === 0) return;
 
-  const groupWidths = groups.map(g => (1 + 2 * g.alternatives.length) * CELL_W);
+  const groupWidths = groups.map(g => (1 + g.alternatives.length) * CELL_W);
   const totalGroupW = groupWidths.reduce((s, w) => s + w, 0);
   const nGaps = groups.length - 1;
-  const gapBudget = Math.max(canvasW - totalGroupW, 0);
+  const gapBudget = Math.max(areaW - totalGroupW, 0);
 
   let interGap: number;
   let startX: number;
   if (nGaps === 0) {
     interGap = 0;
-    startX = (canvasW - totalGroupW) / 2;  // 单组居中
+    startX = areaStartX + (areaW - totalGroupW) / 2;  // 单组居中
   } else {
     interGap = gapBudget / nGaps;
-    startX = 0;
+    startX = areaStartX;
   }
 
   let cursor = startX;
@@ -419,13 +444,45 @@ async function drawGroupedZoneRow(
     // primary 单包陈列:1 cell
     await drawSpec(ctx, g.primary, cursor, baseY, CELL_W, CELL_H, priceTagMap);
     cursor += CELL_W;
-    // 每个 alternative 双包陈列:同图绘制 2 次紧贴
+    // 每个 alternative 单包陈列:1 cell
     for (const alt of g.alternatives) {
       await drawSpec(ctx, alt, cursor, baseY, CELL_W, CELL_H, priceTagMap);
       cursor += CELL_W;
-      await drawSpec(ctx, alt, cursor, baseY, CELL_W, CELL_H, priceTagMap);
-      cursor += CELL_W;
     }
+  }
+}
+
+/**
+ * 绘制专区左侧说明标签:白底 + barColor 左侧粗色条 + barColor 竖排专区名,
+ * 高度可跨多行(用于同专区 rowCount > 1 时合并为一条贯穿的 label)。
+ */
+function drawZoneLabel(
+  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  label: string,
+  barColor: string,
+): void {
+  ctx.fillStyle = '#F5F0E8';
+  ctx.fillRect(x, y, w, h);
+
+  ctx.fillStyle = barColor;
+  ctx.fillRect(x, y, ZONE_LABEL_BAR_W, h);
+
+  ctx.fillStyle = barColor;
+  ctx.font = `bold ${ZONE_LABEL_FONT_SIZE}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const chars = label.split('');
+  const totalH = chars.length * ZONE_LABEL_LINE_H;
+  const textCenterX = x + ZONE_LABEL_BAR_W + (w - ZONE_LABEL_BAR_W) / 2;
+  let textY = y + (h - totalH) / 2 + ZONE_LABEL_LINE_H / 2;
+  for (const ch of chars) {
+    ctx.fillText(ch, textCenterX, textY);
+    textY += ZONE_LABEL_LINE_H;
   }
 }
 

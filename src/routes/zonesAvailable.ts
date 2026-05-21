@@ -5,6 +5,7 @@ import { Category } from '../types';
 import { getExtendedCategoryMap } from '../services/categoryCatalog';
 import { classifyZones } from '../services/strategies/zones';
 import { fetchSubstituteRules, getCustomerHasPos } from '../services/strategies/substitute';
+import { hasFestivalCandidates } from '../services/strategies/festivalSeason';
 import {
   AvailableZone,
   SpecInventoryInfo,
@@ -129,8 +130,20 @@ router.post('/', async (req: Request, res: Response) => {
     const result: AvailableZone[] = [];
     for (const zoneId of ZONE_PRIORITY_ORDER) {
       const meta = ZONE_META[zoneId as ZoneId];
+      if (meta.displayMode === 'backFestival') {
+        // 节日季节专区:数据流与其他 zone 完全隔离,这里仅判定"是否有图片素材且客户至少 1 张候选"
+        if (!hasFestivalCandidates(customerOnSaleIds)) continue;
+        result.push({
+          ...meta,
+          groupCount: 1,  // 占位 — 实际按节日单图直出,前端 zone-select 不依赖此数
+          specs: [],
+        });
+        continue;
+      }
+      // 走 classification 表查询:此分支下 zoneId 必属于 ZoneClassification 字段
+      const clsKey = zoneId as Exclude<ZoneId, 'festivalSeason'>;
       if (meta.displayMode === 'single') {
-        const specs = zoneCls[zoneId as keyof ZoneClassification] as ZoneSpec[];
+        const specs = zoneCls[clsKey] as ZoneSpec[];
         if (specs.length === 0) continue;
         result.push({
           ...meta,
@@ -138,7 +151,7 @@ router.post('/', async (req: Request, res: Response) => {
           specs,
         });
       } else {
-        const groups = zoneCls[zoneId as keyof ZoneClassification] as ZoneGroup[];
+        const groups = zoneCls[clsKey] as ZoneGroup[];
         if (groups.length === 0) continue;
         result.push({
           ...meta,

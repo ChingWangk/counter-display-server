@@ -9,8 +9,12 @@ import {
   ValidationError,
   ZoneAssignment,
   ZonePlacement,
+  ZONE_META,
+  FestivalId,
 } from '../services/strategies/types';
 import { autoExpandZonePlacements } from '../services/strategies/zones';
+import { selectFestivalImage } from '../services/strategies/festivalSeason';
+import { getExtendedCategoryMap } from '../services/categoryCatalog';
 import { manualStrategy } from '../services/strategies/manualStrategy';
 import { newCustomerStrategy } from '../services/strategies/newCustomerStrategy';
 import { regularCustomerStrategy } from '../services/strategies/regularCustomerStrategy';
@@ -53,6 +57,43 @@ router.post('/', async (req: Request, res: Response) => {
     const displayCounters = counters.filter((c: any) => c.type === 'front' || c.type === 'hanging');
     const backCounters = counters.filter((c: any) => c.type === 'back');
 
+    // ---- 拆分 zone_assignments:displayCabinet(前柜/吊柜) vs backCabinet(背柜) ----
+    // backCabinet 类目(目前仅 festivalSeason)与其他 zone 的数据流完全隔离 —— 不进 selection,
+    // 不进 imageGen,由本路由的背柜分支单独处理。
+    const allAssignments: ZoneAssignment[] = Array.isArray(zone_assignments) ? zone_assignments : [];
+    const displayCabinetAssignments: ZoneAssignment[] = [];
+    const backCabinetAssignments: ZoneAssignment[] = [];
+    for (const a of allAssignments) {
+      const meta = ZONE_META[a.zone_id];
+      if (!meta) continue;  // 未知 zone_id 静默忽略(前后端版本不一致时容忍)
+      if (meta.targetCabinetType === 'backCabinet') {
+        backCabinetAssignments.push(a);
+      } else {
+        displayCabinetAssignments.push(a);
+      }
+    }
+
+    // 校验 backCabinetAssignments
+    for (const a of backCabinetAssignments) {
+      const target = backCounters.find((c: any) => c.id === a.counter_id);
+      if (!target) {
+        const body: GenerateResponse = {
+          success: false,
+          error: `专区分配的柜台 ${a.counter_id} 不存在或非背柜`,
+        };
+        res.status(400).json(body);
+        return;
+      }
+      if (a.zone_id === 'festivalSeason' && !a.festival_id) {
+        const body: GenerateResponse = {
+          success: false,
+          error: `节日季节专区(背柜 ${a.counter_id})缺少 festival_id`,
+        };
+        res.status(400).json(body);
+        return;
+      }
+    }
+
     // 陈列资源（前柜+吊柜），smart/manual 共用
     const totalSlots = displayCounters.reduce((sum: number, c: any) => {
       return sum + Math.floor(c.length / PACK_WIDTH_CM) * c.levels;
@@ -67,7 +108,7 @@ router.post('/', async (req: Request, res: Response) => {
       totalSlots,
       totalLayerLength,
       requestCategories: Array.isArray(categories) ? categories : [],
-      zoneAssignments: Array.isArray(zone_assignments) ? zone_assignments : [],
+      zoneAssignments: displayCabinetAssignments,
     };
 
     let selection: SelectionResult;
@@ -187,7 +228,20 @@ router.post('/', async (req: Request, res: Response) => {
       offset += allocations[i];
     }
 
-    // ---- 背柜：根据品规匹配主题组，为每层分配主题图 ----
+    // ---- 背柜:节日季节专区优先(单图直出);未命中节日的背柜走主题图逻辑 ----
+    // 节日命中的背柜跳过 back-cabinet-select 主题匹配,跟用户在 zone-select 上的"节日优先"约定一致。
+    const festivalByBackCounter = new Map<string, FestivalId>();
+    for (const a of backCabinetAssignments) {
+      if (a.zone_id === 'festivalSeason' && a.festival_id) {
+        festivalByBackCounter.set(a.counter_id, a.festival_id);
+      }
+    }
+    let extendedMap: ReadonlyMap<string, Category> | null = null;
+    if (festivalByBackCounter.size > 0) {
+      extendedMap = await getExtendedCategoryMap();
+    }
+    const customerSpecIds = new Set(specs.map((c: Category) => c.id));
+
     const matchedThemes = allThemes.filter(
       t => t.specIds.some(id => usedSpecIds.has(id))
     );
@@ -196,6 +250,26 @@ router.post('/', async (req: Request, res: Response) => {
     );
 
     for (const counter of backCounters) {
+      const festivalId = festivalByBackCounter.get(counter.id);
+      if (festivalId && extendedMap) {
+        const festivalUrl = await selectFestivalImage(
+          festivalId,
+          customerSpecIds,
+          extendedMap,
+          new Date(),
+        );
+        if (festivalUrl) {
+          results.push({
+            counterId: counter.id,
+            counterType: counter.type,
+            imageUrl: festivalUrl,
+            layerImages: [festivalUrl],
+          });
+          continue;
+        }
+        // 选不到图(目录空 / 候选与客户无交集): 降级走主题图逻辑
+      }
+
       const layerImages: string[] = [];
       for (let li = 0; li < counter.levels; li++) {
         if (allThemeImages.length > 0) {
@@ -210,11 +284,32 @@ router.post('/', async (req: Request, res: Response) => {
       });
     }
 
+    // ---- 合并 festivalSeason 的 ZonePlacement 到响应 zonePlacements ----
+    // selection 不知道 festivalSeason 的存在,这里单独构造占位 placement 供前端 result chip 展示。
+    const festivalPlacements: ZonePlacement[] = [];
+    const festivalMeta = ZONE_META.festivalSeason;
+    for (const a of backCabinetAssignments) {
+      if (a.zone_id === 'festivalSeason' && a.festival_id) {
+        festivalPlacements.push({
+          zoneId: 'festivalSeason',
+          label: festivalMeta.label,
+          counterId: a.counter_id,
+          rowCount: 1,
+          groups: [],
+          displayMode: 'backFestival',
+          barColor: festivalMeta.barColor,
+          priorityRank: festivalMeta.priorityRank,
+          groupCount: 1,
+        });
+      }
+    }
+    const allZonePlacements = [...zonePlacements, ...festivalPlacements];
+
     const body: GenerateResponse = {
       success: true,
       results,
       ...(filteredHotSpecs.length > 0 ? { filteredHotSpecs } : {}),
-      ...(zonePlacements.length > 0 ? { zonePlacements } : {}),
+      ...(allZonePlacements.length > 0 ? { zonePlacements: allZonePlacements } : {}),
     };
     res.json(body);
   } catch (err) {

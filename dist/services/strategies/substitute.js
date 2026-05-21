@@ -1,0 +1,126 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getCustomerHasPos = getCustomerHasPos;
+exports.fetchSubstituteRules = fetchSubstituteRules;
+const db_1 = __importDefault(require("../../db"));
+/**
+ * 平替专区数据访问层：
+ *  - getCustomerHasPos(customerId): 取 cust_info.has_pos，缺省时返回 false
+ *  - fetchSubstituteRules(customerId, hasPos): 计算客户脱销规格 → Top N 平替候选的映射
+ *
+ * 设计原则：DB 调用集中在此文件，纯函数 classifySubstitute（zones.ts）只负责
+ * 用 Map<spec_id_a, spec_id_b[]> 组装 ZoneGroup,便于单测。
+ */
+/**
+ * 候选池大小:从 ref_co_purchase_rules 拉取的每个脱销规格 Top N 候选。
+ *
+ * 这是"原始推荐池"的大小,业务层(zones.ts classifySubstitute)会在该池内
+ * 按价格/产地/支型/库存等业务维度二次排序后选取 Top 2 作为最终展示。
+ * 池过小 → 二次排序无空间;过大 → SQL 拉取浪费。20 是经验值,可调。
+ */
+const CANDIDATE_POOL_SIZE = 20;
+/** 查 cust_info.has_pos。表/字段缺失或客户不存在时返回 false（视为无 POS）。 */
+async function getCustomerHasPos(customerId) {
+    if (!customerId)
+        return false;
+    try {
+        const [rows] = await db_1.default.execute('SELECT has_pos FROM cust_info WHERE customer_id = ?', [customerId]);
+        if (rows.length === 0)
+            return false;
+        return Boolean(rows[0].has_pos);
+    }
+    catch (err) {
+        const code = err.code;
+        if (code === 'ER_NO_SUCH_TABLE') {
+            console.warn('[substitute] cust_info table not ready, default has_pos=false');
+            return false;
+        }
+        console.error('[substitute] getCustomerHasPos error:', err);
+        return false;
+    }
+}
+/**
+ * 为客户挖掘脱销规格 → 候选平替池(每个 spec_id_a 最多 CANDIDATE_POOL_SIZE 个候选)。
+ *
+ * 数据来源:
+ *  - hasPos=true:  cust_inventory 中 stock_qty=0 的规格作为脱销源 spec_id_a
+ *  - hasPos=false: ref_yangpu_stockout 全表作为脱销源 spec_id_a
+ *
+ * 对每个 spec_id_a,从 ref_co_purchase_rules 取 target_type 含 'stockout' 的 Top N 候选(rank_in_a ASC)。
+ * 返回 Map<spec_id_a, spec_id_b[]>:value 是按 rank_in_a 升序的候选池(最多 CANDIDATE_POOL_SIZE 个)。
+ *
+ * 调用方(zones.ts classifySubstitute)负责:
+ *   - 过滤 spec_id_b 必须在客户在售品规集合内(stock_qty > 0)
+ *   - 业务排序(价格、产地、支型、库存)并选 Top 2
+ *   - 候选不足时整组淘汰
+ *
+ * 任一阶段表缺失/数据为空时返回 Empty Map,不抛错,使专区静默退场。
+ */
+async function fetchSubstituteRules(customerId, hasPos) {
+    // 1. 取脱销源 spec_ids
+    let stockoutIds = [];
+    try {
+        if (hasPos) {
+            if (!customerId)
+                return new Map();
+            const [rows] = await db_1.default.execute(`
+        SELECT t.spec_id
+        FROM cust_inventory t
+        INNER JOIN (
+          SELECT spec_id, MAX(snapshot_date) AS max_date
+          FROM cust_inventory
+          WHERE customer_id = ?
+          GROUP BY spec_id
+        ) m ON t.spec_id = m.spec_id AND t.snapshot_date = m.max_date
+        WHERE t.customer_id = ? AND t.stock_qty = 0
+        `, [customerId, customerId]);
+            stockoutIds = rows.map(r => r.spec_id);
+        }
+        else {
+            const [rows] = await db_1.default.execute('SELECT spec_id FROM ref_yangpu_stockout');
+            stockoutIds = rows.map(r => r.spec_id);
+        }
+    }
+    catch (err) {
+        const code = err.code;
+        if (code === 'ER_NO_SUCH_TABLE') {
+            console.warn('[substitute] stockout table not ready, returning empty map');
+            return new Map();
+        }
+        console.error('[substitute] fetch stockout error:', err);
+        return new Map();
+    }
+    if (stockoutIds.length === 0)
+        return new Map();
+    // 2. 对每个脱销源批量取 substitute 候选(target_type 含 stockout, 取 Top N)
+    try {
+        const placeholders = stockoutIds.map(() => '?').join(',');
+        const [rows] = await db_1.default.execute(`
+      SELECT spec_id_a, spec_id_b, rank_in_a
+      FROM ref_co_purchase_rules
+      WHERE spec_id_a IN (${placeholders})
+        AND FIND_IN_SET('stockout', target_type) > 0
+        AND rank_in_a <= ?
+      ORDER BY spec_id_a, rank_in_a
+      `, [...stockoutIds, CANDIDATE_POOL_SIZE]);
+        const map = new Map();
+        for (const r of rows) {
+            const arr = map.get(r.spec_id_a) || [];
+            arr.push(r.spec_id_b);
+            map.set(r.spec_id_a, arr);
+        }
+        return map;
+    }
+    catch (err) {
+        const code = err.code;
+        if (code === 'ER_NO_SUCH_TABLE') {
+            console.warn('[substitute] ref_co_purchase_rules not ready, returning empty map');
+            return new Map();
+        }
+        console.error('[substitute] fetch substitute rules error:', err);
+        return new Map();
+    }
+}
