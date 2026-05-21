@@ -1,8 +1,45 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { createCanvas, loadImage } from 'canvas';
+import { createCanvas, loadImage, registerFont } from 'canvas';
 import { Counter, Category } from '../types';
 import { ZonePlacement, ZonePlacementGroup } from './strategies/types';
+
+// 注册中文字体:Linux 默认 fallback 字体(DejaVu/Liberation)无 CJK,
+// 不注册会把 ctx.fillText 中的中文渲染为方块/乱码。逐个尝试常见路径,首个存在即注册。
+// 服务器若未装字体,请运行:
+//   CentOS:  yum install -y wqy-microhei-fonts && fc-cache -f
+//   Ubuntu:  apt install -y fonts-wqy-microhei && fc-cache -f
+// 也可通过 env CJK_FONT_PATH 显式指定字体文件路径。
+const CJK_FONT_FAMILY = 'CounterCJK';
+const CJK_FONT_CANDIDATES: string[] = [
+  process.env.CJK_FONT_PATH || '',
+  '/usr/share/fonts/wqy-microhei/wqy-microhei.ttc',
+  '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc',
+  '/usr/share/fonts/wqy-zenhei/wqy-zenhei.ttc',
+  '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+  '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc',
+  // 本地开发兜底(macOS / Windows)
+  '/System/Library/Fonts/PingFang.ttc',
+  'C:/Windows/Fonts/msyh.ttc',
+].filter(Boolean);
+
+let CJK_FONT_AVAILABLE = false;
+for (const fontPath of CJK_FONT_CANDIDATES) {
+  if (!fs.existsSync(fontPath)) continue;
+  try {
+    registerFont(fontPath, { family: CJK_FONT_FAMILY });
+    CJK_FONT_AVAILABLE = true;
+    console.log(`[imageGen] CJK font registered: ${fontPath}`);
+    break;
+  } catch (err) {
+    console.warn(`[imageGen] CJK font register failed: ${fontPath}`, err);
+  }
+}
+if (!CJK_FONT_AVAILABLE) {
+  console.warn('[imageGen] 未找到中文字体,陈列图上的中文将显示为方块。请安装 wqy-microhei-fonts (CentOS) 或 fonts-wqy-microhei (Ubuntu)。');
+}
+
+const FONT_FAMILY = CJK_FONT_AVAILABLE ? CJK_FONT_FAMILY : 'sans-serif';
 
 const PACK_WIDTH_CM = 6; // 每包宽度 cm
 export { PACK_WIDTH_CM };
@@ -30,7 +67,7 @@ const MIN_INTER_GROUP_GAP_PX = CELL_W;
 
 // 价签尺寸（贴在烟包底部）
 const PRICE_TAG_H = 26;
-const PRICE_TAG_FONT = 'bold 16px sans-serif';
+const PRICE_TAG_FONT = `bold 16px ${FONT_FAMILY}`;
 
 // 图片输出目录（服务器上 Nginx 静态文件目录）
 const OUTPUT_DIR = '/www/wwwroot/47.103.65.4/images/generated';
@@ -80,7 +117,7 @@ function drawPlaceholder(
   const label = name.slice(0, 3) + '\n未收录';
   const lines = label.split('\n');
   ctx.fillStyle = '#888';
-  ctx.font = 'bold 18px sans-serif';
+  ctx.font = `bold 18px ${FONT_FAMILY}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   const lineH = 24;
@@ -472,7 +509,7 @@ function drawZoneLabel(
   ctx.fillRect(x, y, ZONE_LABEL_BAR_W, h);
 
   ctx.fillStyle = barColor;
-  ctx.font = `bold ${ZONE_LABEL_FONT_SIZE}px sans-serif`;
+  ctx.font = `bold ${ZONE_LABEL_FONT_SIZE}px ${FONT_FAMILY}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
