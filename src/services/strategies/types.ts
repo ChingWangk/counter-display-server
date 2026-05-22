@@ -151,9 +151,8 @@ export interface ZoneSpec {
 }
 
 /** 常规客户专区分类结果。任一专区为空数组表示当前数据下无匹配规格。
- *  注：经 classifyZones 优先级 dedupe 后,同一 spec 只会出现在一个专区里。
- *  分组专区(substitute / nostalgia)的 dedupe 颗粒度按 primary id —— 同一 primary
- *  最多归属一个分组专区;alternatives 不参与 dedupe(允许跨专区作为 primary 出现)。 */
+ *  各专区独立计算,同一品规可在不同专区重复出现。
+ *  分组专区(substitute / nostalgia / productUpgrade)的 alternatives 不参与去重(允许跨专区出现)。 */
 export interface ZoneClassification {
   industrialCoop: ZoneSpec[];  // 工商共育：is_industrial_coop = true
   productUpgrade: ZoneGroup[]; // 产品升级：上海集团新品(launch_date 在窗口期) + 同产地/同品牌的集团紧俏组合 Top 2
@@ -262,11 +261,10 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
   },
 };
 
-/** 用于 dedupe 和 classifyZones 内部顺序的 ZoneId 优先级数组。
- *  industrialCoop / productUpgrade 是 rank=1 组（政策导向，"工商共育" 和 "产品升级"），其余为 rank=2 组（现实困难/趋势顺应）。
- *  productUpgrade 紧跟 industrialCoop：同 rank 但 dedupe 先到先得，避免上海集团新品被 newProduct 抢走。
- *  substitute 排在 slowMoving 之前：平替推荐的是"卖得好但缺货"的强适配品，比滞销更值得优先曝光。
- *  festivalSeason 排在最后:它不参与 dedupe(数据源与其他 zone 完全不同 — 基于图片目录 + 批发量 + 季节),仅作为 zonesAvailable / zone-select 的展示顺位。 */
+/** 用于 zonesAvailable / zone-select 展示顺位的 ZoneId 数组。
+ *  industrialCoop / productUpgrade 是 rank=1 组（政策导向），其余为 rank=2 组（现实困难/趋势顺应）。
+ *  festivalSeason 排在最后:它数据源与其他 zone 完全不同（基于图片目录 + 批发量 + 季节），
+ *  仅作为 zonesAvailable / zone-select 的展示顺位。 */
 export const ZONE_PRIORITY_ORDER: ZoneId[] = [
   'industrialCoop',
   'productUpgrade',

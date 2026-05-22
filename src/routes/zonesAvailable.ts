@@ -25,7 +25,7 @@ import {
  *
  * - smart 模式:从 cust_inventory 拉客户在售品规
  * - manual 模式:用前端传入的 categories
- * 然后通过 getExtendedCategoryMap 合并 ext 字段,classifyZones 已带优先级 dedupe。
+ * 然后通过 getExtendedCategoryMap 合并 ext 字段,classifyZones 各专区独立计算。
  */
 
 interface InventoryRow extends RowDataPacket {
@@ -116,7 +116,7 @@ router.post('/', async (req: Request, res: Response) => {
       substituteRules = await fetchSubstituteRules(customer_id, hasPos);
     }
 
-    // ---- 3. 分类 + dedupe ----
+    // ---- 3. 分类 ----
     const customerOnSaleIds = new Set(sourceSpecs.map(c => c.id));
     const zoneCls: ZoneClassification = classifyZones(
       sourceSpecs,

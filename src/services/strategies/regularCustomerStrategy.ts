@@ -104,7 +104,7 @@ export const regularCustomerStrategy: StrategyFn = async (ctx: SelectionContext)
     }
   }
 
-  // 专区分类(已优先级 dedupe):工商共育 / 平替 / 滞销 / 怀旧 / 尝鲜
+  // 专区分类(各专区独立计算):工商共育 / 平替 / 滞销 / 怀旧 / 尝鲜
   // 在 hot 过滤后运行,让滞销专区基于"实际陈列范围"
   // 平替专区:取 ref_co_purchase_rules 推荐(POS 客户用本店脱销, 无 POS 用 ref_yangpu_stockout)
   //  - substituteRules: Map<spec_id_a, spec_id_b[]>(已按 rank 升序,最多 CANDIDATE_POOL_SIZE 个候选)
