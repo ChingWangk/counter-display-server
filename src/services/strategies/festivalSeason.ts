@@ -126,10 +126,11 @@ async function fetchLatestWholesaleQty(): Promise<Map<string, number>> {
 /**
  * 选节日季节专区的背柜图。
  *
- * @param festivalId       用户选的节日(目前未参与排序,接口契约保留)
- * @param customerSpecIds  客户在售/勾选范围内的 spec_id 集合;候选必须落在此集合内
- * @param extendedMap      全量 catalog(含 ext 字段),用于查 tier/pack_type/flavor/price
- * @param now              今天的日期,决定季节(夏秋/冬春)
+ * @param festivalId        用户选的节日(目前未参与排序,接口契约保留)
+ * @param customerSpecIds   客户在售/勾选范围内的 spec_id 集合;候选必须落在此集合内
+ * @param extendedMap       全量 catalog(含 ext 字段),用于查 tier/pack_type/flavor/price
+ * @param now               今天的日期,决定季节(夏秋/冬春)
+ * @param excludeImageUrls  已在其他背柜用过的图片 URL,本次跳过(用于跨背柜去重)
  * @returns 完整 URL 路径(如 `/images/back-festival/12345_1.png`);无可用图片时返回 null
  */
 export async function selectFestivalImage(
@@ -137,6 +138,7 @@ export async function selectFestivalImage(
   customerSpecIds: ReadonlySet<string>,
   extendedMap: ReadonlyMap<string, Category>,
   now: Date = new Date(),
+  excludeImageUrls: ReadonlySet<string> = new Set(),
 ): Promise<string | null> {
   const imageIndex = getImageIndex();
   if (imageIndex.size === 0) return null;
@@ -150,6 +152,9 @@ export async function selectFestivalImage(
     const cat = extendedMap.get(specId);
     if (!cat) continue;
     for (const fileName of fileNames) {
+      // 跨背柜去重:已被前一张背柜选走的图片 URL 在本次直接排除,
+      // 避免两张背柜显示相同节日图
+      if (excludeImageUrls.has(`${IMAGE_URL_PREFIX}/${fileName}`)) continue;
       candidates.push({
         specId,
         fileName,

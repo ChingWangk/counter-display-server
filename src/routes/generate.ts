@@ -249,6 +249,15 @@ router.post('/', async (req: Request, res: Response) => {
       t => t.images.map(img => IMAGE_PREFIX + img)
     );
 
+    // 背柜去重:不同背柜之间不复用同一张图。
+    //  - festival 路径:usedFestivalImages 收集已用 URL,传给 selectFestivalImage 作 exclude
+    //  - theme 路径:globalThemeCursor 跨柜台累加,每个柜台取连续不重叠的一段
+    // 节日图(/images/back-festival/...) 与主题图(/images/back-themes/...) 目录不同无交叉,
+    // 各在自己命名空间内去重即可。
+    // 柜台内的层重复仍允许 —— 图源耗尽时必须循环;节日是"整柜单图"的设计语义。
+    const usedFestivalImages = new Set<string>();
+    let globalThemeCursor = 0;
+
     for (const counter of backCounters) {
       const festivalId = festivalByBackCounter.get(counter.id);
       if (festivalId && extendedMap) {
@@ -257,8 +266,10 @@ router.post('/', async (req: Request, res: Response) => {
           customerSpecIds,
           extendedMap,
           new Date(),
+          usedFestivalImages,
         );
         if (festivalUrl) {
+          usedFestivalImages.add(festivalUrl);
           results.push({
             counterId: counter.id,
             counterType: counter.type,
@@ -267,14 +278,15 @@ router.post('/', async (req: Request, res: Response) => {
           });
           continue;
         }
-        // 选不到图(目录空 / 候选与客户无交集): 降级走主题图逻辑
+        // 选不到图(目录空 / 候选与客户无交集 / 已被其他背柜用完): 降级走主题图逻辑
       }
 
       const layerImages: string[] = [];
-      for (let li = 0; li < counter.levels; li++) {
-        if (allThemeImages.length > 0) {
-          layerImages.push(allThemeImages[li % allThemeImages.length]);
+      if (allThemeImages.length > 0) {
+        for (let li = 0; li < counter.levels; li++) {
+          layerImages.push(allThemeImages[(globalThemeCursor + li) % allThemeImages.length]);
         }
+        globalThemeCursor += counter.levels;
       }
       results.push({
         counterId: counter.id,
