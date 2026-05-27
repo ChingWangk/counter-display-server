@@ -248,35 +248,76 @@ export async function generateCounterImage(
   for (const zone of sortedZones) {
     const startRowInZone = zoneRowSlots.length;
     if (zone.displayMode === 'splitRows') {
-      // splitRows(沪产专区):row1Specs / row2Specs 由 classifier 独立排序
-      //   - rowCount=1 仅画 row1
-      //   - rowCount=2 第一行 row1,第二行 row2
-      //   - rowCount>=3 多出的行轮流 row1/row2(实际 autoExpand 通常给 1-2 行,极少触发)
-      // 两排都启用自适应双包(用户决策:沪产烟与 industrialCoop/newProduct 一致的曝光语义)
+      // splitRows(沪产专区):内部是两个并列的 single 子区(row1 / row2),
+      //  - row1: 沪产新品(launch_date desc)
+      //  - row2: 沪产同比增长(yoy_rate desc)
+      // rowCount 配额按"row1 优先"的方式分到两子区(N=1→[1,0];N=2→[1,1];N=3→[2,1];N=4→[2,2];...),
+      // 每个子区内部走 single 模式:uniformDistribute 切片到子区行数,行内 spec 不重复;
+      // 子区行数余量大时,行内品规自动启用双包陈列(本专区与 industrialCoop/newProduct 同语义,
+      // 两子区都允许双包)。
+      //
+      // 不会出现"row1 在第 1 行 + 第 3 行重复整组"的循环陈列 —— 切片保证每个 spec
+      // 只出现在它落到的那一行(单包 1 次,或双包 2 次紧贴)。
       const splitGroups = zone.splitRowGroups;
       const row1Specs = splitGroups ? splitGroups.row1.map(g => g.primary) : [];
       const row2Specs = splitGroups ? splitGroups.row2.map(g => g.primary) : [];
-      for (let r = 0; r < zone.rowCount; r++) {
-        const sourceList = r % 2 === 0 ? row1Specs : row2Specs;
-        let renderSpecs: Category[];
-        if (sourceList.length > 0 && sourceList.length * 2 <= singleMaxPerRow) {
-          // 自适应双包:每个 spec 重复 2 次紧贴,drawFlatRow 会在 id 切换处自动留 gap
-          renderSpecs = sourceList.flatMap(s => [s, s]);
-        } else {
-          const cap = Math.max(1, singleMaxPerRow - 1);
-          renderSpecs = sourceList.slice(0, cap);
+
+      // 行配额按 row1 优先分配(ceil/floor 各半);单边为空时把行数全给另一边
+      let row1Rows: number;
+      let row2Rows: number;
+      if (row1Specs.length === 0 && row2Specs.length === 0) {
+        row1Rows = 0;
+        row2Rows = 0;
+      } else if (row1Specs.length === 0) {
+        row1Rows = 0;
+        row2Rows = zone.rowCount;
+      } else if (row2Specs.length === 0) {
+        row1Rows = zone.rowCount;
+        row2Rows = 0;
+      } else {
+        row1Rows = Math.ceil(zone.rowCount / 2);
+        row2Rows = Math.floor(zone.rowCount / 2);
+      }
+
+      const renderSingleSubzone = (specs: Category[], nRows: number) => {
+        if (nRows <= 0 || specs.length === 0) {
+          for (let r = 0; r < nRows; r++) {
+            zoneRowSlots.push({ type: 'zone-single', specs: [] });
+          }
+          return;
         }
-        zoneRowSlots.push({
-          type: 'zone-single',
-          specs: renderSpecs,
+        const perRow = uniformDistribute(specs.length, nRows);
+        let off = 0;
+        for (let r = 0; r < nRows; r++) {
+          const want = perRow[r];
+          const rowSpecs = specs.slice(off, off + want);
+          off += want;
+          let renderSpecs: Category[];
+          if (rowSpecs.length > 0 && rowSpecs.length * 2 <= singleMaxPerRow) {
+            // 子区行内余量充裕 → 双包陈列(每个 spec 2 次紧贴),drawFlatRow 自动在 id 切换处留 gap
+            renderSpecs = rowSpecs.flatMap(s => [s, s]);
+          } else {
+            // 单包陈列:cap = packsPerRow - 1,保证至少 1 包宽 gap budget,
+            // 行内 spec 之间的间距由 drawFlatRow 按 (areaW - totalPackW) / id-切换数 自动放大
+            const cap = Math.max(1, singleMaxPerRow - 1);
+            renderSpecs = rowSpecs.slice(0, cap);
+          }
+          zoneRowSlots.push({ type: 'zone-single', specs: renderSpecs });
+        }
+      };
+
+      renderSingleSubzone(row1Specs, row1Rows);
+      renderSingleSubzone(row2Specs, row2Rows);
+
+      const totalRows = row1Rows + row2Rows;
+      if (totalRows > 0) {
+        zoneLabelBlocks.push({
+          startRowInZone,
+          rowCount: totalRows,
+          label: zone.label,
+          barColor: zone.barColor,
         });
       }
-      zoneLabelBlocks.push({
-        startRowInZone,
-        rowCount: zone.rowCount,
-        label: zone.label,
-        barColor: zone.barColor,
-      });
       continue;
     }
     if (zone.displayMode === 'single') {

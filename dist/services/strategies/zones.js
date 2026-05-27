@@ -602,7 +602,9 @@ function buildZonePlacements(classification, assignments, sortedSourceSpecs, ext
  *
  * 规则:
  *  - 仅扩展已启用(在 placements 中存在)的专区;无 placement 的柜台不会新增 zone
- *  - 上限以柜台剩余空闲行(levels - regularRows - currentZoneRows)为准,不再设硬性行数上限
+ *  - 上限以柜台剩余空闲行(levels - regularRows - currentZoneRows)为准,不设其他硬上限
+ *  - splitRows 多分的行配额由 imageGen 在 row1/row2 子区间再分配(配合 uniformDistribute 切片),
+ *    不会出现"row1 在第 1 行 + 第 3 行重复出现"的循环陈列
  *  - 剩余无法被分配时,柜台底部保留空层
  *
  * 算法对专区数量不做硬编码,适配后续新增专区。

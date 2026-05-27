@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import pool from '../db';
 import { RowDataPacket } from 'mysql2';
+import { categoryMap, getExtendedCategoryMap } from '../services/categoryCatalog';
+import { Category } from '../types';
 
 const router = Router();
 
@@ -12,68 +14,172 @@ interface ScriptRow extends RowDataPacket {
   script_text: string;
 }
 
+interface MatchedSpec {
+  id: string;
+  name: string;
+}
+
+interface EnrichedScript extends Omit<ScriptRow, keyof RowDataPacket> {
+  matched_specs: MatchedSpec[];
+}
+
 type Scene = '滞销夸夸' | '新品推荐' | '怀旧专区' | '沪产专区' | '礼盒精品';
+
+/** 根据 Category 推断该规格适用的 tag 集合(用于 sys_praise_scripts target_value)。
+ *  支持的 tag:细支 / 中支 / 短支 / 爆珠 / 一类烟 / 二类烟 / 工商共育 / 经典款 / 低焦油 / 通用
+ *  注:'通用' 由调用方追加,不在此处生成。 */
+function deriveTagsForSpec(c: Category): Set<string> {
+  const tags = new Set<string>();
+  if (c.pack_type) {
+    if (c.pack_type.includes('细支')) tags.add('细支');
+    if (c.pack_type.includes('中支')) tags.add('中支');
+    if (c.pack_type.includes('短支')) tags.add('短支');
+    if (c.pack_type.includes('爆珠')) tags.add('爆珠');
+  }
+  if (c.tier === '一类') tags.add('一类烟');
+  if (c.tier === '二类') tags.add('二类烟');
+  if (c.is_industrial_coop) tags.add('工商共育');
+  // 经典款:已退市但仍有库存(滞销专区里出现的就是这类)→ 由 is_delisted 标记
+  if (c.is_delisted) tags.add('经典款');
+  return tags;
+}
 
 /** GET /api/praise-script — 经营话术
  *
- * 查询参数（至少传一个）：
- *  - scene=怀旧专区  → 按场景过滤,返回该场景下所有 target_type 的话术
- *  - spec_id=110105  → 进一步过滤 target_type=spec
- *  - brand=中华      → 进一步过滤 target_type=brand
- *  - tag=细支        → 进一步过滤 target_type=tag
+ * 查询参数:
+ *  - scene=怀旧专区          → 按场景过滤(常用,可单独传)
+ *  - spec_ids=110105,210406  → 多 spec 联合筛选(逗号分隔):
+ *                               spec 维度→target_value ∈ spec_ids
+ *                               brand 维度→target_value ∈ 这批 spec 的 brand 集合
+ *                               tag 维度  →target_value ∈ 这批 spec 派生的 tag 集合(+'通用')
+ *                               每条返回多带 matched_specs: [{id,name}]
+ *  - spec_id=110105          → 单 spec(向后兼容,不与 spec_ids 同传)
+ *  - brand=中华              → 单 brand
+ *  - tag=细支                → 单 tag
  *
- * scene 为常用场景级查询(可单独使用);spec_id/brand/tag 用于更细颗粒过滤,
- * 多个一起传时取并集(OR)。
  * 返回所有匹配话术,按 target_type 优先级排序(spec > brand > tag)。
  */
 router.get('/', async (req: Request, res: Response) => {
+  const specIdsRaw = req.query.spec_ids as string | undefined;
   const specId = req.query.spec_id as string | undefined;
   const brand = req.query.brand as string | undefined;
   const tag = req.query.tag as string | undefined;
   const scene = req.query.scene as Scene | undefined;
 
-  if (!specId && !brand && !tag && !scene) {
-    res.status(400).json({ success: false, error: '至少传 scene / spec_id / brand / tag 之一' });
+  const specIds: string[] = specIdsRaw
+    ? specIdsRaw.split(',').map(s => s.trim()).filter(Boolean)
+    : [];
+
+  if (specIds.length === 0 && !specId && !brand && !tag && !scene) {
+    res.status(400).json({ success: false, error: '至少传 scene / spec_ids / spec_id / brand / tag 之一' });
     return;
   }
 
-  const conditions: string[] = [];
-  const params: (string | number)[] = [];
-
-  const orParts: string[] = [];
-  if (specId) {
-    orParts.push('(target_type = ? AND target_value = ?)');
-    params.push('spec', specId);
-  }
-  if (brand) {
-    orParts.push('(target_type = ? AND target_value = ?)');
-    params.push('brand', brand);
-  }
-  if (tag) {
-    orParts.push('(target_type = ? AND target_value = ?)');
-    params.push('tag', tag);
-  }
-  // orParts 为空(仅传 scene)时跳过此条件,即返回该场景下所有 target_type 的话术
-  if (orParts.length > 0) {
-    conditions.push(`(${orParts.join(' OR ')})`);
-  }
-
-  if (scene) {
-    conditions.push('scene = ?');
-    params.push(scene);
-  }
-
   try {
-    // 优先级排序：spec(1) > brand(2) > tag(3)
+    // ---- 计算 spec_ids 推导的 brand / tag 集合 + spec→name 映射 ----
+    let derivedSpecIds: Set<string> = new Set();
+    let derivedBrands: Set<string> = new Set();
+    let derivedTags: Set<string> = new Set();
+    // spec_id → 适用的 tag 集合,用于回填 matched_specs
+    const specTagMap = new Map<string, Set<string>>();
+    // spec_id → brand,用于回填 matched_specs
+    const specBrandMap = new Map<string, string>();
+    // spec_id → name (供前端展示)
+    const specNameMap = new Map<string, string>();
+
+    if (specIds.length > 0) {
+      const extMap = await getExtendedCategoryMap();
+      for (const sid of specIds) {
+        const c = extMap.get(sid) || categoryMap.get(sid);
+        if (!c) continue;
+        derivedSpecIds.add(sid);
+        specNameMap.set(sid, c.name);
+        if (c.brand) {
+          derivedBrands.add(c.brand);
+          specBrandMap.set(sid, c.brand);
+        }
+        const tags = deriveTagsForSpec(c);
+        specTagMap.set(sid, tags);
+        for (const t of tags) derivedTags.add(t);
+      }
+      // 通用 tag:始终适用
+      derivedTags.add('通用');
+    }
+
+    // ---- 构造 SQL WHERE ----
+    const conditions: string[] = [];
+    const params: (string | number)[] = [];
+    const orParts: string[] = [];
+
+    if (specIds.length > 0) {
+      // 三个维度并联,SQL 一次取齐
+      const placeholders = specIds.map(() => '?').join(',');
+      orParts.push(`(target_type = 'spec' AND target_value IN (${placeholders}))`);
+      params.push(...specIds);
+      if (derivedBrands.size > 0) {
+        const bPh = Array.from(derivedBrands).map(() => '?').join(',');
+        orParts.push(`(target_type = 'brand' AND target_value IN (${bPh}))`);
+        params.push(...Array.from(derivedBrands));
+      }
+      if (derivedTags.size > 0) {
+        const tPh = Array.from(derivedTags).map(() => '?').join(',');
+        orParts.push(`(target_type = 'tag' AND target_value IN (${tPh}))`);
+        params.push(...Array.from(derivedTags));
+      }
+    } else {
+      if (specId) { orParts.push('(target_type = ? AND target_value = ?)'); params.push('spec', specId); }
+      if (brand)  { orParts.push('(target_type = ? AND target_value = ?)'); params.push('brand', brand); }
+      if (tag)    { orParts.push('(target_type = ? AND target_value = ?)'); params.push('tag', tag); }
+    }
+
+    if (orParts.length > 0) conditions.push(`(${orParts.join(' OR ')})`);
+    if (scene) { conditions.push('scene = ?'); params.push(scene); }
+
+    // 至少一个 WHERE 条件;只有 scene 时也能跑
+    const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
     const [rows] = await pool.execute<ScriptRow[]>(
       `SELECT id, scene, target_type, target_value, script_text
          FROM sys_praise_scripts
-        WHERE ${conditions.join(' AND ')}
+         ${whereSql}
         ORDER BY FIELD(target_type, 'spec', 'brand', 'tag'), id`,
       params
     );
 
-    res.json({ success: true, scripts: rows });
+    // ---- 回填 matched_specs ----
+    const enriched: EnrichedScript[] = rows.map((r: ScriptRow) => {
+      let matched: MatchedSpec[] = [];
+      if (specIds.length > 0) {
+        if (r.target_type === 'spec') {
+          if (specNameMap.has(r.target_value)) {
+            matched = [{ id: r.target_value, name: specNameMap.get(r.target_value)! }];
+          }
+        } else if (r.target_type === 'brand') {
+          for (const [sid, b] of specBrandMap) {
+            if (b === r.target_value) matched.push({ id: sid, name: specNameMap.get(sid) || sid });
+          }
+        } else if (r.target_type === 'tag') {
+          // '通用' 适用所有显示规格
+          if (r.target_value === '通用') {
+            for (const sid of derivedSpecIds) matched.push({ id: sid, name: specNameMap.get(sid) || sid });
+          } else {
+            for (const [sid, tagSet] of specTagMap) {
+              if (tagSet.has(r.target_value)) matched.push({ id: sid, name: specNameMap.get(sid) || sid });
+            }
+          }
+        }
+      }
+      return {
+        id: r.id,
+        scene: r.scene,
+        target_type: r.target_type,
+        target_value: r.target_value,
+        script_text: r.script_text,
+        matched_specs: matched,
+      };
+    });
+
+    res.json({ success: true, scripts: enriched });
   } catch (err: unknown) {
     const code = (err as { code?: string }).code;
     if (code === 'ER_NO_SUCH_TABLE') {
