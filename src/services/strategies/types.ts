@@ -24,7 +24,7 @@ export interface SpecInventoryInfo {
 }
 
 /** 专区 id 枚举（与前端 ZoneId 对齐） */
-export type ZoneId = 'industrialCoop' | 'productUpgrade' | 'substitute' | 'slowMoving' | 'nostalgia' | 'newProduct' | 'festivalSeason';
+export type ZoneId = 'industrialCoop' | 'productUpgrade' | 'substitute' | 'slowMoving' | 'nostalgia' | 'newProduct' | 'festivalSeason' | 'localShanghai' | 'shortSlimBead' | 'beadFlavor';
 
 /** 节日 id 枚举(仅 festivalSeason 专区使用,用户在 zone-select 卡片上手动选择)。 */
 export type FestivalId =
@@ -69,8 +69,9 @@ export interface ZoneMeta {
    *   single        - 单品陈列(每包紧贴,按 id 切换处留 gap),用于 industrialCoop / slowMoving / newProduct
    *   grouped       - 分组陈列(primary + 每个 alternative 均单包,组与组之间留 gap),用于 substitute / nostalgia / productUpgrade
    *   backFestival  - 背柜节日单图直出(整张背柜 = 1 张预拍图,不走 imageGen 绘制流程),用于 festivalSeason
+   *   splitRows     - 同一专区两排用不同排序规则(row1 / row2 独立 specs 列表),用于 localShanghai
    */
-  displayMode: 'single' | 'grouped' | 'backFestival';
+  displayMode: 'single' | 'grouped' | 'backFestival' | 'splitRows';
   /** 适用的柜台类型。
    *   displayCabinet - 前柜 / 吊柜(默认),走 imageGen 顶部 zone 行
    *   backCabinet    - 背柜(仅 festivalSeason),走 generate.ts 背柜分支单图直出
@@ -121,12 +122,23 @@ export interface ZonePlacement {
    *  - 分组专区：primary = 主规格，alternatives = 替代规格(已过滤为客户在售) */
   groups: ZonePlacementGroup[];
   /** 展示模式：从 ZONE_META.displayMode 透传。imageGen 据此决定 primary 单宽还是双宽。
-   *  backFestival 走 generate.ts 背柜分支单图直出,不进入 imageGen;仅用于响应 + 前端 result chip 渲染。 */
-  displayMode: 'single' | 'grouped' | 'backFestival';
+   *  backFestival 走 generate.ts 背柜分支单图直出,不进入 imageGen;仅用于响应 + 前端 result chip 渲染。
+   *  splitRows 时 groups 始终为空,实际数据在 splitRowGroups.row1 / row2 内。 */
+  displayMode: 'single' | 'grouped' | 'backFestival' | 'splitRows';
   barColor: string;
   priorityRank: number;
   /** 用于柜台内子专区按组数(或单品专区规格数)降序排序 */
   groupCount: number;
+  /** splitRows 专区(localShanghai)专用:两排独立的 specs 列表(已包装为 ZonePlacementGroup 形态,alternatives=[])。
+   *  row1 / row2 由 classifier 决定排序规则,imageGen 按 rowCount 落位:
+   *   - rowCount=1 仅画 row1
+   *   - rowCount=2 第一行画 row1,第二行画 row2
+   *   - rowCount>=3 多出的行从 row1 开始轮流追加(实际中 autoExpand 已经控制,通常 rowCount<=2)
+   */
+  splitRowGroups?: {
+    row1: ZonePlacementGroup[];
+    row2: ZonePlacementGroup[];
+  };
 }
 
 /** Category 形态的单组陈列单元(供 imageGen 绘制)。 */
@@ -160,6 +172,15 @@ export interface ZoneClassification {
   slowMoving: ZoneSpec[];      // 滞销夸夸角：stock_days ≥ 30 且 stock_qty ≥ 3
   nostalgia: ZoneGroup[];      // 怀旧专区：{primary: 退市规格, alternatives: [在售 successor]}
   newProduct: ZoneSpec[];      // 尝鲜专区：launch_date 在窗口期内（一二类 24 月，其他 12 月）
+  /** 沪产专区:同一专区两排用不同排序规则,row1=沪产新品(launch_date 降序),row2=沪产同比增长率(yoy_rate 降序)。 */
+  localShanghai: {
+    row1Specs: ZoneSpec[];
+    row2Specs: ZoneSpec[];
+  };
+  /** 短中细爆组合:pack_type ∈ {短支/中支/细支/爆珠变体}, 仅取有 coverage 数据的规格, 按铺市率 asc → 订足率 desc */
+  shortSlimBead: ZoneSpec[];
+  /** 爆珠口味组合:pack_type 含'爆珠',按 flavor 分组聚集(薄荷>水果>功能性>原味>其他),组内按价格降序 */
+  beadFlavor: ZoneSpec[];
 }
 
 /** 选品策略的输出。布局判定、柜台分配、imageGen 由路由层基于此结果继续处理。 */
@@ -259,12 +280,43 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     displayMode: 'backFestival',
     targetCabinetType: 'backCabinet',
   },
+  localShanghai: {
+    id: 'localShanghai',
+    label: '沪产专区',
+    icon: '🏙️',
+    description: '上海集团本地烟集中陈列;第一排沪产新品(时间从新到旧),第二排同比投放量增长率从高到低',
+    priorityRank: 2,
+    barColor: '#D84315',
+    displayMode: 'splitRows',
+    targetCabinetType: 'displayCabinet',
+  },
+  shortSlimBead: {
+    id: 'shortSlimBead',
+    label: '短中细爆组合',
+    icon: '🎯',
+    description: '短支/中支/细支/爆珠变体集中陈列;铺市率低的优先曝光,订足率高的多补货',
+    priorityRank: 2,
+    barColor: '#5C6BC0',
+    displayMode: 'single',
+    targetCabinetType: 'displayCabinet',
+  },
+  beadFlavor: {
+    id: 'beadFlavor',
+    label: '爆珠口味组合',
+    icon: '🫐',
+    description: '爆珠规格按口味聚集(薄荷/水果/功能性),便于顾客横向比较口味',
+    priorityRank: 2,
+    barColor: '#EF6C00',
+    displayMode: 'single',
+    targetCabinetType: 'displayCabinet',
+  },
 };
 
 /** 用于 zonesAvailable / zone-select 展示顺位的 ZoneId 数组。
  *  industrialCoop / productUpgrade 是 rank=1 组（政策导向），其余为 rank=2 组（现实困难/趋势顺应）。
  *  festivalSeason 排在最后:它数据源与其他 zone 完全不同（基于图片目录 + 批发量 + 季节），
- *  仅作为 zonesAvailable / zone-select 的展示顺位。 */
+ *  仅作为 zonesAvailable / zone-select 的展示顺位。
+ *  localShanghai 紧跟在常规 displayCabinet zone 之后、festivalSeason 之前。 */
 export const ZONE_PRIORITY_ORDER: ZoneId[] = [
   'industrialCoop',
   'productUpgrade',
@@ -272,5 +324,8 @@ export const ZONE_PRIORITY_ORDER: ZoneId[] = [
   'slowMoving',
   'nostalgia',
   'newProduct',
+  'localShanghai',
+  'shortSlimBead',
+  'beadFlavor',
   'festivalSeason',
 ];

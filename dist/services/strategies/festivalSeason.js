@@ -147,7 +147,7 @@ async function fetchLatestWholesaleQty() {
  * @param customerSpecIds  客户在售/勾选范围内的 spec_id 集合;候选必须落在此集合内
  * @param extendedMap      全量 catalog(含 ext 字段),用于查 tier/pack_type/flavor/price
  * @param now              今天的日期,决定季节(夏秋/冬春)
- * @returns 完整 URL 路径(如 `/images/back-festival/12345_1.jpg`);无可用图片时返回 null
+ * @returns 完整 URL 路径(如 `/images/back-festival/12345_1.png`);无可用图片时返回 null
  */
 async function selectFestivalImage(_festivalId, customerSpecIds, extendedMap, now = new Date()) {
     const imageIndex = getImageIndex();

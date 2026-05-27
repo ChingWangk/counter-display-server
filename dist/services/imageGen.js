@@ -38,6 +38,42 @@ exports.generateCounterImage = generateCounterImage;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const canvas_1 = require("canvas");
+// 注册中文字体:Linux 默认 fallback 字体(DejaVu/Liberation)无 CJK,
+// 不注册会把 ctx.fillText 中的中文渲染为方块/乱码。逐个尝试常见路径,首个存在即注册。
+// 服务器若未装字体,请运行:
+//   CentOS:  yum install -y wqy-microhei-fonts && fc-cache -f
+//   Ubuntu:  apt install -y fonts-wqy-microhei && fc-cache -f
+// 也可通过 env CJK_FONT_PATH 显式指定字体文件路径。
+const CJK_FONT_FAMILY = 'CounterCJK';
+const CJK_FONT_CANDIDATES = [
+    process.env.CJK_FONT_PATH || '',
+    '/usr/share/fonts/wqy-microhei/wqy-microhei.ttc',
+    '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc',
+    '/usr/share/fonts/wqy-zenhei/wqy-zenhei.ttc',
+    '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+    '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc',
+    // 本地开发兜底(macOS / Windows)
+    '/System/Library/Fonts/PingFang.ttc',
+    'C:/Windows/Fonts/msyh.ttc',
+].filter(Boolean);
+let CJK_FONT_AVAILABLE = false;
+for (const fontPath of CJK_FONT_CANDIDATES) {
+    if (!fs.existsSync(fontPath))
+        continue;
+    try {
+        (0, canvas_1.registerFont)(fontPath, { family: CJK_FONT_FAMILY });
+        CJK_FONT_AVAILABLE = true;
+        console.log(`[imageGen] CJK font registered: ${fontPath}`);
+        break;
+    }
+    catch (err) {
+        console.warn(`[imageGen] CJK font register failed: ${fontPath}`, err);
+    }
+}
+if (!CJK_FONT_AVAILABLE) {
+    console.warn('[imageGen] 未找到中文字体,陈列图上的中文将显示为方块。请安装 wqy-microhei-fonts (CentOS) 或 fonts-wqy-microhei (Ubuntu)。');
+}
+const FONT_FAMILY = CJK_FONT_AVAILABLE ? CJK_FONT_FAMILY : 'sans-serif';
 const PACK_WIDTH_CM = 6; // 每包宽度 cm
 exports.PACK_WIDTH_CM = PACK_WIDTH_CM;
 // 每个格子的基础像素尺寸（烟包图片）
@@ -59,7 +95,7 @@ const ZONE_LABEL_LINE_H = 24; // 竖排每字垂直占位
 const MIN_INTER_GROUP_GAP_PX = CELL_W;
 // 价签尺寸（贴在烟包底部）
 const PRICE_TAG_H = 26;
-const PRICE_TAG_FONT = 'bold 16px sans-serif';
+const PRICE_TAG_FONT = `bold 16px ${FONT_FAMILY}`;
 // 图片输出目录（服务器上 Nginx 静态文件目录）
 const OUTPUT_DIR = '/www/wwwroot/47.103.65.4/images/generated';
 // 品类图片根目录
@@ -73,7 +109,7 @@ function drawPlaceholder(ctx, name, x, y, w, h) {
     const label = name.slice(0, 3) + '\n未收录';
     const lines = label.split('\n');
     ctx.fillStyle = '#888';
-    ctx.font = 'bold 18px sans-serif';
+    ctx.font = `bold 18px ${FONT_FAMILY}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const lineH = 24;
@@ -182,6 +218,39 @@ async function generateCounterImage(counter, regularSpecs, regularRows, zonePlac
     const zoneLabelBlocks = [];
     for (const zone of sortedZones) {
         const startRowInZone = zoneRowSlots.length;
+        if (zone.displayMode === 'splitRows') {
+            // splitRows(沪产专区):row1Specs / row2Specs 由 classifier 独立排序
+            //   - rowCount=1 仅画 row1
+            //   - rowCount=2 第一行 row1,第二行 row2
+            //   - rowCount>=3 多出的行轮流 row1/row2(实际 autoExpand 通常给 1-2 行,极少触发)
+            // 两排都启用自适应双包(用户决策:沪产烟与 industrialCoop/newProduct 一致的曝光语义)
+            const splitGroups = zone.splitRowGroups;
+            const row1Specs = splitGroups ? splitGroups.row1.map(g => g.primary) : [];
+            const row2Specs = splitGroups ? splitGroups.row2.map(g => g.primary) : [];
+            for (let r = 0; r < zone.rowCount; r++) {
+                const sourceList = r % 2 === 0 ? row1Specs : row2Specs;
+                let renderSpecs;
+                if (sourceList.length > 0 && sourceList.length * 2 <= singleMaxPerRow) {
+                    // 自适应双包:每个 spec 重复 2 次紧贴,drawFlatRow 会在 id 切换处自动留 gap
+                    renderSpecs = sourceList.flatMap(s => [s, s]);
+                }
+                else {
+                    const cap = Math.max(1, singleMaxPerRow - 1);
+                    renderSpecs = sourceList.slice(0, cap);
+                }
+                zoneRowSlots.push({
+                    type: 'zone-single',
+                    specs: renderSpecs,
+                });
+            }
+            zoneLabelBlocks.push({
+                startRowInZone,
+                rowCount: zone.rowCount,
+                label: zone.label,
+                barColor: zone.barColor,
+            });
+            continue;
+        }
         if (zone.displayMode === 'single') {
             // 单品专区:拉平 groups 为 primary 列表,等同于旧的 specs
             const flatSpecs = zone.groups.map(g => g.primary);
@@ -410,7 +479,7 @@ function drawZoneLabel(ctx, x, y, w, h, label, barColor) {
     ctx.fillStyle = barColor;
     ctx.fillRect(x, y, ZONE_LABEL_BAR_W, h);
     ctx.fillStyle = barColor;
-    ctx.font = `bold ${ZONE_LABEL_FONT_SIZE}px sans-serif`;
+    ctx.font = `bold ${ZONE_LABEL_FONT_SIZE}px ${FONT_FAMILY}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const chars = label.split('');

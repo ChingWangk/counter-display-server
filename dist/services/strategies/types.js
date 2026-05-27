@@ -93,12 +93,42 @@ exports.ZONE_META = {
         displayMode: 'backFestival',
         targetCabinetType: 'backCabinet',
     },
+    localShanghai: {
+        id: 'localShanghai',
+        label: '沪产专区',
+        icon: '🏙️',
+        description: '上海集团本地烟集中陈列;第一排沪产新品(时间从新到旧),第二排同比投放量增长率从高到低',
+        priorityRank: 2,
+        barColor: '#D84315',
+        displayMode: 'splitRows',
+        targetCabinetType: 'displayCabinet',
+    },
+    shortSlimBead: {
+        id: 'shortSlimBead',
+        label: '短中细爆组合',
+        icon: '🎯',
+        description: '短支/中支/细支/爆珠变体集中陈列;铺市率低的优先曝光,订足率高的多补货',
+        priorityRank: 2,
+        barColor: '#5C6BC0',
+        displayMode: 'single',
+        targetCabinetType: 'displayCabinet',
+    },
+    beadFlavor: {
+        id: 'beadFlavor',
+        label: '爆珠口味组合',
+        icon: '🫐',
+        description: '爆珠规格按口味聚集(薄荷/水果/功能性),便于顾客横向比较口味',
+        priorityRank: 2,
+        barColor: '#EF6C00',
+        displayMode: 'single',
+        targetCabinetType: 'displayCabinet',
+    },
 };
-/** 用于 dedupe 和 classifyZones 内部顺序的 ZoneId 优先级数组。
- *  industrialCoop / productUpgrade 是 rank=1 组（政策导向，"工商共育" 和 "产品升级"），其余为 rank=2 组（现实困难/趋势顺应）。
- *  productUpgrade 紧跟 industrialCoop：同 rank 但 dedupe 先到先得，避免上海集团新品被 newProduct 抢走。
- *  substitute 排在 slowMoving 之前：平替推荐的是"卖得好但缺货"的强适配品，比滞销更值得优先曝光。
- *  festivalSeason 排在最后:它不参与 dedupe(数据源与其他 zone 完全不同 — 基于图片目录 + 批发量 + 季节),仅作为 zonesAvailable / zone-select 的展示顺位。 */
+/** 用于 zonesAvailable / zone-select 展示顺位的 ZoneId 数组。
+ *  industrialCoop / productUpgrade 是 rank=1 组（政策导向），其余为 rank=2 组（现实困难/趋势顺应）。
+ *  festivalSeason 排在最后:它数据源与其他 zone 完全不同（基于图片目录 + 批发量 + 季节），
+ *  仅作为 zonesAvailable / zone-select 的展示顺位。
+ *  localShanghai 紧跟在常规 displayCabinet zone 之后、festivalSeason 之前。 */
 exports.ZONE_PRIORITY_ORDER = [
     'industrialCoop',
     'productUpgrade',
@@ -106,5 +136,8 @@ exports.ZONE_PRIORITY_ORDER = [
     'slowMoving',
     'nostalgia',
     'newProduct',
+    'localShanghai',
+    'shortSlimBead',
+    'beadFlavor',
     'festivalSeason',
 ];

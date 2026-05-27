@@ -247,6 +247,38 @@ export async function generateCounterImage(
   const zoneLabelBlocks: ZoneLabelBlock[] = [];
   for (const zone of sortedZones) {
     const startRowInZone = zoneRowSlots.length;
+    if (zone.displayMode === 'splitRows') {
+      // splitRows(沪产专区):row1Specs / row2Specs 由 classifier 独立排序
+      //   - rowCount=1 仅画 row1
+      //   - rowCount=2 第一行 row1,第二行 row2
+      //   - rowCount>=3 多出的行轮流 row1/row2(实际 autoExpand 通常给 1-2 行,极少触发)
+      // 两排都启用自适应双包(用户决策:沪产烟与 industrialCoop/newProduct 一致的曝光语义)
+      const splitGroups = zone.splitRowGroups;
+      const row1Specs = splitGroups ? splitGroups.row1.map(g => g.primary) : [];
+      const row2Specs = splitGroups ? splitGroups.row2.map(g => g.primary) : [];
+      for (let r = 0; r < zone.rowCount; r++) {
+        const sourceList = r % 2 === 0 ? row1Specs : row2Specs;
+        let renderSpecs: Category[];
+        if (sourceList.length > 0 && sourceList.length * 2 <= singleMaxPerRow) {
+          // 自适应双包:每个 spec 重复 2 次紧贴,drawFlatRow 会在 id 切换处自动留 gap
+          renderSpecs = sourceList.flatMap(s => [s, s]);
+        } else {
+          const cap = Math.max(1, singleMaxPerRow - 1);
+          renderSpecs = sourceList.slice(0, cap);
+        }
+        zoneRowSlots.push({
+          type: 'zone-single',
+          specs: renderSpecs,
+        });
+      }
+      zoneLabelBlocks.push({
+        startRowInZone,
+        rowCount: zone.rowCount,
+        label: zone.label,
+        barColor: zone.barColor,
+      });
+      continue;
+    }
     if (zone.displayMode === 'single') {
       // 单品专区:拉平 groups 为 primary 列表,等同于旧的 specs
       const flatSpecs = zone.groups.map(g => g.primary);

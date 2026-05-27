@@ -5,6 +5,8 @@ import { Category } from '../types';
 import { getExtendedCategoryMap } from '../services/categoryCatalog';
 import { classifyZones } from '../services/strategies/zones';
 import { fetchSubstituteRules, getCustomerHasPos } from '../services/strategies/substitute';
+import { fetchLatestLocalBrandGrowth } from '../services/strategies/localShanghai';
+import { fetchLatestMarketCoverage, fetchLatestOrderFillRate } from '../services/strategies/shortSlimBead';
 import { hasFestivalCandidates } from '../services/strategies/festivalSeason';
 import {
   AvailableZone,
@@ -116,6 +118,15 @@ router.post('/', async (req: Request, res: Response) => {
       substituteRules = await fetchSubstituteRules(customer_id, hasPos);
     }
 
+    // ---- 2.5 拉沪产烟同比增长数据(smart/manual 共用) ----
+    // ref_local_brand_growth 表不存在时返回空 Map,localShanghai.row2Specs 自然为 []
+    const growthBySpec = await fetchLatestLocalBrandGrowth();
+
+    // ---- 2.6 拉短中细爆组合所需的铺市率 / 订足率(smart/manual 共用) ----
+    // 表不存在 → 返回空 Map → shortSlimBead 自然返回 []
+    const coverageBySpec = await fetchLatestMarketCoverage();
+    const fillRateBySpec = await fetchLatestOrderFillRate();
+
     // ---- 3. 分类 ----
     // customerOnSaleIds 仅含 stock_qty > 0 的规格,与 regularCustomerStrategy 保持一致:
     // 刚好脱销(stock_qty=0)的品规不能作为他人的替代/继任,避免推荐"也缺货"的规格,
@@ -135,6 +146,9 @@ router.post('/', async (req: Request, res: Response) => {
       customerOnSaleIds,
       inventoryById,
       substituteRules,
+      growthBySpec,
+      coverageBySpec,
+      fillRateBySpec,
     );
 
     // ---- 4. 转换为 AvailableZone[],只保留 groupCount > 0 ----
@@ -151,8 +165,26 @@ router.post('/', async (req: Request, res: Response) => {
         });
         continue;
       }
-      // 走 classification 表查询:此分支下 zoneId 必属于 ZoneClassification 字段
-      const clsKey = zoneId as Exclude<ZoneId, 'festivalSeason'>;
+      if (meta.displayMode === 'splitRows') {
+        // 沪产专区:row1 + row2 合并去重后作为 specs 字段(供卡片预览),groupCount = 合并后规格数
+        const split = zoneCls.localShanghai;
+        const seen = new Set<string>();
+        const merged: ZoneSpec[] = [];
+        for (const s of [...split.row1Specs, ...split.row2Specs]) {
+          if (seen.has(s.id)) continue;
+          seen.add(s.id);
+          merged.push(s);
+        }
+        if (merged.length === 0) continue;
+        result.push({
+          ...meta,
+          groupCount: merged.length,
+          specs: merged,
+        });
+        continue;
+      }
+      // 走 classification 表查询:此分支下 zoneId 必属于 ZoneClassification 单品/分组字段
+      const clsKey = zoneId as Exclude<ZoneId, 'festivalSeason' | 'localShanghai'>;
       if (meta.displayMode === 'single') {
         const specs = zoneCls[clsKey] as ZoneSpec[];
         if (specs.length === 0) continue;

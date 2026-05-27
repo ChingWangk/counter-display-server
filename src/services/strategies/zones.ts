@@ -16,9 +16,10 @@ import {
  * 6 个低成本专区分类器。
  * 纯函数：入参为只读数据结构，出参为新数组，无副作用，可独立单测。
  *
- * 展示模式分两类:
- *  - single  : 单品陈列(每包紧贴),工商共育 / 滞销夸夸角 / 尝鲜专区
- *  - grouped : 分组陈列(primary + 每个 alternative 均单包,组与组之间留 gap),平替专区 / 怀旧专区 / 产品升级
+ * 展示模式分三类:
+ *  - single    : 单品陈列(每包紧贴),工商共育 / 滞销夸夸角 / 尝鲜专区
+ *  - grouped   : 分组陈列(primary + 每个 alternative 均单包,组与组之间留 gap),平替专区 / 怀旧专区 / 产品升级
+ *  - splitRows : 同专区两排独立 specs 列表 + 独立排序规则,沪产专区
  *
  * - classifyIndustrialCoop: 工商共育,is_industrial_coop = true                               → ZoneSpec[]
  * - classifyProductUpgrade: 产品升级,上海集团新品+同产地/同品牌的集团紧俏 Top 2              → ZoneGroup[]
@@ -26,7 +27,8 @@ import {
  * - classifySlowMoving:    滞销夸夸角,stock_days ≥ 30 且 stock_qty ≥ 3                       → ZoneSpec[]
  * - classifyNostalgia:     怀旧专区, is_delisted = true && successor 在客户在售              → ZoneGroup[]
  * - classifyNewProduct:    尝鲜专区, launch_date 在窗口期(一/二类 24 月,其他 12 月)          → ZoneSpec[]
- * - classifyZones:         一次性返回六专区结果,各专区独立计算,同一品规可在不同专区重复出现
+ * - classifyLocalShanghai: 沪产专区,row1=沪产新品(launch_date desc),row2=沪产同比增长(yoy desc) → { row1Specs, row2Specs }
+ * - classifyZones:         一次性返回七专区结果,各专区独立计算,同一品规可在不同专区重复出现
  *
  * 分组专区的 alternatives 不参与去重(允许跨专区出现)。
  */
@@ -38,6 +40,9 @@ const DEFAULT_NEW_MONTHS = 12;
 const SHANGHAI_TOBACCO_MFR = '上海烟草集团有限责任公司';
 
 const HIGH_TIER_VALUES = new Set(['一类', '二类']);
+
+/** 爆珠口味组合的 flavor 外层顺序(薄荷>水果>功能性>原味>其他)。 */
+const BEAD_FLAVOR_ORDER = ['薄荷', '水果', '功能性', '原味'];
 
 function monthsBetween(from: Date, to: Date): number {
   return (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
@@ -320,13 +325,174 @@ export function classifyNewProduct(
 }
 
 /**
- * 一次性运行 6 个分类器,各专区独立计算,同一品规可在不同专区重复出现。
+ * 沪产专区:同一专区两排用不同排序规则。
+ *
+ *  row1Specs(第一排,沪产新品):
+ *   - manufacturer === '上海烟草集团有限责任公司'
+ *   - launch_date 在窗口期内(沿用 newProduct: 一二类 24 月,其他 12 月)
+ *   - 按 launch_date 降序(从新到旧)
+ *
+ *  row2Specs(第二排,沪产同比增长):
+ *   - manufacturer === '上海烟草集团有限责任公司'
+ *   - growthBySpec.has(spec.id) (规格在 ref_local_brand_growth 最新季度有数据)
+ *   - 按 growthBySpec 中的 yoy_rate 降序
+ *
+ *  入参 specs 通常为客户在售品规列表(extendedMap 视图)。两排可能重叠 —— 新品同时是高增长,
+ *  允许重复;各排独立计算。
+ *
+ *  growthBySpec 为空(表不存在 / 暂无数据)→ row2Specs 返回 [],仅 row1 有内容。
+ */
+export function classifyLocalShanghai(
+  specs: ReadonlyArray<Category>,
+  growthBySpec: ReadonlyMap<string, number> = new Map(),
+  now: Date = new Date(),
+): { row1Specs: ZoneSpec[]; row2Specs: ZoneSpec[] } {
+  const row1: ZoneSpec[] = [];
+  const row2: Array<{ spec: ZoneSpec; yoy: number }> = [];
+  for (const spec of specs) {
+    if (spec.manufacturer !== SHANGHAI_TOBACCO_MFR) continue;
+
+    // row1:在窗口期内的沪产新品
+    if (spec.launch_date) {
+      const launch = new Date(spec.launch_date);
+      if (!isNaN(launch.getTime())) {
+        const months = monthsBetween(launch, now);
+        if (months >= 0) {
+          const window = HIGH_TIER_VALUES.has(spec.tier ?? '') ? HIGH_TIER_NEW_MONTHS : DEFAULT_NEW_MONTHS;
+          if (months <= window) {
+            row1.push({
+              id: spec.id,
+              name: spec.name,
+              imageUrl: spec.imageUrl,
+              launch_date: spec.launch_date,
+            });
+          }
+        }
+      }
+    }
+
+    // row2:有 yoy_rate 数据的沪产规格
+    const yoy = growthBySpec.get(spec.id);
+    if (yoy !== undefined && !isNaN(yoy)) {
+      row2.push({
+        spec: { id: spec.id, name: spec.name, imageUrl: spec.imageUrl },
+        yoy,
+      });
+    }
+  }
+
+  // 第一排:launch_date 降序(从新到旧)
+  row1.sort((a, b) => (b.launch_date ?? '').localeCompare(a.launch_date ?? ''));
+  // 第二排:yoy_rate 降序(增长率从高到低);tie 时保留入参 specs 顺序(JS sort 稳定)
+  row2.sort((a, b) => b.yoy - a.yoy);
+
+  return {
+    row1Specs: row1,
+    row2Specs: row2.map(x => x.spec),
+  };
+}
+
+/**
+ * 短中细爆组合:pack_type ∈ {短支/中支/细支/爆珠及其所有变体},按业务规则集中陈列。
+ *
+ *  范围:pack_type 不是 '' / '常规' 的所有规格,即:
+ *   - 纯支型:短支 / 中支 / 细支
+ *   - 纯爆珠:爆珠
+ *   - 复合:中支爆珠 / 细支爆珠 / 短支爆珠
+ *
+ *  入参 coverageBySpec / fillRateBySpec 来自 ref_market_coverage / ref_order_fill_rate 最新月份。
+ *
+ *  排序(语义:"先铺市从低到高、后订足率从高到低"):
+ *   1. 铺市率 asc(铺市低 = 别处少见 = 差异化卖点,优先曝光)
+ *   2. 订足率 desc(订足率高 = 补货顺畅 = 多上架不缺货)
+ *  tie 时保留 specs 入参顺序(JS sort 稳定)。
+ *
+ *  只保留有 coverage 数据的规格 —— 没数据时"从低到高"无意义。
+ *  coverageBySpec 空(表不存在)→ 返回 []。
+ */
+export function classifyShortSlimBead(
+  specs: ReadonlyArray<Category>,
+  coverageBySpec: ReadonlyMap<string, number> = new Map(),
+  fillRateBySpec: ReadonlyMap<string, number> = new Map(),
+): ZoneSpec[] {
+  const candidates: Category[] = [];
+  for (const spec of specs) {
+    const pt = spec.pack_type ?? '';
+    if (!pt || pt === '常规') continue;
+    if (!coverageBySpec.has(spec.id)) continue;
+    candidates.push(spec);
+  }
+  candidates.sort((a, b) => {
+    const aCov = coverageBySpec.get(a.id) ?? 0;
+    const bCov = coverageBySpec.get(b.id) ?? 0;
+    if (aCov !== bCov) return aCov - bCov;
+    const aFill = fillRateBySpec.get(a.id) ?? 0;
+    const bFill = fillRateBySpec.get(b.id) ?? 0;
+    return bFill - aFill;
+  });
+  return candidates.map(c => ({ id: c.id, name: c.name, imageUrl: c.imageUrl }));
+}
+
+/**
+ * 爆珠口味组合:仅爆珠规格,按口味分组聚集陈列。
+ *
+ *  范围:pack_type 含 '爆珠' 的所有变体(爆珠 / 中支爆珠 / 细支爆珠 / 短支爆珠)。
+ *  允许与 shortSlimBead 重叠 —— 各专区独立计算,同一爆珠规格可同时出现在两个专区。
+ *
+ *  排序(语义:"同口味集中摆放方便横向比较"):
+ *   - 外层 flavor 顺序:薄荷 > 水果 > 功能性 > 原味 > 其他(包括 null / 空)
+ *   - 组内按 price 降序(高价位放前,先抓住客户)
+ *  tie 时保留入参顺序(JS sort 稳定)。
+ *
+ *  注意:imageGen 的 single 模式按 spec id 切换处加 gap,所以"同 flavor 组内"和
+ *  "不同 flavor 之间"的视觉间隙是一致的(都因 id 切换出现 gap)。若后续需要"同 flavor
+ *  紧贴 + 组间大 gap"的强分组视觉,需扩展 displayMode 为 clustered,本轮不做。
+ */
+export function classifyBeadFlavor(specs: ReadonlyArray<Category>): ZoneSpec[] {
+  const buckets = new Map<string, Category[]>();
+  for (const spec of specs) {
+    if (!(spec.pack_type ?? '').includes('爆珠')) continue;
+    const flavor = spec.flavor || '其他';
+    const list = buckets.get(flavor);
+    if (list) list.push(spec);
+    else buckets.set(flavor, [spec]);
+  }
+  // 组内按 price desc
+  for (const list of buckets.values()) {
+    list.sort((a, b) => (b.price ?? 0) - (a.price ?? 0));
+  }
+  const result: ZoneSpec[] = [];
+  // 外层按 BEAD_FLAVOR_ORDER 顺序拼接
+  for (const f of BEAD_FLAVOR_ORDER) {
+    const list = buckets.get(f);
+    if (!list) continue;
+    for (const s of list) {
+      result.push({ id: s.id, name: s.name, imageUrl: s.imageUrl });
+    }
+  }
+  // 兜底:未在 BEAD_FLAVOR_ORDER 中的 flavor(含'其他')排到最后,按 flavor 名字典序稳定
+  const tailFlavors = [...buckets.keys()]
+    .filter(f => !BEAD_FLAVOR_ORDER.includes(f))
+    .sort();
+  for (const f of tailFlavors) {
+    for (const s of buckets.get(f)!) {
+      result.push({ id: s.id, name: s.name, imageUrl: s.imageUrl });
+    }
+  }
+  return result;
+}
+
+/**
+ * 一次性运行 9 个分类器,各专区独立计算,同一品规可在不同专区重复出现。
  *
  * 缺省参数:
  *  - inventoryById 空 → slowMoving 自然返回 []
  *  - substituteRules 空 → substitute 返回 []
  *  - customerOnSaleIds 空 → substitute / nostalgia / productUpgrade 因 alternatives 在售校验失败而返回 []
  *  - extendedMap 空 → substitute / nostalgia / productUpgrade 无法查 primary/alternatives 而返回 []
+ *  - growthBySpec 空 → localShanghai.row2Specs 返回 []
+ *  - coverageBySpec 空 → shortSlimBead 返回 []
+ *  - fillRateBySpec 空 → shortSlimBead 仍可运行(订足率字段视为 0,不参与排序优势)
  */
 export function classifyZones(
   specs: ReadonlyArray<Category>,
@@ -334,6 +500,9 @@ export function classifyZones(
   customerOnSaleIds: ReadonlySet<string> = new Set(),
   inventoryById: ReadonlyMap<string, SpecInventoryInfo> = new Map(),
   substituteRules: ReadonlyMap<string, ReadonlyArray<string>> = new Map(),
+  growthBySpec: ReadonlyMap<string, number> = new Map(),
+  coverageBySpec: ReadonlyMap<string, number> = new Map(),
+  fillRateBySpec: ReadonlyMap<string, number> = new Map(),
   now: Date = new Date(),
 ): ZoneClassification {
   const industrialCoop = classifyIndustrialCoop(specs);
@@ -342,13 +511,18 @@ export function classifyZones(
   const slowMoving = classifySlowMoving(specs, inventoryById);
   const nostalgia = classifyNostalgia(specs, extendedMap, customerOnSaleIds);
   const newProduct = classifyNewProduct(specs, now);
+  const localShanghai = classifyLocalShanghai(specs, growthBySpec, now);
+  const shortSlimBead = classifyShortSlimBead(specs, coverageBySpec, fillRateBySpec);
+  const beadFlavor = classifyBeadFlavor(specs);
 
-  return { industrialCoop, productUpgrade, substitute, slowMoving, nostalgia, newProduct };
+  return { industrialCoop, productUpgrade, substitute, slowMoving, nostalgia, newProduct, localShanghai, shortSlimBead, beadFlavor };
 }
 
 /**
  * 单品专区:从 sortedSourceSpecs 中按 ids 过滤出 Category 列表,包装为单品 group(alternatives=[])。
  * 分组专区:把 ZoneGroup 的 primary / alternatives 从 extendedMap 解析为 Category。
+ * splitRows 专区:row1 + row2 按 id 合并去重(保持顺序)用于 groups 字段,完整 row1/row2 通过
+ *               resolveSplitRowsForZone 单独解析,供 placement.splitRowGroups 使用。
  */
 function resolveGroupsForZone(
   zoneId: ZoneId,
@@ -359,7 +533,21 @@ function resolveGroupsForZone(
   const meta = ZONE_META[zoneId];
   // festivalSeason 数据流隔离,不进 classification;buildZonePlacements 调用方已过滤,此处仅防御
   if (meta.displayMode === 'backFestival') return [];
-  const clsKey = zoneId as Exclude<ZoneId, 'festivalSeason'>;
+  if (meta.displayMode === 'splitRows') {
+    // 把 row1 / row2 按 id 合并去重(保持 row1 先 / row2 后的顺序);用于 groups 字段,
+    // 供 generate.ts 收集 usedSpecIds 给背柜主题匹配
+    const split = classification.localShanghai;
+    const seen = new Set<string>();
+    const out: ZonePlacementGroup[] = [];
+    for (const s of [...split.row1Specs, ...split.row2Specs]) {
+      if (seen.has(s.id)) continue;
+      seen.add(s.id);
+      const cat = extendedMap.get(s.id);
+      if (cat) out.push({ primary: cat, alternatives: [] });
+    }
+    return out;
+  }
+  const clsKey = zoneId as Exclude<ZoneId, 'festivalSeason' | 'localShanghai'>;
   if (meta.displayMode === 'single') {
     const specs = classification[clsKey] as ZoneSpec[];
     const idSet = new Set(specs.map(s => s.id));
@@ -383,6 +571,26 @@ function resolveGroupsForZone(
     out.push({ primary, alternatives: alts });
   }
   return out;
+}
+
+/**
+ * splitRows 专区(localShanghai)专用:把 ZoneSpec[] 升级为 ZonePlacementGroup[](alternatives=[]),
+ * 分别返回 row1 / row2 两排,供 imageGen 按行号绘制不同列表。
+ */
+function resolveSplitRowsForZone(
+  classification: ZoneClassification,
+  extendedMap: ReadonlyMap<string, Category>,
+): { row1: ZonePlacementGroup[]; row2: ZonePlacementGroup[] } {
+  const { row1Specs, row2Specs } = classification.localShanghai;
+  const resolve = (list: ZoneSpec[]): ZonePlacementGroup[] => {
+    const out: ZonePlacementGroup[] = [];
+    for (const s of list) {
+      const cat = extendedMap.get(s.id);
+      if (cat) out.push({ primary: cat, alternatives: [] });
+    }
+    return out;
+  };
+  return { row1: resolve(row1Specs), row2: resolve(row2Specs) };
 }
 
 /**
@@ -413,7 +621,7 @@ export function buildZonePlacements(
       sortedSourceSpecs,
     );
     if (groups.length === 0) continue;
-    placements.push({
+    const placement: ZonePlacement = {
       zoneId: assignment.zone_id,
       label: meta.label,
       counterId: assignment.counter_id,
@@ -423,7 +631,11 @@ export function buildZonePlacements(
       barColor: meta.barColor,
       priorityRank: meta.priorityRank,
       groupCount: groups.length,
-    });
+    };
+    if (meta.displayMode === 'splitRows') {
+      placement.splitRowGroups = resolveSplitRowsForZone(classification, extendedMap);
+    }
+    placements.push(placement);
   }
   return placements;
 }
