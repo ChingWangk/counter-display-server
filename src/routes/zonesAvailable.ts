@@ -117,7 +117,18 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     // ---- 3. 分类 ----
-    const customerOnSaleIds = new Set(sourceSpecs.map(c => c.id));
+    // customerOnSaleIds 仅含 stock_qty > 0 的规格,与 regularCustomerStrategy 保持一致:
+    // 刚好脱销(stock_qty=0)的品规不能作为他人的替代/继任,避免推荐"也缺货"的规格,
+    // 否则 zone-select 列出的 nostalgia/substitute/productUpgrade 在 /api/generate 二次分类时
+    // 会因 alternatives 在售校验失败被丢弃,前端看不到对应的色条/chip。
+    // manual 模式无 inventory,fallback 为全集(等同 stock_qty 视为正)。
+    const customerOnSaleIds = new Set(
+      mode === 'smart'
+        ? sourceSpecs
+            .filter(c => (inventoryById.get(c.id)?.stock_qty ?? 0) > 0)
+            .map(c => c.id)
+        : sourceSpecs.map(c => c.id),
+    );
     const zoneCls: ZoneClassification = classifyZones(
       sourceSpecs,
       extendedMap,
