@@ -262,7 +262,7 @@ router.post('/', async (req: Request, res: Response) => {
     // 各在自己命名空间内去重即可。
     // 柜台内的层重复仍允许 —— 图源耗尽时必须循环;节日是"整柜单图"的设计语义。
     //
-    // 新客户走归档版:每柜独立从 i=0 循环(多柜同层图片相同),不做跨柜去重。
+    // 新/常规客户共用此跨柜去重策略 —— 用户明确要求新客户也保留背柜去重。
     const usedFestivalImages = new Set<string>();
     let globalThemeCursor = 0;
 
@@ -291,18 +291,10 @@ router.post('/', async (req: Request, res: Response) => {
 
       const layerImages: string[] = [];
       if (allThemeImages.length > 0) {
-        if (isNewCustomer) {
-          // 归档版:每柜从 0 开始循环 imagePool,多个背柜同层图片相同
-          for (let li = 0; li < counter.levels; li++) {
-            layerImages.push(allThemeImages[li % allThemeImages.length]);
-          }
-        } else {
-          // 常规客户:跨柜 cursor 推进,保证不同背柜不复用同图
-          for (let li = 0; li < counter.levels; li++) {
-            layerImages.push(allThemeImages[(globalThemeCursor + li) % allThemeImages.length]);
-          }
-          globalThemeCursor += counter.levels;
+        for (let li = 0; li < counter.levels; li++) {
+          layerImages.push(allThemeImages[(globalThemeCursor + li) % allThemeImages.length]);
         }
+        globalThemeCursor += counter.levels;
       }
       results.push({
         counterId: counter.id,
