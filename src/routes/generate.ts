@@ -111,13 +111,19 @@ router.post('/', async (req: Request, res: Response) => {
       zoneAssignments: displayCabinetAssignments,
     };
 
+    // 客户类型先算出来:决定后续 priceTag / 背柜去重策略走"归档版"还是"常规客户增强版"
+    // 新客户(< 3 月)不应受常规客户专区开发的副作用影响,沿用归档版陈列规则:
+    //  - 不计算/不渲染杨浦区均价价签
+    //  - 背柜主题图按每柜从 0 开始循环(不跨柜累加 cursor 去重)
+    const customerClass = await getCustomerClass(customer_id || '');
+    const isNewCustomer = customerClass === 'new';
+
     let selection: SelectionResult;
     try {
       if (mode === 'manual') {
         selection = await manualStrategy(ctx);
       } else {
-        // mode === 'smart'：按客户类型分发
-        const customerClass = await getCustomerClass(customer_id || '');
+        // mode === 'smart':按客户类型分发
         selection = customerClass === 'regular'
           ? await regularCustomerStrategy(ctx)
           : await newCustomerStrategy(ctx);
@@ -197,9 +203,9 @@ router.post('/', async (req: Request, res: Response) => {
     );
 
     // ---- 拉价签白名单:根据 cust_info.has_pos 决定 ref_yangpu_avg_price 子集 ----
-    // 有 customer_id 才有比对依据;无 customer_id 时空 Map,imageGen 不画价签。
+    // 价签是常规客户专属功能(基于客户库存与杨浦区均价对比),新客户走归档版不渲染。
     let priceTagMap = new Map<string, number>();
-    if (customer_id) {
+    if (customer_id && !isNewCustomer) {
       const hasPos = await getCustomerHasPos(customer_id);
       priceTagMap = await getPriceTagMap(hasPos);
     }
@@ -255,6 +261,8 @@ router.post('/', async (req: Request, res: Response) => {
     // 节日图(/images/back-festival/...) 与主题图(/images/back-themes/...) 目录不同无交叉,
     // 各在自己命名空间内去重即可。
     // 柜台内的层重复仍允许 —— 图源耗尽时必须循环;节日是"整柜单图"的设计语义。
+    //
+    // 新客户走归档版:每柜独立从 i=0 循环(多柜同层图片相同),不做跨柜去重。
     const usedFestivalImages = new Set<string>();
     let globalThemeCursor = 0;
 
@@ -283,10 +291,18 @@ router.post('/', async (req: Request, res: Response) => {
 
       const layerImages: string[] = [];
       if (allThemeImages.length > 0) {
-        for (let li = 0; li < counter.levels; li++) {
-          layerImages.push(allThemeImages[(globalThemeCursor + li) % allThemeImages.length]);
+        if (isNewCustomer) {
+          // 归档版:每柜从 0 开始循环 imagePool,多个背柜同层图片相同
+          for (let li = 0; li < counter.levels; li++) {
+            layerImages.push(allThemeImages[li % allThemeImages.length]);
+          }
+        } else {
+          // 常规客户:跨柜 cursor 推进,保证不同背柜不复用同图
+          for (let li = 0; li < counter.levels; li++) {
+            layerImages.push(allThemeImages[(globalThemeCursor + li) % allThemeImages.length]);
+          }
+          globalThemeCursor += counter.levels;
         }
-        globalThemeCursor += counter.levels;
       }
       results.push({
         counterId: counter.id,
