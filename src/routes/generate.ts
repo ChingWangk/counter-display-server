@@ -312,6 +312,7 @@ router.post('/', async (req: Request, res: Response) => {
           barColor: festivalMeta.barColor,
           priorityRank: festivalMeta.priorityRank,
           groupCount: 1,
+          festivalId: a.festival_id,
         });
       }
     }

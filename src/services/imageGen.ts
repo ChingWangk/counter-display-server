@@ -128,7 +128,7 @@ function drawPlaceholder(
 }
 
 /**
- * 绘制价签：贴在烟包底部的黄底红字"¥XX.X"小标签。
+ * 绘制价签：贴在烟包底部的白底蓝字"¥XX.X"小标签。
  * 仅当 spec_id 命中 priceTagMap 时调用,用于直接展示售价 < 杨浦区均价的规格。
  */
 function drawPriceTag(
@@ -140,15 +140,15 @@ function drawPriceTag(
   h: number,
 ) {
   const tagY = y + h - PRICE_TAG_H;
-  // 黄底
-  ctx.fillStyle = '#FFD54F';
+  // 白底
+  ctx.fillStyle = '#FFFFFF';
   ctx.fillRect(x, tagY, w, PRICE_TAG_H);
-  // 黑色边框,1 px
-  ctx.strokeStyle = '#000';
+  // 蓝色边框,1 px(与字色一致)
+  ctx.strokeStyle = '#1565C0';
   ctx.lineWidth = 1;
   ctx.strokeRect(x + 0.5, tagY + 0.5, w - 1, PRICE_TAG_H - 1);
-  // 红字
-  ctx.fillStyle = '#C62828';
+  // 蓝字
+  ctx.fillStyle = '#1565C0';
   ctx.font = PRICE_TAG_FONT;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';

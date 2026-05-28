@@ -9,7 +9,7 @@ const router = Router();
 interface ScriptRow extends RowDataPacket {
   id: number;
   scene: string;
-  target_type: 'spec' | 'tag' | 'brand';
+  target_type: 'spec' | 'tag' | 'brand' | 'festival';
   target_value: string;
   script_text: string;
 }
@@ -23,7 +23,7 @@ interface EnrichedScript extends Omit<ScriptRow, keyof RowDataPacket> {
   matched_specs: MatchedSpec[];
 }
 
-type Scene = '滞销夸夸' | '新品推荐' | '怀旧专区' | '沪产专区' | '礼盒精品';
+type Scene = '滞销夸夸' | '新品推荐' | '怀旧专区' | '沪产专区' | '礼盒精品' | '节日季节';
 
 /** 根据 Category 推断该规格适用的 tag 集合(用于 sys_praise_scripts target_value)。
  *  支持的 tag:细支 / 中支 / 短支 / 爆珠 / 一类烟 / 二类烟 / 工商共育 / 经典款 / 低焦油 / 通用
@@ -56,22 +56,24 @@ function deriveTagsForSpec(c: Category): Set<string> {
  *  - spec_id=110105          → 单 spec(向后兼容,不与 spec_ids 同传)
  *  - brand=中华              → 单 brand
  *  - tag=细支                → 单 tag
+ *  - festival_id=dragonBoat  → festival 维度(scene 通常 '节日季节'),不与 spec_ids 同传
  *
- * 返回所有匹配话术,按 target_type 优先级排序(spec > brand > tag)。
+ * 返回所有匹配话术,按 target_type 优先级排序(spec > brand > tag > festival)。
  */
 router.get('/', async (req: Request, res: Response) => {
   const specIdsRaw = req.query.spec_ids as string | undefined;
   const specId = req.query.spec_id as string | undefined;
   const brand = req.query.brand as string | undefined;
   const tag = req.query.tag as string | undefined;
+  const festivalId = req.query.festival_id as string | undefined;
   const scene = req.query.scene as Scene | undefined;
 
   const specIds: string[] = specIdsRaw
     ? specIdsRaw.split(',').map(s => s.trim()).filter(Boolean)
     : [];
 
-  if (specIds.length === 0 && !specId && !brand && !tag && !scene) {
-    res.status(400).json({ success: false, error: '至少传 scene / spec_ids / spec_id / brand / tag 之一' });
+  if (specIds.length === 0 && !specId && !brand && !tag && !festivalId && !scene) {
+    res.status(400).json({ success: false, error: '至少传 scene / spec_ids / spec_id / brand / tag / festival_id 之一' });
     return;
   }
 
@@ -130,6 +132,7 @@ router.get('/', async (req: Request, res: Response) => {
       if (specId) { orParts.push('(target_type = ? AND target_value = ?)'); params.push('spec', specId); }
       if (brand)  { orParts.push('(target_type = ? AND target_value = ?)'); params.push('brand', brand); }
       if (tag)    { orParts.push('(target_type = ? AND target_value = ?)'); params.push('tag', tag); }
+      if (festivalId) { orParts.push('(target_type = ? AND target_value = ?)'); params.push('festival', festivalId); }
     }
 
     if (orParts.length > 0) conditions.push(`(${orParts.join(' OR ')})`);
@@ -142,7 +145,7 @@ router.get('/', async (req: Request, res: Response) => {
       `SELECT id, scene, target_type, target_value, script_text
          FROM sys_praise_scripts
          ${whereSql}
-        ORDER BY FIELD(target_type, 'spec', 'brand', 'tag'), id`,
+        ORDER BY FIELD(target_type, 'spec', 'brand', 'tag', 'festival'), id`,
       params
     );
 

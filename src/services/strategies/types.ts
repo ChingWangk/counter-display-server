@@ -139,6 +139,8 @@ export interface ZonePlacement {
     row1: ZonePlacementGroup[];
     row2: ZonePlacementGroup[];
   };
+  /** festivalSeason 专用:用户选的节日 id。供前端 result 卡片"查看话术"按 festival_id 拉对应节日话术。 */
+  festivalId?: FestivalId;
 }
 
 /** Category 形态的单组陈列单元(供 imageGen 绘制)。 */

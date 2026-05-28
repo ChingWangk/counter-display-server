@@ -12,15 +12,16 @@ import { FestivalId } from './types';
  *    单图直接命名 `{spec_id}.png`;多变体在 _ 后加任意字符(如 12345_1.png / 12345_2.png)。
  *    扩展名 .png / .jpg / .jpeg 都支持(大小写不敏感)。
  *  - 候选 = (spec_id × 该 spec 的所有变体图);spec_id 必须在客户在售/勾选范围内。
- *  - 排序(4 层 desc):
- *      1. isHighTier (tier ∈ {一类, 二类})
- *      2. ref_quarterly_wholesale_rank.wholesale_qty(最新季度)
- *      3. matchesSeason —— 夏秋 = pack_type 含'爆珠' && flavor === '薄荷'; 冬春 = pack_type 含'短支'
- *      4. price
+ *  - 排序(5 层 desc,新版加入 ruleScore 居首):
+ *      1. ruleScore —— 命中所选节日 rules 的条数(春节优先红色礼盒;端午偏礼盒;清明偏怀旧;...)
+ *      2. isHighTier (tier ∈ {一类, 二类})
+ *      3. ref_quarterly_wholesale_rank.wholesale_qty(最新季度)
+ *      4. matchesSeason —— 夏秋 = pack_type 含'爆珠' && flavor === '薄荷'; 冬春 = pack_type 含'短支'
+ *      5. price
  *  - 取 Top 1,返回 `/images/back-festival/{fileName}` 作为整张背柜图(单图直出)。
  *
- * 节日参数(festivalId)目前不参与排序,仅作为接口契约保留;未来如需"节日→spec 偏好"
- * (如春节优先红包装)可在此扩展。
+ * festival_id 通过 FESTIVAL_RULES_MAP 翻译成 rules 关键词,然后逐条匹配 Category 字段产生 ruleScore。
+ * rules 关键词来源:`sys_season_calendar` 维护报告(标准数据/系统级/维护输出/季节日历维护报告.md)。
  */
 
 const IMAGE_DIR = '/www/wwwroot/47.103.65.4/images/back-festival';
@@ -30,9 +31,71 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 
 type SeasonType = 'summerAutumn' | 'winterSpring';
 
+/** 每个节日适用的 rules(来源:标准数据/系统级 季节日历维护报告)。
+ *  nationalDay / chongyang 季节日历未列入,按业务常识设默认:
+ *   - 国庆:高价烟前置 + 沪产专区前置(双节同庆,沪产烟好卖)
+ *   - 重阳:怀旧专区前置 + 经典老牌(敬老节,长辈爱老味道) */
+const FESTIVAL_RULES_MAP: Record<FestivalId, string[]> = {
+  newYear:         ['高价烟前置', '沪产专区前置'],
+  springFestival:  ['高价烟前置', '礼盒精品', '沪产专区前置', '中华熊猫前置'],
+  lanternFestival: ['高价烟前置', '礼盒精品'],
+  qingming:        ['怀旧专区前置', '经典老牌'],
+  dragonBoat:      ['高价烟前置', '礼盒精品', '沪产专区前置'],
+  midAutumn:       ['高价烟前置', '礼盒精品', '沪产专区前置', '中华熊猫前置'],
+  nationalDay:     ['高价烟前置', '沪产专区前置'],
+  chongyang:       ['怀旧专区前置', '经典老牌'],
+};
+
+const HU_BRANDS = new Set(['中华', '熊猫']);
+
+/** 单个 rule 关键词作用在 Category 上,返回 0/1。多条 rule 累加得 ruleScore。
+ *  字段缺失视为不命中,不报错(开发环境兼容)。 */
+function matchRule(rule: string, c: Category, now: Date): boolean {
+  switch (rule) {
+    case '高价烟前置':
+    case '一类烟前置':
+    case '礼盒精品':
+      return HIGH_TIERS.has(c.tier ?? '');
+    case '沪产专区前置':
+      return c.manufacturer === '上海烟草集团';
+    case '中华熊猫前置':
+      return HU_BRANDS.has(c.brand ?? '');
+    case '怀旧专区前置':
+      return c.is_delisted === true;
+    case '经典老牌':
+      return !!c.launch_date && c.launch_date < '2010-01-01';
+    case '新品推荐前置':
+      return !!c.launch_date && monthsBetween(c.launch_date, now) <= 3;
+    case '时尚新品前置':
+      return !!c.launch_date && monthsBetween(c.launch_date, now) <= 6;
+    case '薄荷爆珠优先':
+      return c.flavor === '薄荷' && (c.pack_type ?? '').includes('爆珠');
+    case '水果爆珠':
+    case '爆珠水果':
+      return c.flavor === '水果' && (c.pack_type ?? '').includes('爆珠');
+    case '中支偏好':
+      return (c.pack_type ?? '').includes('中支');
+    case '细支偏好':
+      return (c.pack_type ?? '').includes('细支');
+    case '中支细支偏好':
+      return (c.pack_type ?? '').includes('中支') || (c.pack_type ?? '').includes('细支');
+    default:
+      // 无字段支撑的 rule(低焦/口感/包装/全品类促销)直接跳过,不贡献分数
+      return false;
+  }
+}
+
+function monthsBetween(dateStr: string, now: Date): number {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return Number.POSITIVE_INFINITY;
+  const ms = now.getTime() - d.getTime();
+  return ms / (1000 * 60 * 60 * 24 * 30);
+}
+
 interface Candidate {
   specId: string;
   fileName: string;
+  ruleScore: number;
   isHighTier: boolean;
   wholesale: number;
   matchesSeason: boolean;
@@ -126,7 +189,7 @@ async function fetchLatestWholesaleQty(): Promise<Map<string, number>> {
 /**
  * 选节日季节专区的背柜图。
  *
- * @param festivalId        用户选的节日(目前未参与排序,接口契约保留)
+ * @param festivalId        用户选的节日,通过 FESTIVAL_RULES_MAP 翻译成 rules 关键词参与排序首层
  * @param customerSpecIds   客户在售/勾选范围内的 spec_id 集合;候选必须落在此集合内
  * @param extendedMap       全量 catalog(含 ext 字段),用于查 tier/pack_type/flavor/price
  * @param now               今天的日期,决定季节(夏秋/冬春)
@@ -134,7 +197,7 @@ async function fetchLatestWholesaleQty(): Promise<Map<string, number>> {
  * @returns 完整 URL 路径(如 `/images/back-festival/12345_1.png`);无可用图片时返回 null
  */
 export async function selectFestivalImage(
-  _festivalId: FestivalId,
+  festivalId: FestivalId,
   customerSpecIds: ReadonlySet<string>,
   extendedMap: ReadonlyMap<string, Category>,
   now: Date = new Date(),
@@ -145,19 +208,25 @@ export async function selectFestivalImage(
 
   const wholesaleMap = await fetchLatestWholesaleQty();
   const season = getSeason(now);
+  const rules = FESTIVAL_RULES_MAP[festivalId] || [];
 
   const candidates: Candidate[] = [];
   for (const [specId, fileNames] of imageIndex) {
     if (!customerSpecIds.has(specId)) continue;
     const cat = extendedMap.get(specId);
     if (!cat) continue;
+    // 命中节日 rules 的条数(春节 4 条规则全中 → 4 分;端午全中 → 3 分;...)
+    let ruleScore = 0;
+    for (const rule of rules) {
+      if (matchRule(rule, cat, now)) ruleScore++;
+    }
     for (const fileName of fileNames) {
-      // 跨背柜去重:已被前一张背柜选走的图片 URL 在本次直接排除,
-      // 避免两张背柜显示相同节日图
+      // 跨背柜去重:已被前一张背柜选走的图片 URL 在本次直接排除
       if (excludeImageUrls.has(`${IMAGE_URL_PREFIX}/${fileName}`)) continue;
       candidates.push({
         specId,
         fileName,
+        ruleScore,
         isHighTier: HIGH_TIERS.has(cat.tier ?? ''),
         wholesale: wholesaleMap.get(specId) ?? 0,
         matchesSeason: matchesSeason(cat, season),
@@ -169,6 +238,7 @@ export async function selectFestivalImage(
   if (candidates.length === 0) return null;
 
   candidates.sort((a, b) => {
+    if (a.ruleScore !== b.ruleScore) return b.ruleScore - a.ruleScore;
     if (a.isHighTier !== b.isHighTier) return a.isHighTier ? -1 : 1;
     if (a.wholesale !== b.wholesale) return b.wholesale - a.wholesale;
     if (a.matchesSeason !== b.matchesSeason) return a.matchesSeason ? -1 : 1;
