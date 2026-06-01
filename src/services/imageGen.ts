@@ -92,6 +92,18 @@ interface RegularRowSlot {
 }
 type RowSlot = ZoneSingleRowSlot | ZoneGroupRowSlot | RegularRowSlot;
 
+/**
+ * 无专区(新客户 / 未启用任何专区)柜台的"铺满整柜"布局参数。
+ * 由 generate.ts 按归档版模式判定(standard/expanded/double)算好后传入。
+ * 不传(undefined)时走专区模式:常规行顶部 cram、底部留给专区。
+ */
+export interface RegularFillLayout {
+  /** double 模式:每个规格渲染两包紧贴(行内 2×spec ≤ 每行包数时生效),铺满稀疏柜台 */
+  doublePack: boolean;
+  /** 行间规格分布:standard 用 uniform(上密下疏),expanded/double 用 staggered(砖墙错位) */
+  distribute: 'uniform' | 'staggered';
+}
+
 // 同一专区跨 rowCount 行的合并标签信息:左侧画一条贯穿全部行的竖向 label
 interface ZoneLabelBlock {
   startRowInZone: number;  // 在 zoneRowSlots 中的起始 index (0-based)
@@ -189,8 +201,9 @@ function staggeredDistribute(total: number, rows: number): number[] {
 /**
  * 为单个柜台生成陈列图片
  *
- * 整张画布:左侧 ZONE_LABEL_W 宽的"专区标签栏" + 右侧陈列区域(width = counter.length × PX_PER_CM)。
- * 标签栏不挤占陈列容量(包数),仅在画布外侧延伸。常规行对应的标签栏区域为空白米白底。
+ * 整张画布:左侧 labelW 宽的"专区标签栏"(仅当本柜台有专区行时才预留,否则 labelW=0) +
+ * 右侧陈列区域(width = counter.length × PX_PER_CM)。标签栏不挤占陈列容量(包数),仅在画布
+ * 外侧延伸。无专区的柜台(新客户 / 未启用专区)labelW=0,陈列区贴画布左缘,左侧无空白预留位。
  *
  * 行布局自上而下:
  *   层 0..regularRows-1: 常规陈列(单包,行内 staggered 分布;行内空隙由 canvas 均分)
@@ -207,6 +220,9 @@ function staggeredDistribute(total: number, rows: number): number[] {
  * @param regularRows 常规陈列实际占用的行数(由 generate 顺序分配后确定)
  * @param zonePlacements 本柜台的专区落位(rowCount 已经过 autoExpand 扩展)
  * @param priceTagMap spec_id → avg_price 映射;命中时在烟包底部画价签;缺省/空时不画
+ * @param regularLayout 无专区柜台的"铺满整柜"布局(归档版 standard/expanded/double);
+ *                      传入时常规行铺满 regularRows 行(通常 = levels),double 时双包陈列。
+ *                      不传则走专区模式(常规顶部 cram + staggered 单包)。
  */
 export async function generateCounterImage(
   counter: Counter,
@@ -214,23 +230,31 @@ export async function generateCounterImage(
   regularRows: number,
   zonePlacements?: ZonePlacement[],
   priceTagMap?: ReadonlyMap<string, number>,
+  regularLayout?: RegularFillLayout,
 ): Promise<{ imageUrl: string; usedCount: number }> {
   const displayAreaW = Math.round(counter.length * PX_PER_CM);
-  const canvasW = ZONE_LABEL_W + displayAreaW;
   const levels = counter.levels;
 
-  if (canvasW <= 0 || levels <= 0) {
+  if (displayAreaW <= 0 || levels <= 0) {
     throw new Error(`柜台 ${counter.id} 参数无效: length=${counter.length}, levels=${counter.levels}`);
   }
 
   const singleMaxPerRow = Math.floor(counter.length / PACK_WIDTH_CM);
 
-  // ---- 1. 计算常规行布局(staggered 分布到 regularRows 行) ----
+  // ---- 1. 计算常规行布局 ----
   const clampedRegularRows = Math.max(0, Math.min(regularRows, levels));
   let regularRowLayouts: RegularRowSlot[];
   if (clampedRegularRows === 0 || regularSpecs.length === 0) {
     regularRowLayouts = [];
+  } else if (regularLayout) {
+    // 无专区铺满模式(归档版):把所有 regularSpecs 按规格数分布到 regularRows 行,
+    // 不再按"每行 singleMaxPerRow 上限 cram",而是铺满整柜。double 时每个规格双包,
+    // 渲染阶段再展开为 2 包(见下方 doublePack 分支)。
+    const distribute = regularLayout.distribute === 'uniform' ? uniformDistribute : staggeredDistribute;
+    const perRow = distribute(regularSpecs.length, clampedRegularRows);
+    regularRowLayouts = perRow.map(n => ({ type: 'regular' as const, specCount: n }));
   } else {
+    // 专区模式:常规顶部 cram,容量 = singleMaxPerRow × rows,余量留给底部专区行
     const totalUsed = Math.min(singleMaxPerRow * clampedRegularRows, regularSpecs.length);
     const perRow = staggeredDistribute(totalUsed, clampedRegularRows);
     regularRowLayouts = perRow.map(n => ({ type: 'regular' as const, specCount: n }));
@@ -393,6 +417,11 @@ export async function generateCounterImage(
   }
   const zoneRowCount = zoneRowSlots.length;
 
+  // 左侧专区标签栏仅在本柜台确有专区行时才预留宽度。无专区(新客户 / 未启用任何专区的
+  // 柜台)时 labelW=0,陈列区贴画布左缘绘制,避免图片左侧出现一条空白的"专区名预留位"。
+  // 这条 labelW 即"专区功能是否影响本图布局"的唯一开关 —— 把专区特性与无专区图解耦。
+  const labelW = zoneRowCount > 0 ? ZONE_LABEL_W : 0;
+
   // 行槽:常规在上 → 专区紧贴其后 → 剩余为空闲层(slot 为 undefined)
   const rowSlots: (RowSlot | undefined)[] = new Array(levels).fill(undefined);
   for (let i = 0; i < regularRowLayouts.length && i < levels; i++) {
@@ -411,6 +440,7 @@ export async function generateCounterImage(
   const shelfBoards = levels - 1;
   const PADDING_TOP = 2;
   const canvasH = levels * CELL_H + shelfBoards * SHELF_BOARD_H + PADDING_TOP * 2;
+  const canvasW = labelW + displayAreaW;
 
   const canvas = createCanvas(canvasW, canvasH);
   const ctx = canvas.getContext('2d');
@@ -431,7 +461,7 @@ export async function generateCounterImage(
     const baseY = PADDING_TOP + row * (CELL_H + SHELF_BOARD_H);
 
     if (slot.type === 'zone-group') {
-      await drawGroupedZoneRow(ctx, slot.groups, ZONE_LABEL_W, displayAreaW, baseY, priceTagMap);
+      await drawGroupedZoneRow(ctx, slot.groups, labelW, displayAreaW, baseY, priceTagMap);
       continue;
     }
 
@@ -441,10 +471,14 @@ export async function generateCounterImage(
     } else {
       rowSpecs = placedRegular.slice(regularIdx, regularIdx + slot.specCount);
       regularIdx += slot.specCount;
+      // 无专区铺满 + double 模式:每个规格双包紧贴(行宽够时),drawFlatRow 在 id 切换处留 gap
+      if (regularLayout?.doublePack && rowSpecs.length > 0 && rowSpecs.length * 2 <= singleMaxPerRow) {
+        rowSpecs = rowSpecs.flatMap(s => [s, s]);
+      }
     }
     if (rowSpecs.length === 0) continue;
 
-    await drawFlatRow(ctx, rowSpecs, ZONE_LABEL_W, displayAreaW, baseY, priceTagMap);
+    await drawFlatRow(ctx, rowSpecs, labelW, displayAreaW, baseY, priceTagMap);
   }
 
   // ---- 绘制层板(横贯整个画布,后续 zone label 会覆盖其在 label 栏内的部分) ----

@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
 import { GenerateResponse, CounterResult, Category } from '../types';
-import { generateCounterImage, PACK_WIDTH_CM } from '../services/imageGen';
+import { generateCounterImage, PACK_WIDTH_CM, RegularFillLayout } from '../services/imageGen';
 import {
   SelectionContext,
   SelectionResult,
@@ -155,22 +155,67 @@ router.post('/', async (req: Request, res: Response) => {
       }
     }
 
-    // ---- 顺序分配 regular specs:假设无 zone,前置柜台先吃满 ----
-    // 业务规则:常规陈列先沿前置柜台铺满,被常规填满的层不允许放置专区。
+    // ---- 分配 regular specs:按"本次生成是否有展示柜专区"分流 ----
+    // 这是新客户 / 常规客户两套陈列逻辑的解耦切点:
+    //  - 无专区(新客户永远无专区,或常规/manual 未启用专区):还原归档版"铺满整柜"算法
+    //    —— 按容量比例分配多柜台 + 每柜用满所有层 + 稀疏时双包,避免烟包挤顶部、底部留空。
+    //  - 有专区(常规客户启用了专区):顺序分配,前置柜台先吃满,底部空行留给专区。
     const specCount = specs.length;
+    const noDisplayZones = initialZonePlacements.length === 0;
     const allocations: number[] = [];
     const regularRowsByCounter = new Map<string, number>();
-    let remaining = specCount;
-    for (const c of displayCounters) {
-      const packsPerRow = Math.floor(c.length / PACK_WIDTH_CM);
-      const cap = packsPerRow * c.levels;
-      const used = Math.min(remaining, cap);
-      allocations.push(used);
-      remaining -= used;
-      regularRowsByCounter.set(
-        c.id,
-        packsPerRow > 0 ? Math.min(c.levels, Math.ceil(used / packsPerRow)) : 0,
-      );
+    let regularLayout: RegularFillLayout | undefined;
+
+    if (noDisplayZones) {
+      // 归档版多柜台容量比例分配
+      const caps = displayCounters.map((c: any) => Math.floor(c.length / PACK_WIDTH_CM) * c.levels);
+      const totalCap = caps.reduce((a: number, b: number) => a + b, 0);
+      if (specCount >= totalCap) {
+        for (let i = 0; i < displayCounters.length; i++) allocations[i] = caps[i];
+      } else {
+        for (let i = 0; i < displayCounters.length; i++) {
+          allocations[i] = totalCap > 0 ? Math.round((specCount * caps[i]) / totalCap) : 0;
+        }
+        // 四舍五入误差按容量从大到小的柜台优先 ±1 调整,并夹在 [0, cap] 内
+        let diff = specCount - allocations.reduce((a, b) => a + b, 0);
+        const order = caps.map((_: number, i: number) => i).sort((a: number, b: number) => caps[b] - caps[a]);
+        let k = 0;
+        const maxSteps = (order.length + 1) * (specCount + 1);
+        let steps = 0;
+        while (diff !== 0 && order.length > 0 && steps < maxSteps) {
+          const idx = order[k % order.length];
+          if (diff > 0 && allocations[idx] < caps[idx]) { allocations[idx]++; diff--; }
+          else if (diff < 0 && allocations[idx] > 0) { allocations[idx]--; diff++; }
+          k++; steps++;
+        }
+      }
+      for (const c of displayCounters) regularRowsByCounter.set(c.id, c.levels);  // 铺满所有层
+
+      // 归档版布局模式判定(specCount vs totalSlots):
+      //  - specCount ≥ totalSlots          → standard(uniform 均匀,单包,gap≈0)
+      //  - totalSlots/2 ≤ specCount < total → expanded(staggered,单包,drawFlatRow 自动拉开间距)
+      //  - specCount < totalSlots/2         → double(staggered,双包紧贴铺满)
+      if (specCount >= totalSlots) {
+        regularLayout = { doublePack: false, distribute: 'uniform' };
+      } else if (specCount * 2 >= totalSlots) {
+        regularLayout = { doublePack: false, distribute: 'staggered' };
+      } else {
+        regularLayout = { doublePack: true, distribute: 'staggered' };
+      }
+    } else {
+      // 专区模式:顺序分配,前置柜台先吃满,被常规填满的层不允许放置专区
+      let remaining = specCount;
+      for (const c of displayCounters) {
+        const packsPerRow = Math.floor(c.length / PACK_WIDTH_CM);
+        const cap = packsPerRow * c.levels;
+        const used = Math.min(remaining, cap);
+        allocations.push(used);
+        remaining -= used;
+        regularRowsByCounter.set(
+          c.id,
+          packsPerRow > 0 ? Math.min(c.levels, Math.ceil(used / packsPerRow)) : 0,
+        );
+      }
     }
 
     // ---- 校验:用户分配的 zone 行数必须落在「常规之外的空闲层」内 ----
@@ -225,7 +270,7 @@ router.post('/', async (req: Request, res: Response) => {
         }
       }
       const regRows = regularRowsByCounter.get(cabinet.id) || 0;
-      const { imageUrl } = await generateCounterImage(cabinet, cabinetSpecs, regRows, cabinetZones, priceTagMap);
+      const { imageUrl } = await generateCounterImage(cabinet, cabinetSpecs, regRows, cabinetZones, priceTagMap, regularLayout);
       results.push({
         counterId: cabinet.id,
         counterType: cabinet.type,

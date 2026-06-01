@@ -115,14 +115,19 @@ router.post('/', async (req, res) => {
             requestCategories: Array.isArray(categories) ? categories : [],
             zoneAssignments: displayCabinetAssignments,
         };
+        // 客户类型先算出来:决定后续 priceTag / 背柜去重策略走"归档版"还是"常规客户增强版"
+        // 新客户(< 3 月)不应受常规客户专区开发的副作用影响,沿用归档版陈列规则:
+        //  - 不计算/不渲染杨浦区均价价签
+        //  - 背柜主题图按每柜从 0 开始循环(不跨柜累加 cursor 去重)
+        const customerClass = await (0, customerClass_1.getCustomerClass)(customer_id || '');
+        const isNewCustomer = customerClass === 'new';
         let selection;
         try {
             if (mode === 'manual') {
                 selection = await (0, manualStrategy_1.manualStrategy)(ctx);
             }
             else {
-                // mode === 'smart'：按客户类型分发
-                const customerClass = await (0, customerClass_1.getCustomerClass)(customer_id || '');
+                // mode === 'smart':按客户类型分发
                 selection = customerClass === 'regular'
                     ? await (0, regularCustomerStrategy_1.regularCustomerStrategy)(ctx)
                     : await (0, newCustomerStrategy_1.newCustomerStrategy)(ctx);
@@ -152,19 +157,75 @@ router.post('/', async (req, res) => {
                 return;
             }
         }
-        // ---- 顺序分配 regular specs:假设无 zone,前置柜台先吃满 ----
-        // 业务规则:常规陈列先沿前置柜台铺满,被常规填满的层不允许放置专区。
+        // ---- 分配 regular specs:按"本次生成是否有展示柜专区"分流 ----
+        // 这是新客户 / 常规客户两套陈列逻辑的解耦切点:
+        //  - 无专区(新客户永远无专区,或常规/manual 未启用专区):还原归档版"铺满整柜"算法
+        //    —— 按容量比例分配多柜台 + 每柜用满所有层 + 稀疏时双包,避免烟包挤顶部、底部留空。
+        //  - 有专区(常规客户启用了专区):顺序分配,前置柜台先吃满,底部空行留给专区。
         const specCount = specs.length;
+        const noDisplayZones = initialZonePlacements.length === 0;
         const allocations = [];
         const regularRowsByCounter = new Map();
-        let remaining = specCount;
-        for (const c of displayCounters) {
-            const packsPerRow = Math.floor(c.length / imageGen_1.PACK_WIDTH_CM);
-            const cap = packsPerRow * c.levels;
-            const used = Math.min(remaining, cap);
-            allocations.push(used);
-            remaining -= used;
-            regularRowsByCounter.set(c.id, packsPerRow > 0 ? Math.min(c.levels, Math.ceil(used / packsPerRow)) : 0);
+        let regularLayout;
+        if (noDisplayZones) {
+            // 归档版多柜台容量比例分配
+            const caps = displayCounters.map((c) => Math.floor(c.length / imageGen_1.PACK_WIDTH_CM) * c.levels);
+            const totalCap = caps.reduce((a, b) => a + b, 0);
+            if (specCount >= totalCap) {
+                for (let i = 0; i < displayCounters.length; i++)
+                    allocations[i] = caps[i];
+            }
+            else {
+                for (let i = 0; i < displayCounters.length; i++) {
+                    allocations[i] = totalCap > 0 ? Math.round((specCount * caps[i]) / totalCap) : 0;
+                }
+                // 四舍五入误差按容量从大到小的柜台优先 ±1 调整,并夹在 [0, cap] 内
+                let diff = specCount - allocations.reduce((a, b) => a + b, 0);
+                const order = caps.map((_, i) => i).sort((a, b) => caps[b] - caps[a]);
+                let k = 0;
+                const maxSteps = (order.length + 1) * (specCount + 1);
+                let steps = 0;
+                while (diff !== 0 && order.length > 0 && steps < maxSteps) {
+                    const idx = order[k % order.length];
+                    if (diff > 0 && allocations[idx] < caps[idx]) {
+                        allocations[idx]++;
+                        diff--;
+                    }
+                    else if (diff < 0 && allocations[idx] > 0) {
+                        allocations[idx]--;
+                        diff++;
+                    }
+                    k++;
+                    steps++;
+                }
+            }
+            for (const c of displayCounters)
+                regularRowsByCounter.set(c.id, c.levels); // 铺满所有层
+            // 归档版布局模式判定(specCount vs totalSlots):
+            //  - specCount ≥ totalSlots          → standard(uniform 均匀,单包,gap≈0)
+            //  - totalSlots/2 ≤ specCount < total → expanded(staggered,单包,drawFlatRow 自动拉开间距)
+            //  - specCount < totalSlots/2         → double(staggered,双包紧贴铺满)
+            if (specCount >= totalSlots) {
+                regularLayout = { doublePack: false, distribute: 'uniform' };
+            }
+            else if (specCount * 2 >= totalSlots) {
+                regularLayout = { doublePack: false, distribute: 'staggered' };
+            }
+            else {
+                regularLayout = { doublePack: true, distribute: 'staggered' };
+            }
+        }
+        else {
+            // 专区模式:顺序分配,前置柜台先吃满,被常规填满的层不允许放置专区
+            let remaining = specCount;
+            for (const c of displayCounters) {
+                const packsPerRow = Math.floor(c.length / imageGen_1.PACK_WIDTH_CM);
+                const cap = packsPerRow * c.levels;
+                const used = Math.min(remaining, cap);
+                allocations.push(used);
+                remaining -= used;
+                regularRowsByCounter.set(c.id, packsPerRow > 0 ? Math.min(c.levels, Math.ceil(used / packsPerRow)) : 0);
+            }
         }
         // ---- 校验:用户分配的 zone 行数必须落在「常规之外的空闲层」内 ----
         const initialZoneRowsByCounter = new Map();
@@ -187,9 +248,9 @@ router.post('/', async (req, res) => {
         // ---- 自动扩展:把每个柜台剩余空行用已启用的专区填满(groupCount 优先,上限即柜台空闲层数) ----
         const zonePlacements = (0, zones_1.autoExpandZonePlacements)(initialZonePlacements, displayCounters, regularRowsByCounter);
         // ---- 拉价签白名单:根据 cust_info.has_pos 决定 ref_yangpu_avg_price 子集 ----
-        // 有 customer_id 才有比对依据;无 customer_id 时空 Map,imageGen 不画价签。
+        // 价签是常规客户专属功能(基于客户库存与杨浦区均价对比),新客户走归档版不渲染。
         let priceTagMap = new Map();
-        if (customer_id) {
+        if (customer_id && !isNewCustomer) {
             const hasPos = await (0, substitute_1.getCustomerHasPos)(customer_id);
             priceTagMap = await (0, priceTag_1.getPriceTagMap)(hasPos);
         }
@@ -209,7 +270,7 @@ router.post('/', async (req, res) => {
                 }
             }
             const regRows = regularRowsByCounter.get(cabinet.id) || 0;
-            const { imageUrl } = await (0, imageGen_1.generateCounterImage)(cabinet, cabinetSpecs, regRows, cabinetZones, priceTagMap);
+            const { imageUrl } = await (0, imageGen_1.generateCounterImage)(cabinet, cabinetSpecs, regRows, cabinetZones, priceTagMap, regularLayout);
             results.push({
                 counterId: cabinet.id,
                 counterType: cabinet.type,
@@ -238,6 +299,8 @@ router.post('/', async (req, res) => {
         // 节日图(/images/back-festival/...) 与主题图(/images/back-themes/...) 目录不同无交叉,
         // 各在自己命名空间内去重即可。
         // 柜台内的层重复仍允许 —— 图源耗尽时必须循环;节日是"整柜单图"的设计语义。
+        //
+        // 新/常规客户共用此跨柜去重策略 —— 用户明确要求新客户也保留背柜去重。
         const usedFestivalImages = new Set();
         let globalThemeCursor = 0;
         for (const counter of backCounters) {
@@ -286,6 +349,7 @@ router.post('/', async (req, res) => {
                     barColor: festivalMeta.barColor,
                     priorityRank: festivalMeta.priorityRank,
                     groupCount: 1,
+                    festivalId: a.festival_id,
                 });
             }
         }
