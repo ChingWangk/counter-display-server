@@ -191,17 +191,12 @@ router.post('/', async (req: Request, res: Response) => {
       }
       for (const c of displayCounters) regularRowsByCounter.set(c.id, c.levels);  // 铺满所有层
 
-      // 归档版布局模式判定(specCount vs totalSlots):
-      //  - specCount ≥ totalSlots          → standard(uniform 均匀,单包,gap≈0)
-      //  - totalSlots/2 ≤ specCount < total → expanded(staggered,单包,drawFlatRow 自动拉开间距)
-      //  - specCount < totalSlots/2         → double(staggered,双包紧贴铺满)
-      if (specCount >= totalSlots) {
-        regularLayout = { doublePack: false, distribute: 'uniform' };
-      } else if (specCount * 2 >= totalSlots) {
-        regularLayout = { doublePack: false, distribute: 'staggered' };
-      } else {
-        regularLayout = { doublePack: true, distribute: 'staggered' };
-      }
+      // 行间品规分布:资源充足(≥总容量)用 uniform(上密下疏,gap≈0);否则 staggered(砖墙错位)。
+      // 不再分 expanded/double 档 —— 稀疏柜台一律由 drawFlatRow 的 face-out 自适应排面填充铺满整柜,
+      // 缝隙天然 < 一包,杜绝柜台空间浪费(替代了原 double 写死的 ×2 双包)。
+      regularLayout = {
+        distribute: specCount >= totalSlots ? 'uniform' : 'staggered',
+      };
     } else {
       // 专区模式:顺序分配,前置柜台先吃满,被常规填满的层不允许放置专区
       let remaining = specCount;

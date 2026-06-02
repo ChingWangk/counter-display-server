@@ -93,6 +93,11 @@ const ZONE_LABEL_LINE_H = 24; // 竖排每字垂直占位
 // 分组专区组与组之间至少留出的空隙(像素)。
 // bin-packing 时把此值计入下一组的占用宽度,避免组与组紧贴显得拥挤。
 const MIN_INTER_GROUP_GAP_PX = CELL_W;
+// 任意两包(或两组)之间"空缝隙"的上限 = 一包烟宽度。
+// 规整陈列行靠 face-out 排面填充铺满整柜,缝隙天然 < 一包,不依赖此上限;
+// 它主要作用于内容固定、无法靠加排面填充的专区行(单品专区残量行 / 分组专区组间):
+// 缝隙超过一包即封顶,并把多余空间退到行两侧(居中),避免出现"一包多宽"的空档。
+const MAX_INTER_GAP_PX = CELL_W;
 // 价签尺寸（贴在烟包底部）
 const PRICE_TAG_H = 26;
 const PRICE_TAG_FONT = `bold 16px ${FONT_FAMILY}`;
@@ -190,7 +195,8 @@ function staggeredDistribute(total, rows) {
  * @param zonePlacements 本柜台的专区落位(rowCount 已经过 autoExpand 扩展)
  * @param priceTagMap spec_id → avg_price 映射;命中时在烟包底部画价签;缺省/空时不画
  * @param regularLayout 无专区柜台的"铺满整柜"布局(归档版 standard/expanded/double);
- *                      传入时常规行铺满 regularRows 行(通常 = levels),double 时双包陈列。
+ *                      传入时常规行铺满 regularRows 行(通常 = levels),行内由 drawFlatRow 的
+ *                      face-out 自适应排面填充铺满(品规不足则放大排面,不再写死双包)。
  *                      不传则走专区模式(常规顶部 cram + staggered 单包)。
  */
 async function generateCounterImage(counter, regularSpecs, regularRows, zonePlacements, priceTagMap, regularLayout) {
@@ -208,8 +214,8 @@ async function generateCounterImage(counter, regularSpecs, regularRows, zonePlac
     }
     else if (regularLayout) {
         // 无专区铺满模式(归档版):把所有 regularSpecs 按规格数分布到 regularRows 行,
-        // 不再按"每行 singleMaxPerRow 上限 cram",而是铺满整柜。double 时每个规格双包,
-        // 渲染阶段再展开为 2 包(见下方 doublePack 分支)。
+        // 不再按"每行 singleMaxPerRow 上限 cram",而是铺满整柜。行内若品规不足整行容量,
+        // 由 drawFlatRow 的 face-out 排面填充自动放大排面铺满(取代旧的双包展开)。
         const distribute = regularLayout.distribute === 'uniform' ? uniformDistribute : staggeredDistribute;
         const perRow = distribute(regularSpecs.length, clampedRegularRows);
         regularRowLayouts = perRow.map(n => ({ type: 'regular', specCount: n }));
@@ -420,20 +426,20 @@ async function generateCounterImage(counter, regularSpecs, regularRows, zonePlac
             continue;
         }
         let rowSpecs;
+        let fillRow = false;
         if (slot.type === 'zone-single') {
             rowSpecs = slot.specs;
         }
         else {
+            // 规整陈列行:开启 face-out 填充。品规不足整行容量时,drawFlatRow 会按比例放大每个
+            // 品规的排面数把整柜铺满 —— 自适应 ×N 取代了旧的写死双包(×2),能填满任意稀疏度。
             rowSpecs = placedRegular.slice(regularIdx, regularIdx + slot.specCount);
             regularIdx += slot.specCount;
-            // 无专区铺满 + double 模式:每个规格双包紧贴(行宽够时),drawFlatRow 在 id 切换处留 gap
-            if (regularLayout?.doublePack && rowSpecs.length > 0 && rowSpecs.length * 2 <= singleMaxPerRow) {
-                rowSpecs = rowSpecs.flatMap(s => [s, s]);
-            }
+            fillRow = true;
         }
         if (rowSpecs.length === 0)
             continue;
-        await drawFlatRow(ctx, rowSpecs, labelW, displayAreaW, baseY, priceTagMap);
+        await drawFlatRow(ctx, rowSpecs, labelW, displayAreaW, baseY, priceTagMap, fillRow);
     }
     // ---- 绘制层板(横贯整个画布,后续 zone label 会覆盖其在 label 栏内的部分) ----
     for (let r = 0; r < shelfBoards; r++) {
@@ -466,27 +472,58 @@ async function generateCounterImage(counter, regularSpecs, regularRows, zonePlac
 /**
  * 绘制扁平行(常规 + 单品专区):同 id 紧贴,按 id 切换处加 gap。
  * 烟包绘制于 [areaStartX, areaStartX + areaW] 区间内,左侧 areaStartX 留给专区标签栏。
+ *
+ * @param fill 规整陈列行传 true:品规不足整行容量时,按比例放大每个品规的排面数(face-out)
+ *             把整行铺满,杜绝"货比格少"造成的柜台空间浪费;余量摊成 < 一包宽的微缝隙。
+ *             专区行传 false:内容固定不放大,仅在缝隙超一包时封顶并居中(MAX_INTER_GAP_PX)。
  */
-async function drawFlatRow(ctx, rowSpecs, areaStartX, areaW, baseY, priceTagMap) {
+async function drawFlatRow(ctx, rowSpecs, areaStartX, areaW, baseY, priceTagMap, fill = false) {
+    let packs = rowSpecs;
+    // ---- face-out 排面填充(仅规整陈列行)----
+    // 货架能放 capacity 包;品规数不足时,每个品规重复 factor(=⌊capacity/品规数⌋)个排面,
+    // 余量 remainder 再给靠前的品规各 +1 排面,使总包数恰为 capacity,整柜被填满。
+    // 同 id 排面相邻(保持"同规格紧贴"语义;manual 勾选比例被等比放大),不同 id 之间由
+    // 下方 interGap 兜底(填满后必 < 一包)。
+    if (fill && packs.length > 0) {
+        const capacity = Math.floor(areaW / CELL_W);
+        if (packs.length < capacity) {
+            const factor = Math.floor(capacity / packs.length);
+            const remainder = capacity - packs.length * factor;
+            const expanded = [];
+            for (let i = 0; i < packs.length; i++) {
+                const reps = factor + (i < remainder ? 1 : 0);
+                for (let k = 0; k < reps; k++)
+                    expanded.push(packs[i]);
+            }
+            packs = expanded;
+        }
+    }
     let diffTransitions = 0;
-    for (let i = 1; i < rowSpecs.length; i++) {
-        if (rowSpecs[i].id !== rowSpecs[i - 1].id)
+    for (let i = 1; i < packs.length; i++) {
+        if (packs[i].id !== packs[i - 1].id)
             diffTransitions++;
     }
-    const totalPackW = rowSpecs.length * CELL_W;
+    const totalPackW = packs.length * CELL_W;
     const gapBudget = Math.max(areaW - totalPackW, 0);
-    const interGap = diffTransitions > 0 ? gapBudget / diffTransitions : 0;
-    const startX = diffTransitions > 0
+    let interGap = diffTransitions > 0 ? gapBudget / diffTransitions : 0;
+    let startX = diffTransitions > 0
         ? areaStartX
         : areaStartX + (areaW - totalPackW) / 2;
+    // 缝隙上限封顶:面向内容固定、未填充的专区残量行(品规稀疏时 gapBudget 偏大)。
+    // 规整填充行填满后 interGap 必 < 一包,不会触发此分支;触发时把内容整体居中,余量退两侧。
+    if (diffTransitions > 0 && interGap > MAX_INTER_GAP_PX) {
+        interGap = MAX_INTER_GAP_PX;
+        const contentW = totalPackW + diffTransitions * MAX_INTER_GAP_PX;
+        startX = areaStartX + (areaW - contentW) / 2;
+    }
     let cursor = startX;
-    for (let col = 0; col < rowSpecs.length; col++) {
+    for (let col = 0; col < packs.length; col++) {
         if (col > 0) {
             cursor += CELL_W;
-            if (rowSpecs[col].id !== rowSpecs[col - 1].id)
+            if (packs[col].id !== packs[col - 1].id)
                 cursor += interGap;
         }
-        await drawSpec(ctx, rowSpecs[col], cursor, baseY, CELL_W, CELL_H, priceTagMap);
+        await drawSpec(ctx, packs[col], cursor, baseY, CELL_W, CELL_H, priceTagMap);
     }
 }
 /**
@@ -514,6 +551,13 @@ async function drawGroupedZoneRow(ctx, groups, areaStartX, areaW, baseY, priceTa
     else {
         interGap = gapBudget / nGaps;
         startX = areaStartX;
+        // 组间缝隙封顶一包宽:分组内容固定无法靠加排面填充,超限即封顶并整体居中,余量退两侧,
+        // 避免组与组之间出现"一包多宽"的空档(与规整行的缝隙上限一致,全客户统一)。
+        if (interGap > MAX_INTER_GAP_PX) {
+            interGap = MAX_INTER_GAP_PX;
+            const contentW = totalGroupW + nGaps * MAX_INTER_GAP_PX;
+            startX = areaStartX + (areaW - contentW) / 2;
+        }
     }
     let cursor = startX;
     for (let gi = 0; gi < groups.length; gi++) {
