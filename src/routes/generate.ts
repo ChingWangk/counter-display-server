@@ -9,6 +9,7 @@ import {
   ValidationError,
   ZoneAssignment,
   ZonePlacement,
+  InlinePair,
   ZONE_META,
   FestivalId,
 } from '../services/strategies/types';
@@ -142,6 +143,20 @@ router.post('/', async (req: Request, res: Response) => {
     const filteredHotSpecs: { id: string; name: string }[] = selection.filteredHotSpecs || [];
     const initialZonePlacements: ZonePlacement[] = selection.zonePlacements || [];
 
+    // ---- 基础版专区专属数据(工商共育固定首柜两行 / 升级+平替内嵌红框对)----
+    // 这三者不进 zonePlacements,由首柜 generateCounterImage 专门渲染。
+    const industrialCoopUnits: Category[] = selection.industrialCoopUnits || [];
+    const inlinePairs: InlinePair[] = selection.inlinePairs || [];
+    // 红框对两端规格从常规陈列池移出(避免与红框对重复渲染),它们只在首柜以红框对形式出现。
+    const pairedIds = new Set<string>();
+    for (const p of inlinePairs) {
+      pairedIds.add(p.primary.id);
+      pairedIds.add(p.secondary.id);
+    }
+    const regularPool: Category[] = pairedIds.size > 0
+      ? specs.filter(c => !pairedIds.has(c.id))
+      : specs;
+
     // ---- 校验初始 zonePlacements 落位的柜台合法 ----
     for (const p of initialZonePlacements) {
       const target = displayCounters.find((c: any) => c.id === p.counterId);
@@ -160,7 +175,7 @@ router.post('/', async (req: Request, res: Response) => {
     //  - 无专区(新客户永远无专区,或常规/manual 未启用专区):还原归档版"铺满整柜"算法
     //    —— 按容量比例分配多柜台 + 每柜用满所有层 + 稀疏时双包,避免烟包挤顶部、底部留空。
     //  - 有专区(常规客户启用了专区):顺序分配,前置柜台先吃满,底部空行留给专区。
-    const specCount = specs.length;
+    const specCount = regularPool.length;
     const noDisplayZones = initialZonePlacements.length === 0;
     const allocations: number[] = [];
     const regularRowsByCounter = new Map<string, number>();
@@ -255,7 +270,7 @@ router.post('/', async (req: Request, res: Response) => {
     let offset = 0;
     for (let i = 0; i < displayCounters.length; i++) {
       const cabinet = displayCounters[i];
-      const cabinetSpecs = specs.slice(offset, offset + allocations[i]);
+      const cabinetSpecs = regularPool.slice(offset, offset + allocations[i]);
       const cabinetZones = zonePlacements.filter(p => p.counterId === cabinet.id);
       // zone usedSpecIds 也要并入,用于背柜主题匹配:遍历 groups 收集 primary + alternatives
       for (const p of cabinetZones) {
@@ -265,7 +280,16 @@ router.post('/', async (req: Request, res: Response) => {
         }
       }
       const regRows = regularRowsByCounter.get(cabinet.id) || 0;
-      const { imageUrl } = await generateCounterImage(cabinet, cabinetSpecs, regRows, cabinetZones, priceTagMap, regularLayout);
+      // 基础版专属渲染只发生在第一个展示柜:工商共育固定前两行 + 所有内嵌红框对
+      const isFirstCabinet = i === 0;
+      const { imageUrl } = await generateCounterImage(
+        cabinet, cabinetSpecs, regRows, cabinetZones, priceTagMap, regularLayout,
+        {
+          isFirstCabinet,
+          industrialCoopUnits: isFirstCabinet ? industrialCoopUnits : [],
+          inlinePairs: isFirstCabinet ? inlinePairs : [],
+        },
+      );
       results.push({
         counterId: cabinet.id,
         counterType: cabinet.type,

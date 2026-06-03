@@ -1,8 +1,8 @@
 import { Category } from '../../types';
 import { sortCategories } from '../sortCategories';
 import { getExtendedCategoryMap } from '../categoryCatalog';
-import { classifyZones, buildZonePlacements } from './zones';
-import { SelectionContext, SelectionResult, StrategyFn } from './types';
+import { classifyZones, buildZonePlacements, buildInlinePairs, resolveIndustrialCoopUnits } from './zones';
+import { SelectionContext, SelectionResult, StrategyFn, ZoneId } from './types';
 
 /**
  * 自选规格：直接按用户勾选的 id 列表取品规，允许同一 id 重复出现（表示多包陈列）。
@@ -27,7 +27,9 @@ export const manualStrategy: StrategyFn = async (ctx: SelectionContext): Promise
 
   const sorted = sortCategories(available);
 
-  // 专区分类(无 inventory + 无 substituteRules,slowMoving 和 substitute 返回 [])+ 按 zoneAssignments 落位
+  // 专区分类 + 按 zoneAssignments 落位(仅 zoneRows 专区);基础版三专区走专属字段。
+  // manual 模式无 inventory:substitute 因无 rules 基本为空;productUpgrade 走通用规则需副规格在所选集合内;
+  // industrialCoop 仍可按固定 4 单元渲染(占位偏多)。
   if (ctx.zoneAssignments && ctx.zoneAssignments.length > 0) {
     const customerOnSaleIds = new Set(sorted.map(c => c.id));
     const classification = classifyZones(sorted, extendedCategoryMap, customerOnSaleIds);
@@ -37,7 +39,12 @@ export const manualStrategy: StrategyFn = async (ctx: SelectionContext): Promise
       sorted,
       extendedCategoryMap,
     );
-    return { specs: sorted, usedSpecIds, zonePlacements };
+    const enabledZoneIds = new Set<ZoneId>(ctx.zoneAssignments.map(a => a.zone_id));
+    const industrialCoopUnits = enabledZoneIds.has('industrialCoop')
+      ? resolveIndustrialCoopUnits(sorted, extendedCategoryMap)
+      : undefined;
+    const inlinePairs = buildInlinePairs(classification, extendedCategoryMap, enabledZoneIds);
+    return { specs: sorted, usedSpecIds, zonePlacements, industrialCoopUnits, inlinePairs };
   }
 
   return { specs: sorted, usedSpecIds };

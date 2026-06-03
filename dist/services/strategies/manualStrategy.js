@@ -24,12 +24,19 @@ const manualStrategy = async (ctx) => {
         .map(id => extendedCategoryMap.get(id))
         .filter((c) => c !== undefined);
     const sorted = (0, sortCategories_1.sortCategories)(available);
-    // 专区分类(无 inventory + 无 substituteRules,slowMoving 和 substitute 返回 [])+ 按 zoneAssignments 落位
+    // 专区分类 + 按 zoneAssignments 落位(仅 zoneRows 专区);基础版三专区走专属字段。
+    // manual 模式无 inventory:substitute 因无 rules 基本为空;productUpgrade 走通用规则需副规格在所选集合内;
+    // industrialCoop 仍可按固定 4 单元渲染(占位偏多)。
     if (ctx.zoneAssignments && ctx.zoneAssignments.length > 0) {
         const customerOnSaleIds = new Set(sorted.map(c => c.id));
         const classification = (0, zones_1.classifyZones)(sorted, extendedCategoryMap, customerOnSaleIds);
         const zonePlacements = (0, zones_1.buildZonePlacements)(classification, ctx.zoneAssignments, sorted, extendedCategoryMap);
-        return { specs: sorted, usedSpecIds, zonePlacements };
+        const enabledZoneIds = new Set(ctx.zoneAssignments.map(a => a.zone_id));
+        const industrialCoopUnits = enabledZoneIds.has('industrialCoop')
+            ? (0, zones_1.resolveIndustrialCoopUnits)(sorted, extendedCategoryMap)
+            : undefined;
+        const inlinePairs = (0, zones_1.buildInlinePairs)(classification, extendedCategoryMap, enabledZoneIds);
+        return { specs: sorted, usedSpecIds, zonePlacements, industrialCoopUnits, inlinePairs };
     }
     return { specs: sorted, usedSpecIds };
 };

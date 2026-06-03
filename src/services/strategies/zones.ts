@@ -8,6 +8,7 @@ import {
   ZonePlacement,
   ZonePlacementGroup,
   ZoneId,
+  InlinePair,
   ZONE_META,
   ZONE_PRIORITY_ORDER,
 } from './types';
@@ -37,15 +38,48 @@ const SLOW_MOVING_DAYS = 30;
 const SLOW_MOVING_QTY = 3;
 const HIGH_TIER_NEW_MONTHS = 24;
 const DEFAULT_NEW_MONTHS = 12;
-const SHANGHAI_TOBACCO_MFR = '上海烟草集团有限责任公司';
 
 const HIGH_TIER_VALUES = new Set(['一类', '二类']);
 
 /** 爆珠口味组合的 flavor 外层顺序(薄荷>水果>功能性>原味>其他)。 */
 const BEAD_FLAVOR_ORDER = ['薄荷', '水果', '功能性', '原味'];
 
+/** 工商共育固定优先顺序;其余 coop 规格按价格降序追加。310143 为新品占位(强制前置)。 */
+const INDUSTRIAL_COOP_ORDER = ['310143', '310140', '340136', '450817'];
+const INDUSTRIAL_COOP_UNIT_COUNT = 4;
+
+/** 产品升级写死映射(待升级主规格 → 升级副规格),优先级高于通用规则。 */
+const UPGRADE_PAIRS: Record<string, string> = {
+  '310133': '310142',
+  '310310': '310317',
+  '340135': '340142',
+};
+
+/** 脱销平替写死映射(脱销主规格 → 在售副规格),优先级高于通用规则。 */
+const SUBSTITUTE_PAIRS: Record<string, string> = {
+  '330403': '423801',
+  '330409': '310102',
+  '320512': '360122',
+};
+
 function monthsBetween(from: Date, to: Date): number {
   return (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
+}
+
+/** 合成占位 Category：用于 catalog 未收录的工商共育固定 id(如新品 310143)。
+ *  imageUrl 仍指向 /images/categories/{id}.jpg,缺图时 imageGen 会画占位框。 */
+function placeholderCategory(id: string): Category {
+  return {
+    id,
+    name: id,
+    imageUrl: `/images/categories/${id}.jpg`,
+    price: 0,
+    brand: '',
+    manufacturer: '',
+    category: 'group',
+    province: null,
+    is_hot: false,
+  };
 }
 
 function toZoneSpec(c: Category): ZoneSpec {
@@ -58,7 +92,9 @@ function toZoneSpec(c: Category): ZoneSpec {
   };
 }
 
-/** 工商共育：is_industrial_coop = true 的规格，按品类排序保持稳定。 */
+/** 工商共育：is_industrial_coop = true 的规格，按品类排序保持稳定。
+ *  注:此函数仅供 zonesAvailable 判断"工商共育是否可用",真正的陈列单元由
+ *  resolveIndustrialCoopUnits 计算(含固定顺序 + 补满 4 个)。 */
 export function classifyIndustrialCoop(specs: ReadonlyArray<Category>): ZoneSpec[] {
   const result: ZoneSpec[] = [];
   for (const spec of specs) {
@@ -74,172 +110,194 @@ export function classifyIndustrialCoop(specs: ReadonlyArray<Category>): ZoneSpec
 }
 
 /**
- * 产品升级:上海集团新品作为 primary,搭配同产地/同品牌的集团紧俏组合,grouped 模式。
+ * 工商共育陈列单元:固定首柜前两行,每行「条+3包+条+3包」,共 4 个单元。
+ *
+ *  候选 = 客户在售的工商共育规格 ∪ 强制占位 310143(新品,暂无数据)。
+ *  排序:在 INDUSTRIAL_COOP_ORDER 中的按其顺序优先,其余按价格降序。
+ *  取前 4;若不足 4 个,按上述优先级循环复制补满 4 个。
+ *  catalog 未收录的 id(如 310143)用 placeholderCategory,imageGen 负责画占位。
+ */
+export function resolveIndustrialCoopUnits(
+  specs: ReadonlyArray<Category>,
+  extendedMap: ReadonlyMap<string, Category>,
+): Category[] {
+  const rank = new Map(INDUSTRIAL_COOP_ORDER.map((id, i) => [id, i] as const));
+
+  // 候选 id:客户在售 coop 规格 + 强制占位 310143
+  const candidateIds = new Set<string>();
+  const byId = new Map<string, Category>();
+  for (const s of specs) {
+    if (s.is_industrial_coop === true) {
+      candidateIds.add(s.id);
+      byId.set(s.id, s);
+    }
+  }
+  candidateIds.add('310143');
+
+  const list: Category[] = [];
+  for (const id of candidateIds) {
+    list.push(extendedMap.get(id) || byId.get(id) || placeholderCategory(id));
+  }
+
+  list.sort((a, b) => {
+    const ra = rank.has(a.id) ? rank.get(a.id)! : Number.MAX_SAFE_INTEGER;
+    const rb = rank.has(b.id) ? rank.get(b.id)! : Number.MAX_SAFE_INTEGER;
+    if (ra !== rb) return ra - rb;
+    return (b.price ?? 0) - (a.price ?? 0);
+  });
+
+  const top = list.slice(0, INDUSTRIAL_COOP_UNIT_COUNT);
+  if (top.length === 0) return [];
+  // 不足 4 个:按优先级循环复制补满
+  let i = 0;
+  while (top.length < INDUSTRIAL_COOP_UNIT_COUNT) {
+    top.push(list[i % list.length]);
+    i++;
+  }
+  return top;
+}
+
+/**
+ * 产品升级:主规格(待升级)+ 1 个升级副规格,内嵌常规行红框对(grouped 模式,alternatives 长度 1)。
  *
  * 入参:
- *  - specs: 客户在售规格(extendedMap 视图)。primary 必须在 specs 内 —— 门店没卖的新品凭空陈列没意义。
- *  - extendedMap: 全量 catalog,用于从全量中筛 alt 候选池(不限于客户在售外的规格)
- *  - customerOnSaleIds: alt 必须在此集合内才能组队(避免陈列出客户没货的紧俏烟,顾客想买却买不到)
+ *  - specs: 客户陈列池(常规在售品规)。主规格在此池内迭代。
+ *  - extendedMap: 全量 catalog,用于解析副规格 Category。
+ *  - customerOnSaleIds: 副规格必须在客户库存内(stock_qty>0)才组对——"不加包"原则,副规格须已在陈列。
  *
- * primary 判定(必须全部满足):
- *  - manufacturer === '上海烟草集团有限责任公司'
- *  - launch_date 在窗口期内(沿用 newProduct 判定:tier ∈ {一类, 二类} → 24 个月,其他 12 个月)
+ * 副规格选择(写死优先 > 通用规则):
+ *  - 写死:UPGRADE_PAIRS[primary.id] 存在且其副规格在库存内 → 强制用之;副规格不在库存则该主跳过(不回退通用)。
+ *  - 通用:同 brand + 同 pack_type + price 更高 + launch_date 更晚 + 在库存内,取价格增量最小者。
  *
- * alternatives 候选池 = manufacturer === '上海烟草集团有限责任公司' && is_hot === true && 在客户在售。
- * 候选池在循环外算一次,与 primary 无关,所有 primary 共用同一池。
- *
- * alt 排序(同产地 > 同品牌 > 价格接近):
- *  1. province 与 primary 相同者优(集团内省外烟主要为云南,部分品牌产地差异较大)
- *  2. brand    与 primary 相同者优(同品牌"系列升级"语义最强)
- *  3. |alt.price - primary.price| 越小越优
- * tie 时保留 extendedMap 入参顺序(JS sort 已稳定),即 categories.json 的录入顺序。
- *
- * 取 Top 2。残缺组(只找到 1 个紧俏组合)排到末尾,避免与 3 包完整组混排破坏视觉。
- * 候选池为 0 或排序后过滤 self 后为 0 → 整组淘汰。
+ * 一个规格不会同时充当主与副(used 去重)。
  */
 export function classifyProductUpgrade(
   specs: ReadonlyArray<Category>,
   extendedMap: ReadonlyMap<string, Category>,
   customerOnSaleIds: ReadonlySet<string>,
-  now: Date = new Date(),
 ): ZoneGroup[] {
-  // alt 候选池:上海集团 + is_hot + 在客户在售 + 非新品(防横跳)
-  const altCandidates: Category[] = [];
-  for (const c of extendedMap.values()) {
-    if (c.manufacturer !== SHANGHAI_TOBACCO_MFR) continue;
-    if (c.is_hot !== true) continue;
-    if (!customerOnSaleIds.has(c.id)) continue;
-    // 排除新品窗口内的规格,避免"A→B 同时 B→A"的来回横跳
-    if (c.launch_date) {
-      const altLaunch = new Date(c.launch_date);
-      if (!isNaN(altLaunch.getTime())) {
-        const altMonths = monthsBetween(altLaunch, now);
-        if (altMonths >= 0) {
-          const altWin = HIGH_TIER_VALUES.has(c.tier ?? '') ? HIGH_TIER_NEW_MONTHS : DEFAULT_NEW_MONTHS;
-          if (altMonths <= altWin) continue;
-        }
-      }
-    }
-    altCandidates.push(c);
-  }
-
-  const fullGroups: ZoneGroup[] = [];
-  const partialGroups: ZoneGroup[] = [];
+  const result: ZoneGroup[] = [];
+  const used = new Set<string>();
 
   for (const primary of specs) {
-    if (primary.manufacturer !== SHANGHAI_TOBACCO_MFR) continue;
-    if (!primary.launch_date) continue;
-    const launch = new Date(primary.launch_date);
-    if (isNaN(launch.getTime())) continue;
-    const months = monthsBetween(launch, now);
-    if (months < 0) continue;
-    const window = HIGH_TIER_VALUES.has(primary.tier ?? '') ? HIGH_TIER_NEW_MONTHS : DEFAULT_NEW_MONTHS;
-    if (months > window) continue;
+    if (used.has(primary.id)) continue;
 
-    // 业务多准则排序(同产地 > 同品牌 > 价格接近),tie 时保留 extendedMap 顺序
-    const sorted = altCandidates
-      .filter(c => c.id !== primary.id)
-      .slice()
-      .sort((a, b) => {
-        const aProv = a.province === primary.province ? 0 : 1;
-        const bProv = b.province === primary.province ? 0 : 1;
-        if (aProv !== bProv) return aProv - bProv;
+    let secId: string | undefined;
+    if (Object.prototype.hasOwnProperty.call(UPGRADE_PAIRS, primary.id)) {
+      // 写死优先且强制:副规格在库存内才用,否则跳过(不回退通用)
+      const mapped = UPGRADE_PAIRS[primary.id];
+      if (customerOnSaleIds.has(mapped) && !used.has(mapped)) secId = mapped;
+    } else {
+      // 通用:同品牌 + 同支型 + 价更高 + 上市更晚 + 在库存内,取价格增量最小
+      const cands = specs.filter(s =>
+        s.id !== primary.id &&
+        !used.has(s.id) &&
+        customerOnSaleIds.has(s.id) &&
+        !!s.brand && s.brand === primary.brand &&
+        (s.pack_type ?? '') === (primary.pack_type ?? '') &&
+        (s.price ?? 0) > (primary.price ?? 0) &&
+        isLaterLaunch(s.launch_date, primary.launch_date),
+      );
+      cands.sort((a, b) =>
+        ((a.price ?? 0) - (primary.price ?? 0)) - ((b.price ?? 0) - (primary.price ?? 0)),
+      );
+      if (cands.length > 0) secId = cands[0].id;
+    }
 
-        const aBrand = a.brand === primary.brand ? 0 : 1;
-        const bBrand = b.brand === primary.brand ? 0 : 1;
-        if (aBrand !== bBrand) return aBrand - bBrand;
+    if (!secId) continue;
+    const secondary = extendedMap.get(secId);
+    if (!secondary) continue;
 
-        const aPriceDiff = Math.abs((a.price ?? 0) - (primary.price ?? 0));
-        const bPriceDiff = Math.abs((b.price ?? 0) - (primary.price ?? 0));
-        return aPriceDiff - bPriceDiff;
-      });
-
-    if (sorted.length === 0) continue;
-    const top = sorted.slice(0, 2);
-    const group: ZoneGroup = {
-      primary: toZoneSpec(primary),
-      alternatives: top.map(toZoneSpec),
-    };
-
-    if (top.length >= 2) fullGroups.push(group);
-    else partialGroups.push(group);
+    result.push({ primary: toZoneSpec(primary), alternatives: [toZoneSpec(secondary)] });
+    used.add(primary.id);
+    used.add(secId);
   }
-  return [...fullGroups, ...partialGroups];
+  return result;
+}
+
+/** a 的上市日期是否晚于 b(两者都需为有效日期)。 */
+function isLaterLaunch(a?: string | null, b?: string | null): boolean {
+  if (!a || !b) return false;
+  const da = new Date(a).getTime();
+  const db = new Date(b).getTime();
+  if (isNaN(da) || isNaN(db)) return false;
+  return da > db;
 }
 
 /**
- * 平替专区:每个脱销规格 spec_id_a → 候选池 → 业务排序后选 Top 2 → 组成 ZoneGroup。
+ * 脱销平替:脱销主规格 + 1 个在售副规格,内嵌常规行红框对(grouped 模式,alternatives 长度 1)。
  *
  * 入参:
- *  - extendedMap: 全量 categoryCatalog,用于查找 primary 与候选的 Category(含 price/province/pack_type)
- *  - customerOnSaleIds: 客户在售规格 id 集合(stock_qty > 0),候选必须在此集合内
- *  - rules: Map<spec_id_a, candidateIds[]>(已按 rank 升序),来自 substitute.fetchSubstituteRules
- *  - inventoryById: 候选的库存信息,业务排序最末位用 stock_qty 排序
+ *  - specs: 客户陈列池。主规格必须在此池内(脱销品也在 cust_inventory 内,故在池中)。
+ *  - extendedMap: 解析 Category。
+ *  - customerOnSaleIds: 副规格必须在库存内(stock_qty>0)——"不加包",副规格须已在陈列。
+ *  - rules: Map<脱销 spec_id, 候选 id[]>(已按 rank 升序),来自 ref_co_purchase_rules。
+ *  - inventoryById: 候选库存,排序末位用 stock_qty。
  *
- * 业务排序优先级(价格 > 产地 > 支型 > 库存):
- *  1. 价格:|alt.price - primary.price| 越小越优
- *  2. 产地:province 与 primary 相同者优
- *  3. 支型:pack_type 与 primary 相同者优
- *  4. 库存:stock_qty 越大越优(在售前提下"库存厚"的更适合主推)
- * tie 时保留 rules 入参顺序(JS sort 已稳定),即原 ref_co_purchase_rules 的 rank。
+ * 副规格选择(写死优先 > 通用规则):
+ *  - 写死:SUBSTITUTE_PAIRS[primary.id] 存在且其副规格在库存内 → 强制用之;否则该主跳过(不回退通用)。
+ *  - 通用:rules 候选过滤在库存内,按 同品牌 > 价差小 > 同支型 > 库存厚 排序,取 Top1。
  *
- * 残缺组(只找到 1 个替代,候选池过滤后不足 2)排到结果末尾,避免与 5 格完整组混排破坏视觉。
- * 候选池过滤后为 0 → 整组淘汰。
- *
- * primary 是否在客户在售并不重要 —— 平替专区本意就是展示"曾经在售/即将脱销的 A → 现在还在卖的 B/C"。
+ * 候选主规格 = 写死映射 keys ∪ rules keys,且在客户陈列池内。
  */
 export function classifySubstitute(
+  specs: ReadonlyArray<Category>,
   extendedMap: ReadonlyMap<string, Category>,
   customerOnSaleIds: ReadonlySet<string>,
   rules: ReadonlyMap<string, ReadonlyArray<string>>,
   inventoryById: ReadonlyMap<string, SpecInventoryInfo> = new Map(),
 ): ZoneGroup[] {
-  const fullGroups: ZoneGroup[] = [];
-  const partialGroups: ZoneGroup[] = [];
-  for (const [primaryId, candidateIds] of rules) {
-    const primary = extendedMap.get(primaryId);
+  const specIds = new Set(specs.map(s => s.id));
+  const result: ZoneGroup[] = [];
+  const used = new Set<string>();
+
+  // 写死主规格优先处理(Set 保插入顺序),再处理 rules 主规格
+  const primaryIds = new Set<string>([...Object.keys(SUBSTITUTE_PAIRS), ...rules.keys()]);
+
+  for (const pid of primaryIds) {
+    if (!specIds.has(pid)) continue;   // 主规格必须在客户陈列池内(不加包)
+    if (used.has(pid)) continue;
+    const primary = extendedMap.get(pid);
     if (!primary) continue;
 
-    // 1. 过滤候选:在客户在售集合内 + 在 extendedMap 中有 Category
-    const candidates: Category[] = [];
-    for (const aid of candidateIds) {
-      if (!customerOnSaleIds.has(aid)) continue;
-      const cat = extendedMap.get(aid);
-      if (cat) candidates.push(cat);
+    let secId: string | undefined;
+    if (Object.prototype.hasOwnProperty.call(SUBSTITUTE_PAIRS, pid)) {
+      const mapped = SUBSTITUTE_PAIRS[pid];
+      if (customerOnSaleIds.has(mapped) && !used.has(mapped)) secId = mapped;
+    } else {
+      const candidates: Category[] = [];
+      for (const aid of rules.get(pid) || []) {
+        if (used.has(aid)) continue;
+        if (!customerOnSaleIds.has(aid)) continue;
+        const cat = extendedMap.get(aid);
+        if (cat) candidates.push(cat);
+      }
+      candidates.sort((a, b) => {
+        const aBrand = a.brand === primary.brand ? 0 : 1;
+        const bBrand = b.brand === primary.brand ? 0 : 1;
+        if (aBrand !== bBrand) return aBrand - bBrand;
+        const aDiff = Math.abs((a.price ?? 0) - (primary.price ?? 0));
+        const bDiff = Math.abs((b.price ?? 0) - (primary.price ?? 0));
+        if (aDiff !== bDiff) return aDiff - bDiff;
+        const aPack = (a.pack_type ?? '') === (primary.pack_type ?? '') ? 0 : 1;
+        const bPack = (b.pack_type ?? '') === (primary.pack_type ?? '') ? 0 : 1;
+        if (aPack !== bPack) return aPack - bPack;
+        const aStock = inventoryById.get(a.id)?.stock_qty ?? 0;
+        const bStock = inventoryById.get(b.id)?.stock_qty ?? 0;
+        return bStock - aStock;
+      });
+      if (candidates.length > 0) secId = candidates[0].id;
     }
-    if (candidates.length === 0) continue;  // 无在售替代 → 整组淘汰
 
-    // 2. 业务多准则排序
-    candidates.sort((a, b) => {
-      const aPriceDiff = Math.abs((a.price ?? 0) - (primary.price ?? 0));
-      const bPriceDiff = Math.abs((b.price ?? 0) - (primary.price ?? 0));
-      if (aPriceDiff !== bPriceDiff) return aPriceDiff - bPriceDiff;
+    if (!secId) continue;
+    const secondary = extendedMap.get(secId);
+    if (!secondary) continue;
 
-      const aProv = a.province === primary.province ? 0 : 1;
-      const bProv = b.province === primary.province ? 0 : 1;
-      if (aProv !== bProv) return aProv - bProv;
-
-      const aPack = (a.pack_type ?? '') === (primary.pack_type ?? '') ? 0 : 1;
-      const bPack = (b.pack_type ?? '') === (primary.pack_type ?? '') ? 0 : 1;
-      if (aPack !== bPack) return aPack - bPack;
-
-      const aStock = inventoryById.get(a.id)?.stock_qty ?? 0;
-      const bStock = inventoryById.get(b.id)?.stock_qty ?? 0;
-      return bStock - aStock;
-    });
-
-    // 3. 业务排序后取 Top 2
-    const top = candidates.slice(0, 2);
-    const group: ZoneGroup = {
-      primary: toZoneSpec(primary),
-      alternatives: top.map(toZoneSpec),
-    };
-
-    // 4. 完整组(2 个替代)与残缺组(1 个替代)分桶,残缺组放到末尾
-    if (top.length >= 2) fullGroups.push(group);
-    else partialGroups.push(group);
+    result.push({ primary: toZoneSpec(primary), alternatives: [toZoneSpec(secondary)] });
+    used.add(pid);
+    used.add(secId);
   }
-  return [...fullGroups, ...partialGroups];
+  return result;
 }
 
 /** 滞销夸夸角：积压库存 ≥ 30 天且数量 ≥ 3 条的规格，按 stock_days 降序。 */
@@ -422,8 +480,8 @@ export function classifyZones(
   now: Date = new Date(),
 ): ZoneClassification {
   const industrialCoop = classifyIndustrialCoop(specs);
-  const productUpgrade = classifyProductUpgrade(specs, extendedMap, customerOnSaleIds, now);
-  const substitute = classifySubstitute(extendedMap, customerOnSaleIds, substituteRules, inventoryById);
+  const productUpgrade = classifyProductUpgrade(specs, extendedMap, customerOnSaleIds);
+  const substitute = classifySubstitute(specs, extendedMap, customerOnSaleIds, substituteRules, inventoryById);
   const keyRecommend = classifyKeyRecommend(specs, extendedMap, customerOnSaleIds, inventoryById);
   const newProduct = classifyNewProduct(specs, now);
   const beadFlavor = classifyBeadFlavor(specs);
@@ -495,6 +553,8 @@ export function buildZonePlacements(
   for (const assignment of assignments) {
     const meta = ZONE_META[assignment.zone_id];
     if (!meta) continue;
+    // 仅 zoneRows 专区占独立行;基础版(fixedTop/inlineRegular)走 generate 专属渲染,不在此落位
+    if (meta.layoutKind !== 'zoneRows') continue;
     const groups = resolveGroupsForZone(
       assignment.zone_id,
       classification,
@@ -516,6 +576,31 @@ export function buildZonePlacements(
     placements.push(placement);
   }
   return placements;
+}
+
+/**
+ * 把已启用的 productUpgrade / substitute 分类结果拍平为内嵌红框对(InlinePair[])。
+ * 每个 ZoneGroup 的 primary + alternatives[0] 解析为 Category;两端都解析成功才纳入。
+ *
+ * @param enabledZoneIds 用户在 zone-select 勾选启用的专区 id 集合(基础版按 toggle)
+ */
+export function buildInlinePairs(
+  classification: ZoneClassification,
+  extendedMap: ReadonlyMap<string, Category>,
+  enabledZoneIds: ReadonlySet<ZoneId>,
+): InlinePair[] {
+  const out: InlinePair[] = [];
+  const add = (groups: ZoneGroup[], zoneId: 'productUpgrade' | 'substitute') => {
+    for (const g of groups) {
+      const primary = extendedMap.get(g.primary.id);
+      const secSpec = g.alternatives[0];
+      const secondary = secSpec ? extendedMap.get(secSpec.id) : undefined;
+      if (primary && secondary) out.push({ primary, secondary, zoneId });
+    }
+  };
+  if (enabledZoneIds.has('productUpgrade')) add(classification.productUpgrade, 'productUpgrade');
+  if (enabledZoneIds.has('substitute')) add(classification.substitute, 'substitute');
+  return out;
 }
 
 /**
