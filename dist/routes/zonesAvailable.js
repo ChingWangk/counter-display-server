@@ -8,8 +8,6 @@ const db_1 = __importDefault(require("../db"));
 const categoryCatalog_1 = require("../services/categoryCatalog");
 const zones_1 = require("../services/strategies/zones");
 const substitute_1 = require("../services/strategies/substitute");
-const localShanghai_1 = require("../services/strategies/localShanghai");
-const shortSlimBead_1 = require("../services/strategies/shortSlimBead");
 const festivalSeason_1 = require("../services/strategies/festivalSeason");
 const types_1 = require("../services/strategies/types");
 const router = (0, express_1.Router)();
@@ -80,13 +78,6 @@ router.post('/', async (req, res) => {
             const hasPos = await (0, substitute_1.getCustomerHasPos)(customer_id);
             substituteRules = await (0, substitute_1.fetchSubstituteRules)(customer_id, hasPos);
         }
-        // ---- 2.5 拉沪产烟同比增长数据(smart/manual 共用) ----
-        // ref_local_brand_growth 表不存在时返回空 Map,localShanghai.row2Specs 自然为 []
-        const growthBySpec = await (0, localShanghai_1.fetchLatestLocalBrandGrowth)();
-        // ---- 2.6 拉短中细爆组合所需的铺市率 / 订足率(smart/manual 共用) ----
-        // 表不存在 → 返回空 Map → shortSlimBead 自然返回 []
-        const coverageBySpec = await (0, shortSlimBead_1.fetchLatestMarketCoverage)();
-        const fillRateBySpec = await (0, shortSlimBead_1.fetchLatestOrderFillRate)();
         // ---- 3. 分类 ----
         // customerOnSaleIds 仅含 stock_qty > 0 的规格,与 regularCustomerStrategy 保持一致:
         // 刚好脱销(stock_qty=0)的品规不能作为他人的替代/继任,避免推荐"也缺货"的规格,
@@ -98,7 +89,7 @@ router.post('/', async (req, res) => {
                 .filter(c => (inventoryById.get(c.id)?.stock_qty ?? 0) > 0)
                 .map(c => c.id)
             : sourceSpecs.map(c => c.id));
-        const zoneCls = (0, zones_1.classifyZones)(sourceSpecs, extendedMap, customerOnSaleIds, inventoryById, substituteRules, growthBySpec, coverageBySpec, fillRateBySpec);
+        const zoneCls = (0, zones_1.classifyZones)(sourceSpecs, extendedMap, customerOnSaleIds, inventoryById, substituteRules);
         // ---- 4. 转换为 AvailableZone[],只保留 groupCount > 0 ----
         const result = [];
         for (const zoneId of types_1.ZONE_PRIORITY_ORDER) {
@@ -111,26 +102,6 @@ router.post('/', async (req, res) => {
                     ...meta,
                     groupCount: 1, // 占位 — 实际按节日单图直出,前端 zone-select 不依赖此数
                     specs: [],
-                });
-                continue;
-            }
-            if (meta.displayMode === 'splitRows') {
-                // 沪产专区:row1 + row2 合并去重后作为 specs 字段(供卡片预览),groupCount = 合并后规格数
-                const split = zoneCls.localShanghai;
-                const seen = new Set();
-                const merged = [];
-                for (const s of [...split.row1Specs, ...split.row2Specs]) {
-                    if (seen.has(s.id))
-                        continue;
-                    seen.add(s.id);
-                    merged.push(s);
-                }
-                if (merged.length === 0)
-                    continue;
-                result.push({
-                    ...meta,
-                    groupCount: merged.length,
-                    specs: merged,
                 });
                 continue;
             }
@@ -147,6 +118,7 @@ router.post('/', async (req, res) => {
                 });
             }
             else {
+                // grouped(含 keyRecommend:滞销单品组 alternatives=[] 也计入 groupCount)
                 const groups = zoneCls[clsKey];
                 if (groups.length === 0)
                     continue;

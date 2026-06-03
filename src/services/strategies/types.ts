@@ -23,8 +23,14 @@ export interface SpecInventoryInfo {
   snapshot_date: string;  // YYYY-MM-DD
 }
 
-/** 专区 id 枚举（与前端 ZoneId 对齐） */
-export type ZoneId = 'industrialCoop' | 'productUpgrade' | 'substitute' | 'slowMoving' | 'nostalgia' | 'newProduct' | 'festivalSeason' | 'localShanghai' | 'shortSlimBead' | 'beadFlavor';
+/** 专区 id 枚举（与前端 ZoneId 对齐）。
+ *  keyRecommend = 重点推荐区(由原 slowMoving 滞销夸夸角 + nostalgia 怀旧专区合并而来)。
+ *  原 localShanghai / shortSlimBead 已下线。 */
+export type ZoneId = 'industrialCoop' | 'productUpgrade' | 'substitute' | 'keyRecommend' | 'newProduct' | 'festivalSeason' | 'beadFlavor';
+
+/** 专区版本档位:basic=基础版(政策/经营刚需), advanced=进阶版(趋势/特色)。
+ *  edition-select 页面据此把专区分两组,用户结合柜台资源勾选要启用的版本。 */
+export type ZoneTier = 'basic' | 'advanced';
 
 /** 节日 id 枚举(仅 festivalSeason 专区使用,用户在 zone-select 卡片上手动选择)。 */
 export type FestivalId =
@@ -63,15 +69,17 @@ export interface ZoneMeta {
   description: string;
   /** 1=政策导向（最高优先），2=现实困难/趋势顺应。柜台内排序按 (priorityRank ASC, groupCount DESC) */
   priorityRank: 1 | 2;
+  /** 版本档位:basic=基础版, advanced=进阶版。edition-select 页面据此分组。 */
+  tier: ZoneTier;
   /** 行最左侧色条颜色，与前端预览/result 卡片 chip 颜色一致。backFestival 不走 imageGen,此字段仅用于前端 chip。 */
   barColor: string;
   /** 展示模式：
-   *   single        - 单品陈列(每包紧贴,按 id 切换处留 gap),用于 industrialCoop / slowMoving / newProduct
-   *   grouped       - 分组陈列(primary + 每个 alternative 均单包,组与组之间留 gap),用于 substitute / nostalgia / productUpgrade
+   *   single        - 单品陈列(每包紧贴,按 id 切换处留 gap),用于 industrialCoop / newProduct / beadFlavor
+   *   grouped       - 分组陈列(primary + 每个 alternative 均单包,组与组之间留 gap),用于 substitute / productUpgrade / keyRecommend
+   *                   keyRecommend 的组可为"无 alternative 的单品"(原滞销品),与"带继任的组"(原怀旧品)混排
    *   backFestival  - 背柜节日单图直出(整张背柜 = 1 张预拍图,不走 imageGen 绘制流程),用于 festivalSeason
-   *   splitRows     - 同一专区两排用不同排序规则(row1 / row2 独立 specs 列表),用于 localShanghai
    */
-  displayMode: 'single' | 'grouped' | 'backFestival' | 'splitRows';
+  displayMode: 'single' | 'grouped' | 'backFestival';
   /** 适用的柜台类型。
    *   displayCabinet - 前柜 / 吊柜(默认),走 imageGen 顶部 zone 行
    *   backCabinet    - 背柜(仅 festivalSeason),走 generate.ts 背柜分支单图直出
@@ -81,8 +89,8 @@ export interface ZoneMeta {
 
 /** 一组陈列单元：主规格 + N 个替代规格。
  *  - substitute：primary = 脱销规格，alternatives = 业务排序后 Top 2 在售平替
- *  - nostalgia： primary = 退市规格，alternatives = [successor]（在售）
  *  - productUpgrade：primary = 上海集团新品(launch_date 在窗口期), alternatives = 同产地/同品牌的集团紧俏组合 Top 2
+ *  - keyRecommend：两种组混排 —— 怀旧组{primary=退市规格, alternatives=[在售继任]} + 滞销组{primary=滞销规格, alternatives=[]}
  */
 export interface ZoneGroup {
   primary: ZoneSpec;
@@ -122,23 +130,12 @@ export interface ZonePlacement {
    *  - 分组专区：primary = 主规格，alternatives = 替代规格(已过滤为客户在售) */
   groups: ZonePlacementGroup[];
   /** 展示模式：从 ZONE_META.displayMode 透传。imageGen 据此决定 primary 单宽还是双宽。
-   *  backFestival 走 generate.ts 背柜分支单图直出,不进入 imageGen;仅用于响应 + 前端 result chip 渲染。
-   *  splitRows 时 groups 始终为空,实际数据在 splitRowGroups.row1 / row2 内。 */
-  displayMode: 'single' | 'grouped' | 'backFestival' | 'splitRows';
+   *  backFestival 走 generate.ts 背柜分支单图直出,不进入 imageGen;仅用于响应 + 前端 result chip 渲染。 */
+  displayMode: 'single' | 'grouped' | 'backFestival';
   barColor: string;
   priorityRank: number;
   /** 用于柜台内子专区按组数(或单品专区规格数)降序排序 */
   groupCount: number;
-  /** splitRows 专区(localShanghai)专用:两排独立的 specs 列表(已包装为 ZonePlacementGroup 形态,alternatives=[])。
-   *  row1 / row2 由 classifier 决定排序规则,imageGen 按 rowCount 落位:
-   *   - rowCount=1 仅画 row1
-   *   - rowCount=2 第一行画 row1,第二行画 row2
-   *   - rowCount>=3 多出的行从 row1 开始轮流追加(实际中 autoExpand 已经控制,通常 rowCount<=2)
-   */
-  splitRowGroups?: {
-    row1: ZonePlacementGroup[];
-    row2: ZonePlacementGroup[];
-  };
   /** festivalSeason 专用:用户选的节日 id。供前端 result 卡片"查看话术"按 festival_id 拉对应节日话术。 */
   festivalId?: FestivalId;
 }
@@ -171,16 +168,11 @@ export interface ZoneClassification {
   industrialCoop: ZoneSpec[];  // 工商共育：is_industrial_coop = true
   productUpgrade: ZoneGroup[]; // 产品升级：上海集团新品(launch_date 在窗口期) + 同产地/同品牌的集团紧俏组合 Top 2
   substitute: ZoneGroup[];     // 平替专区：{primary: 脱销规格, alternatives: 业务排序后 Top 2 在售平替}
-  slowMoving: ZoneSpec[];      // 滞销夸夸角：stock_days ≥ 30 且 stock_qty ≥ 3
-  nostalgia: ZoneGroup[];      // 怀旧专区：{primary: 退市规格, alternatives: [在售 successor]}
+  /** 重点推荐区(原滞销夸夸角 + 怀旧专区合并):
+   *  怀旧组{primary: 退市规格, alternatives: [在售继任]} 与 滞销组{primary: 滞销规格, alternatives: []} 混排。
+   *  同一 primary 不重复(怀旧组优先,滞销与之 id 重复时跳过)。 */
+  keyRecommend: ZoneGroup[];
   newProduct: ZoneSpec[];      // 尝鲜专区：launch_date 在窗口期内（一二类 24 月，其他 12 月）
-  /** 沪产专区:同一专区两排用不同排序规则,row1=沪产新品(launch_date 降序),row2=沪产同比增长率(yoy_rate 降序)。 */
-  localShanghai: {
-    row1Specs: ZoneSpec[];
-    row2Specs: ZoneSpec[];
-  };
-  /** 短中细爆组合:pack_type ∈ {短支/中支/细支/爆珠变体}, 仅取有 coverage 数据的规格, 按铺市率 asc → 订足率 desc */
-  shortSlimBead: ZoneSpec[];
   /** 爆珠口味组合:pack_type 含'爆珠',按 flavor 分组聚集(薄荷>水果>功能性>原味>其他),组内按价格降序 */
   beadFlavor: ZoneSpec[];
 }
@@ -210,7 +202,8 @@ export class ValidationError extends Error {
   }
 }
 
-/** 7 个专区的元信息。供 /api/zones/available 返回 + 策略层落位查表 + imageGen 取色/取展示模式。 */
+/** 7 个专区的元信息。供 /api/zones/available 返回 + 策略层落位查表 + imageGen 取色/取展示模式。
+ *  tier: basic=基础版(industrialCoop/productUpgrade/substitute), advanced=进阶版(keyRecommend/newProduct/festivalSeason/beadFlavor)。 */
 export const ZONE_META: Record<ZoneId, ZoneMeta> = {
   industrialCoop: {
     id: 'industrialCoop',
@@ -218,6 +211,7 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     icon: '🤝',
     description: '工商共育规格，独立行陈列以提升曝光',
     priorityRank: 1,
+    tier: 'basic',
     barColor: '#1976D2',
     displayMode: 'single',
     targetCabinetType: 'displayCabinet',
@@ -228,6 +222,7 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     icon: '📈',
     description: '上海集团新品搭配同产地/同品牌的集团紧俏组合陈列，借紧俏带动新品销量',
     priorityRank: 1,
+    tier: 'basic',
     barColor: '#00838F',
     displayMode: 'grouped',
     targetCabinetType: 'displayCabinet',
@@ -238,26 +233,18 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     icon: '🔄',
     description: '门店脱销规格 + 其强弱适配平替组合陈列，把"好卖的不够卖"转为可售品规',
     priorityRank: 2,
+    tier: 'basic',
     barColor: '#C2185B',
     displayMode: 'grouped',
     targetCabinetType: 'displayCabinet',
   },
-  slowMoving: {
-    id: 'slowMoving',
-    label: '滞销夸夸角',
-    icon: '🛒',
-    description: '积压 ≥ 30 天且库存 ≥ 3 条的规格，集中展示便于推广',
+  keyRecommend: {
+    id: 'keyRecommend',
+    label: '重点推荐区',
+    icon: '⭐',
+    description: '滞销规格集中夸夸促销 + 退市经典搭配在售继任,把压货和老客需求一起盘活',
     priorityRank: 2,
-    barColor: '#F9A825',
-    displayMode: 'single',
-    targetCabinetType: 'displayCabinet',
-  },
-  nostalgia: {
-    id: 'nostalgia',
-    label: '怀旧专区',
-    icon: '📷',
-    description: '已退市但门店仍有库存的经典规格 + 其在售继任规格，按品牌替代成组陈列',
-    priorityRank: 2,
+    tier: 'advanced',
     barColor: '#8D6E63',
     displayMode: 'grouped',
     targetCabinetType: 'displayCabinet',
@@ -268,6 +255,7 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     icon: '✨',
     description: '近期上市的新规格（一/二类 24 月内，其他 12 月内）',
     priorityRank: 2,
+    tier: 'advanced',
     barColor: '#2D6A4F',
     displayMode: 'single',
     targetCabinetType: 'displayCabinet',
@@ -278,29 +266,10 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     icon: '🎁',
     description: '节日 + 当季季节匹配，按高价烟批发量 + 季节优先(夏秋爆珠薄荷 / 冬春短支)选图，整张背柜单图直出',
     priorityRank: 2,
+    tier: 'advanced',
     barColor: '#9C27B0',
     displayMode: 'backFestival',
     targetCabinetType: 'backCabinet',
-  },
-  localShanghai: {
-    id: 'localShanghai',
-    label: '沪产专区',
-    icon: '🏙️',
-    description: '上海集团本地烟集中陈列;第一排沪产新品(时间从新到旧),第二排同比投放量增长率从高到低',
-    priorityRank: 2,
-    barColor: '#D84315',
-    displayMode: 'splitRows',
-    targetCabinetType: 'displayCabinet',
-  },
-  shortSlimBead: {
-    id: 'shortSlimBead',
-    label: '短中细爆组合',
-    icon: '🎯',
-    description: '短支/中支/细支/爆珠变体集中陈列;铺市率低的优先曝光,订足率高的多补货',
-    priorityRank: 2,
-    barColor: '#5C6BC0',
-    displayMode: 'single',
-    targetCabinetType: 'displayCabinet',
   },
   beadFlavor: {
     id: 'beadFlavor',
@@ -308,6 +277,7 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     icon: '🫐',
     description: '爆珠规格按口味聚集(薄荷/水果/功能性),便于顾客横向比较口味',
     priorityRank: 2,
+    tier: 'advanced',
     barColor: '#EF6C00',
     displayMode: 'single',
     targetCabinetType: 'displayCabinet',
@@ -315,19 +285,14 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
 };
 
 /** 用于 zonesAvailable / zone-select 展示顺位的 ZoneId 数组。
- *  industrialCoop / productUpgrade 是 rank=1 组（政策导向），其余为 rank=2 组（现实困难/趋势顺应）。
- *  festivalSeason 排在最后:它数据源与其他 zone 完全不同（基于图片目录 + 批发量 + 季节），
- *  仅作为 zonesAvailable / zone-select 的展示顺位。
- *  localShanghai 紧跟在常规 displayCabinet zone 之后、festivalSeason 之前。 */
+ *  industrialCoop / productUpgrade 是 rank=1 组（政策导向），其余为 rank=2 组。
+ *  festivalSeason 排在最后:它数据源与其他 zone 完全不同（基于图片目录 + 批发量 + 季节）。 */
 export const ZONE_PRIORITY_ORDER: ZoneId[] = [
   'industrialCoop',
   'productUpgrade',
   'substitute',
-  'slowMoving',
-  'nostalgia',
+  'keyRecommend',
   'newProduct',
-  'localShanghai',
-  'shortSlimBead',
   'beadFlavor',
   'festivalSeason',
 ];

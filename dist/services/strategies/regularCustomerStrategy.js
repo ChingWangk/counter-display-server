@@ -9,8 +9,6 @@ const sortCategories_1 = require("../sortCategories");
 const categoryCatalog_1 = require("../categoryCatalog");
 const zones_1 = require("./zones");
 const substitute_1 = require("./substitute");
-const localShanghai_1 = require("./localShanghai");
-const shortSlimBead_1 = require("./shortSlimBead");
 const types_1 = require("./types");
 /** 高价烟保护阈值：批发价 > 600 元/条 的紧俏烟即便资源不足也保留 */
 const HIGH_PRICE_PROTECT = 600;
@@ -93,13 +91,10 @@ const regularCustomerStrategy = async (ctx) => {
     //    nostalgia 的 successor 同样要求在此集合内才组队。
     const hasPos = await (0, substitute_1.getCustomerHasPos)(ctx.customerId);
     const substituteRules = await (0, substitute_1.fetchSubstituteRules)(ctx.customerId, hasPos);
-    const growthBySpec = await (0, localShanghai_1.fetchLatestLocalBrandGrowth)();
-    const coverageBySpec = await (0, shortSlimBead_1.fetchLatestMarketCoverage)();
-    const fillRateBySpec = await (0, shortSlimBead_1.fetchLatestOrderFillRate)();
     const customerOnSaleIds = new Set(withImages
         .filter(c => (inventoryById.get(c.id)?.stock_qty ?? 0) > 0)
         .map(c => c.id));
-    const classification = (0, zones_1.classifyZones)(withImages, extendedCategoryMap, customerOnSaleIds, inventoryById, substituteRules, growthBySpec, coverageBySpec, fillRateBySpec);
+    const classification = (0, zones_1.classifyZones)(withImages, extendedCategoryMap, customerOnSaleIds, inventoryById, substituteRules);
     // 按用户的 zoneAssignments 计算 zone 落位。注意:zone specs 同时保留在常规陈列 withImages 中,
     // 不再从常规池中扣除——同一规格会在 zone 行(带色条)与常规行各出现一次。
     const zonePlacements = (0, zones_1.buildZonePlacements)(classification, ctx.zoneAssignments ?? [], withImages, extendedCategoryMap);

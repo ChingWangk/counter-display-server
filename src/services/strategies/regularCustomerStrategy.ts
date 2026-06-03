@@ -5,8 +5,6 @@ import { sortCategories } from '../sortCategories';
 import { getExtendedCategoryMap } from '../categoryCatalog';
 import { classifyZones, buildZonePlacements } from './zones';
 import { fetchSubstituteRules, getCustomerHasPos } from './substitute';
-import { fetchLatestLocalBrandGrowth } from './localShanghai';
-import { fetchLatestMarketCoverage, fetchLatestOrderFillRate } from './shortSlimBead';
 import {
   SelectionContext,
   SelectionResult,
@@ -115,9 +113,6 @@ export const regularCustomerStrategy: StrategyFn = async (ctx: SelectionContext)
   //    nostalgia 的 successor 同样要求在此集合内才组队。
   const hasPos = await getCustomerHasPos(ctx.customerId);
   const substituteRules = await fetchSubstituteRules(ctx.customerId, hasPos);
-  const growthBySpec = await fetchLatestLocalBrandGrowth();
-  const coverageBySpec = await fetchLatestMarketCoverage();
-  const fillRateBySpec = await fetchLatestOrderFillRate();
   const customerOnSaleIds = new Set(
     withImages
       .filter(c => (inventoryById.get(c.id)?.stock_qty ?? 0) > 0)
@@ -129,9 +124,6 @@ export const regularCustomerStrategy: StrategyFn = async (ctx: SelectionContext)
     customerOnSaleIds,
     inventoryById,
     substituteRules,
-    growthBySpec,
-    coverageBySpec,
-    fillRateBySpec,
   );
 
   // 按用户的 zoneAssignments 计算 zone 落位。注意:zone specs 同时保留在常规陈列 withImages 中,
