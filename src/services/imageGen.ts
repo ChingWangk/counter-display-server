@@ -65,10 +65,10 @@ const ZONE_LABEL_LINE_H = 24; // 竖排每字垂直占位
 // bin-packing 时把此值计入下一组的占用宽度,避免组与组紧贴显得拥挤。
 const MIN_INTER_GROUP_GAP_PX = CELL_W;
 
-// 任意两包(或两组)之间"空缝隙"的上限 = 一包烟宽度。
-// 规整陈列行靠 face-out 排面填充铺满整柜,缝隙天然 < 一包,不依赖此上限;
-// 它主要作用于内容固定、无法靠加排面填充的专区行(单品专区残量行 / 分组专区组间):
+// 专区行内任意两包(或两组)之间"空缝隙"的上限 = 一包烟宽度。
+// 仅作用于内容固定、无法靠加排面填充的专区行(单品专区残量行 / 分组专区组间):
 // 缝隙超过一包即封顶,并把多余空间退到行两侧(居中),避免出现"一包多宽"的空档。
+// 规整陈列行(double/expanded/standard)不受此上限约束 —— 空隙均匀撑满整行宽、两端对齐。
 const MAX_INTER_GAP_PX = CELL_W;
 
 // 价签尺寸（贴在烟包底部）
@@ -100,13 +100,14 @@ type RowSlot = ZoneSingleRowSlot | ZoneGroupRowSlot | RegularRowSlot;
 
 /**
  * 无专区(新客户 / 未启用任何专区)柜台的"铺满整柜"布局参数。
- * 由 generate.ts 按归档版模式判定(standard/expanded/double)算好后传入。
- * 不传(undefined)时走专区模式:常规行顶部 cram、底部留给专区。
+ * 由 generate.ts 按归档版三档判定后传入。不传(undefined)时走专区模式:常规行顶部 cram、底部留给专区。
  */
 export interface RegularFillLayout {
-  /** 行间规格分布:资源充足(≥总容量)用 uniform(上密下疏,gap≈0),否则 staggered(砖墙错位)。
-   *  稀疏柜台的"铺满"不再靠 double 双包,而由 drawFlatRow 的 face-out 自适应排面填充完成。 */
-  distribute: 'uniform' | 'staggered';
+  /** 归档版三档布局(按品规稀疏度优化空隙):
+   *   - standard:specCount ≥ 总容量。uniform 分布,每行铺满,gap≈0。
+   *   - expanded:总容量/2 ≤ specCount < 总容量。单包 + staggered,空隙均匀撑满整行宽。
+   *   - double:  specCount < 总容量/2。每品规 ×2 双包,staggered,同 id 紧贴。 */
+  mode: 'double' | 'expanded' | 'standard';
 }
 
 // 同一专区跨 rowCount 行的合并标签信息:左侧画一条贯穿全部行的竖向 label
@@ -211,7 +212,7 @@ function staggeredDistribute(total: number, rows: number): number[] {
  * 外侧延伸。无专区的柜台(新客户 / 未启用专区)labelW=0,陈列区贴画布左缘,左侧无空白预留位。
  *
  * 行布局自上而下:
- *   层 0..regularRows-1: 常规陈列(单包,行内 staggered 分布;行内空隙由 canvas 均分)
+ *   层 0..regularRows-1: 常规陈列(无专区时走三档 double/expanded/standard,详见 RegularFillLayout;行内空隙撑满整行宽)
  *   层 regularRows..regularRows+zoneRowCount-1: 功能专区(左侧标签栏画专区名,同专区跨多行合并为一条)
  *     - 单品专区(industrialCoop/newProduct/beadFlavor):
  *       · industrialCoop / newProduct:自适应密度,稀疏时双包陈列,否则单包并保证至少 1 包宽 gap budget
@@ -225,10 +226,10 @@ function staggeredDistribute(total: number, rows: number): number[] {
  * @param regularRows 常规陈列实际占用的行数(由 generate 顺序分配后确定)
  * @param zonePlacements 本柜台的专区落位(rowCount 已经过 autoExpand 扩展)
  * @param priceTagMap spec_id → avg_price 映射;命中时在烟包底部画价签;缺省/空时不画
- * @param regularLayout 无专区柜台的"铺满整柜"布局(归档版 standard/expanded/double);
- *                      传入时常规行铺满 regularRows 行(通常 = levels),行内由 drawFlatRow 的
- *                      face-out 自适应排面填充铺满(品规不足则放大排面,不再写死双包)。
- *                      不传则走专区模式(常规顶部 cram + staggered 单包)。
+ * @param regularLayout 无专区柜台的"铺满整柜"布局(归档版三档 standard/expanded/double);
+ *                      传入时常规行铺满 regularRows 行(通常 = levels):double 把每品规翻倍为两包后
+ *                      staggered 分布,expanded 单包 staggered,standard 单包 uniform;行内空隙由
+ *                      drawFlatRow 均匀撑满整行宽、两端对齐。不传则走专区模式(常规顶部 cram + staggered 单包)。
  */
 export async function generateCounterImage(
   counter: Counter,
@@ -250,14 +251,20 @@ export async function generateCounterImage(
   // ---- 1. 计算常规行布局 ----
   const clampedRegularRows = Math.max(0, Math.min(regularRows, levels));
   let regularRowLayouts: RegularRowSlot[];
+  // 实际要绘制的常规包列表:double 模式下每品规翻倍为两包,其余模式即 regularSpecs 本身。
+  let regularPacks: Category[] = regularSpecs;
   if (clampedRegularRows === 0 || regularSpecs.length === 0) {
     regularRowLayouts = [];
   } else if (regularLayout) {
-    // 无专区铺满模式(归档版):把所有 regularSpecs 按规格数分布到 regularRows 行,
-    // 不再按"每行 singleMaxPerRow 上限 cram",而是铺满整柜。行内若品规不足整行容量,
-    // 由 drawFlatRow 的 face-out 排面填充自动放大排面铺满(取代旧的双包展开)。
-    const distribute = regularLayout.distribute === 'uniform' ? uniformDistribute : staggeredDistribute;
-    const perRow = distribute(regularSpecs.length, clampedRegularRows);
+    // 无专区铺满模式(归档版三档):铺满整柜所有层,按 mode 决定双包与分布方式。
+    //  - double:  先把每个品规翻倍为两包(同 id 紧贴),再 staggered 分布到各行
+    //  - expanded:单包,staggered 分布(空隙由 drawFlatRow 均匀撑满整行宽)
+    //  - standard:单包,uniform 分布(每行铺满,gap≈0)
+    if (regularLayout.mode === 'double') {
+      regularPacks = regularSpecs.flatMap(s => [s, s]);
+    }
+    const distribute = regularLayout.mode === 'standard' ? uniformDistribute : staggeredDistribute;
+    const perRow = distribute(regularPacks.length, clampedRegularRows);
     regularRowLayouts = perRow.map(n => ({ type: 'regular' as const, specCount: n }));
   } else {
     // 专区模式:常规顶部 cram,容量 = singleMaxPerRow × rows,余量留给底部专区行
@@ -365,9 +372,9 @@ export async function generateCounterImage(
     rowSlots[zoneStart + i] = zoneRowSlots[i];
   }
 
-  // ---- 实际使用的 regular 规格数 ----
+  // ---- 实际使用的 regular 包数(double 模式下 regularPacks 已翻倍)----
   const usedCount = regularRowLayouts.reduce((s, r) => s + r.specCount, 0);
-  const placedRegular = regularSpecs.slice(0, usedCount);
+  const placedRegular = regularPacks.slice(0, usedCount);
 
   // ---- 画布尺寸 ----
   const shelfBoards = levels - 1;
@@ -399,19 +406,20 @@ export async function generateCounterImage(
     }
 
     let rowSpecs: Category[];
-    let fillRow = false;
+    let capGap = false;
     if (slot.type === 'zone-single') {
+      // 单品专区残量行:内容固定不可加排面,空隙超一包即封顶并整行居中(capGap=true)
       rowSpecs = slot.specs;
+      capGap = true;
     } else {
-      // 规整陈列行:开启 face-out 填充。品规不足整行容量时,drawFlatRow 会按比例放大每个
-      // 品规的排面数把整柜铺满 —— 自适应 ×N 取代了旧的写死双包(×2),能填满任意稀疏度。
+      // 规整陈列行:double/expanded/standard 的包列表与行分布已在上游算好;
+      // 行内空隙均匀撑满整行宽、两端对齐(capGap=false,不封顶不居中)。
       rowSpecs = placedRegular.slice(regularIdx, regularIdx + slot.specCount);
       regularIdx += slot.specCount;
-      fillRow = true;
     }
     if (rowSpecs.length === 0) continue;
 
-    await drawFlatRow(ctx, rowSpecs, labelW, displayAreaW, baseY, priceTagMap, fillRow);
+    await drawFlatRow(ctx, rowSpecs, labelW, displayAreaW, baseY, priceTagMap, capGap);
   }
 
   // ---- 绘制层板(横贯整个画布,后续 zone label 会覆盖其在 label 栏内的部分) ----
@@ -447,12 +455,13 @@ export async function generateCounterImage(
 }
 
 /**
- * 绘制扁平行(常规 + 单品专区):同 id 紧贴,按 id 切换处加 gap。
+ * 绘制扁平行(常规 + 单品专区):同 id 紧贴,按 id 切换处加 gap,gap 由本行剩余宽度均分。
  * 烟包绘制于 [areaStartX, areaStartX + areaW] 区间内,左侧 areaStartX 留给专区标签栏。
  *
- * @param fill 规整陈列行传 true:品规不足整行容量时,按比例放大每个品规的排面数(face-out)
- *             把整行铺满,杜绝"货比格少"造成的柜台空间浪费;余量摊成 < 一包宽的微缝隙。
- *             专区行传 false:内容固定不放大,仅在缝隙超一包时封顶并居中(MAX_INTER_GAP_PX)。
+ * @param capGap 是否对超限空隙封顶并整行居中:
+ *   - false(规整陈列行):空隙均匀撑满整行宽、两端对齐(double/expanded 的"扩大间距"语义)。
+ *     包列表与稀疏度已由 generateCounterImage 的三档逻辑(double 翻倍 / 单包)在上游决定。
+ *   - true(单品专区残量行):内容固定不可加排面,缝隙超一包(MAX_INTER_GAP_PX)即封顶并整行居中,余量退两侧。
  */
 async function drawFlatRow(
   ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
@@ -461,28 +470,9 @@ async function drawFlatRow(
   areaW: number,
   baseY: number,
   priceTagMap?: ReadonlyMap<string, number>,
-  fill: boolean = false,
+  capGap: boolean = true,
 ): Promise<void> {
-  let packs = rowSpecs;
-
-  // ---- face-out 排面填充(仅规整陈列行)----
-  // 货架能放 capacity 包;品规数不足时,每个品规重复 factor(=⌊capacity/品规数⌋)个排面,
-  // 余量 remainder 再给靠前的品规各 +1 排面,使总包数恰为 capacity,整柜被填满。
-  // 同 id 排面相邻(保持"同规格紧贴"语义;manual 勾选比例被等比放大),不同 id 之间由
-  // 下方 interGap 兜底(填满后必 < 一包)。
-  if (fill && packs.length > 0) {
-    const capacity = Math.floor(areaW / CELL_W);
-    if (packs.length < capacity) {
-      const factor = Math.floor(capacity / packs.length);
-      const remainder = capacity - packs.length * factor;
-      const expanded: Category[] = [];
-      for (let i = 0; i < packs.length; i++) {
-        const reps = factor + (i < remainder ? 1 : 0);
-        for (let k = 0; k < reps; k++) expanded.push(packs[i]);
-      }
-      packs = expanded;
-    }
-  }
+  const packs = rowSpecs;
 
   let diffTransitions = 0;
   for (let i = 1; i < packs.length; i++) {
@@ -496,9 +486,9 @@ async function drawFlatRow(
     ? areaStartX
     : areaStartX + (areaW - totalPackW) / 2;
 
-  // 缝隙上限封顶:面向内容固定、未填充的专区残量行(品规稀疏时 gapBudget 偏大)。
-  // 规整填充行填满后 interGap 必 < 一包,不会触发此分支;触发时把内容整体居中,余量退两侧。
-  if (diffTransitions > 0 && interGap > MAX_INTER_GAP_PX) {
+  // 缝隙上限封顶(仅 capGap=true 的专区残量行):内容固定无法靠加排面填充,缝隙超一包时
+  // 封顶并整体居中,余量退两侧。规整陈列行(capGap=false)不封顶,空隙均匀撑满整行宽、两端对齐。
+  if (capGap && diffTransitions > 0 && interGap > MAX_INTER_GAP_PX) {
     interGap = MAX_INTER_GAP_PX;
     const contentW = totalPackW + diffTransitions * MAX_INTER_GAP_PX;
     startX = areaStartX + (areaW - contentW) / 2;

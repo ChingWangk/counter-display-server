@@ -191,12 +191,16 @@ router.post('/', async (req: Request, res: Response) => {
       }
       for (const c of displayCounters) regularRowsByCounter.set(c.id, c.levels);  // 铺满所有层
 
-      // 行间品规分布:资源充足(≥总容量)用 uniform(上密下疏,gap≈0);否则 staggered(砖墙错位)。
-      // 不再分 expanded/double 档 —— 稀疏柜台一律由 drawFlatRow 的 face-out 自适应排面填充铺满整柜,
-      // 缝隙天然 < 一包,杜绝柜台空间浪费(替代了原 double 写死的 ×2 双包)。
-      regularLayout = {
-        distribute: specCount >= totalSlots ? 'uniform' : 'staggered',
-      };
+      // 归档版三档布局判定(按品规稀疏度优化空隙,取代已废弃的 face-out 自适应排面填充):
+      //  - specCount ≥ 总容量            → standard:uniform 分布,每行铺满,gap≈0
+      //  - 总容量/2 ≤ specCount < 总容量  → expanded:单包 + staggered,空隙均匀撑满整行宽
+      //  - specCount < 总容量/2           → double:每品规 ×2 双包,staggered,同 id 紧贴
+      // imageGen 的 generateCounterImage / drawFlatRow 据此 mode 绘制。
+      let mode: RegularFillLayout['mode'];
+      if (specCount >= totalCap) mode = 'standard';
+      else if (specCount * 2 >= totalCap) mode = 'expanded';
+      else mode = 'double';
+      regularLayout = { mode };
     } else {
       // 专区模式:顺序分配,前置柜台先吃满,被常规填满的层不允许放置专区
       let remaining = specCount;
