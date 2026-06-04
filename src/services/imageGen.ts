@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { createCanvas, loadImage, registerFont } from 'canvas';
 import { Counter, Category } from '../types';
-import { ZonePlacement, ZonePlacementGroup, InlinePair } from './strategies/types';
+import { ZonePlacement, ZonePlacementGroup } from './strategies/types';
 
 // 注册中文字体:Linux 默认 fallback 字体(DejaVu/Liberation)无 CJK,
 // 不注册会把 ctx.fillText 中的中文渲染为方块/乱码。逐个尝试常见路径,首个存在即注册。
@@ -71,18 +71,6 @@ const MIN_INTER_GROUP_GAP_PX = CELL_W;
 // 缝隙超过一包即封顶,并把多余空间退到行两侧(居中),避免出现"一包多宽"的空档。
 const MAX_INTER_GAP_PX = CELL_W;
 
-// ---- 工商共育固定布局(条+3包+条+3包)----
-const COOP_CARTON_W = CELL_W * 5;     // 条图宽度 = 5 包
-const COOP_PACKS_PER_UNIT = 3;        // 每个单元条图后跟 3 包
-const COOP_UNIT_W = COOP_CARTON_W + CELL_W * COOP_PACKS_PER_UNIT;  // 一个单元总宽 = 8 包
-const COOP_PACK_GAP_PX = 4;           // 单元内 3 包之间的小缝隙
-const COOP_ROWS = 2;                  // 固定占首柜前两行
-const COOP_UNITS_PER_ROW = 2;         // 每行 2 个单元
-
-// ---- 内嵌红框 ----
-const INLINE_FRAME_COLOR = '#E63946';
-const INLINE_FRAME_W = 4;             // 红框线宽
-
 // 价签尺寸（贴在烟包底部）
 const PRICE_TAG_H = 26;
 const PRICE_TAG_FONT = `bold 16px ${FONT_FAMILY}`;
@@ -108,26 +96,7 @@ interface RegularRowSlot {
   type: 'regular';
   specCount: number;
 }
-// 工商共育固定行:每行 1~2 个单元,每个单元 = 条图(5包宽) + 该规格 3 包
-interface CoopRowSlot {
-  type: 'coop';
-  units: Category[];
-}
-// 内嵌红框对行:每对 = 主规格 + 副规格相邻,外套红框
-interface InlinePairRowSlot {
-  type: 'inline-pair';
-  pairs: InlinePair[];
-}
-type RowSlot = ZoneSingleRowSlot | ZoneGroupRowSlot | RegularRowSlot | CoopRowSlot | InlinePairRowSlot;
-
-/** 基础版专区的专属渲染数据(仅第一个展示柜消费)。 */
-export interface SpecialRender {
-  isFirstCabinet?: boolean;
-  /** 工商共育单元(已补满 4 个),首柜前两行按「条+3包+条+3包」渲染。 */
-  industrialCoopUnits?: Category[];
-  /** 产品升级 / 平替的内嵌红框对(两端都是客户已陈列规格)。 */
-  inlinePairs?: InlinePair[];
-}
+type RowSlot = ZoneSingleRowSlot | ZoneGroupRowSlot | RegularRowSlot;
 
 /**
  * 无专区(新客户 / 未启用任何专区)柜台的"铺满整柜"布局参数。
@@ -268,7 +237,6 @@ export async function generateCounterImage(
   zonePlacements?: ZonePlacement[],
   priceTagMap?: ReadonlyMap<string, number>,
   regularLayout?: RegularFillLayout,
-  special?: SpecialRender,
 ): Promise<{ imageUrl: string; usedCount: number }> {
   const displayAreaW = Math.round(counter.length * PX_PER_CM);
   const levels = counter.levels;
@@ -279,47 +247,8 @@ export async function generateCounterImage(
 
   const singleMaxPerRow = Math.floor(counter.length / PACK_WIDTH_CM);
 
-  // ---- 0. 基础版专属行(仅第一个展示柜):工商共育固定行 + 内嵌红框对行 ----
-  // 这些行排在最顶部,挤占常规行的可用层数。
-  const coopUnits = (special?.isFirstCabinet && special.industrialCoopUnits) || [];
-  const inlinePairs = (special?.isFirstCabinet && special.inlinePairs) || [];
-
-  const coopRowSlots: CoopRowSlot[] = [];
-  if (coopUnits.length > 0) {
-    // 每行最多 COOP_UNITS_PER_ROW 个单元;若首柜宽度放不下两单元,则每行 1 个
-    const unitsPerRow = displayAreaW >= COOP_UNIT_W * COOP_UNITS_PER_ROW ? COOP_UNITS_PER_ROW : 1;
-    for (let r = 0; r < COOP_ROWS; r++) {
-      const rowUnits = coopUnits.slice(r * unitsPerRow, r * unitsPerRow + unitsPerRow);
-      if (rowUnits.length > 0) coopRowSlots.push({ type: 'coop', units: rowUnits });
-    }
-  }
-
-  // 内嵌红框对:每对宽 2 包 + 组间留 MIN_INTER_GROUP_GAP_PX,bin-packing 到行
-  const inlinePairRowSlots: InlinePairRowSlot[] = [];
-  if (inlinePairs.length > 0) {
-    const pairW = 2 * CELL_W;
-    let curRow: InlinePair[] = [];
-    let curW = 0;
-    for (const pair of inlinePairs) {
-      const need = curRow.length === 0 ? pairW : curW + MIN_INTER_GROUP_GAP_PX + pairW;
-      if (need > displayAreaW && curRow.length > 0) {
-        inlinePairRowSlots.push({ type: 'inline-pair', pairs: curRow });
-        curRow = [pair];
-        curW = pairW;
-      } else {
-        curRow.push(pair);
-        curW = need;
-      }
-    }
-    if (curRow.length > 0) inlinePairRowSlots.push({ type: 'inline-pair', pairs: curRow });
-  }
-
-  const topRowCount = coopRowSlots.length + inlinePairRowSlots.length;
-  // 留给常规陈列的行数 = 规划的 regularRows 扣掉顶部基础版行(不为负)
-  const regularRowsForLayout = Math.max(0, regularRows - topRowCount);
-
   // ---- 1. 计算常规行布局 ----
-  const clampedRegularRows = Math.max(0, Math.min(regularRowsForLayout, levels - topRowCount));
+  const clampedRegularRows = Math.max(0, Math.min(regularRows, levels));
   let regularRowLayouts: RegularRowSlot[];
   if (clampedRegularRows === 0 || regularSpecs.length === 0) {
     regularRowLayouts = [];
@@ -327,12 +256,8 @@ export async function generateCounterImage(
     // 无专区铺满模式(归档版):把所有 regularSpecs 按规格数分布到 regularRows 行,
     // 不再按"每行 singleMaxPerRow 上限 cram",而是铺满整柜。行内若品规不足整行容量,
     // 由 drawFlatRow 的 face-out 排面填充自动放大排面铺满(取代旧的双包展开)。
-    // 注:首柜被工商共育/红框对占去顶部行后,可用容量下降,这里按缩减后的行容量封顶,
-    // 避免行内包数超过行宽溢出(超出的规格不在本柜展示)。
-    const cap = singleMaxPerRow * clampedRegularRows;
-    const usable = Math.min(regularSpecs.length, cap);
     const distribute = regularLayout.distribute === 'uniform' ? uniformDistribute : staggeredDistribute;
-    const perRow = distribute(usable, clampedRegularRows);
+    const perRow = distribute(regularSpecs.length, clampedRegularRows);
     regularRowLayouts = perRow.map(n => ({ type: 'regular' as const, specCount: n }));
   } else {
     // 专区模式:常规顶部 cram,容量 = singleMaxPerRow × rows,余量留给底部专区行
@@ -430,21 +355,12 @@ export async function generateCounterImage(
   // 这条 labelW 即"专区功能是否影响本图布局"的唯一开关 —— 把专区特性与无专区图解耦。
   const labelW = zoneRowCount > 0 ? ZONE_LABEL_W : 0;
 
-  // 行槽自上而下:工商共育固定行 → 内嵌红框对行 → 常规陈列 → zoneRows 专区 → 空闲层
+  // 行槽:常规在上 → 专区紧贴其后 → 剩余为空闲层(slot 为 undefined)
   const rowSlots: (RowSlot | undefined)[] = new Array(levels).fill(undefined);
-  let cursorRow = 0;
-  for (const slot of coopRowSlots) {
-    if (cursorRow >= levels) break;
-    rowSlots[cursorRow++] = slot;
+  for (let i = 0; i < regularRowLayouts.length && i < levels; i++) {
+    rowSlots[i] = regularRowLayouts[i];
   }
-  for (const slot of inlinePairRowSlots) {
-    if (cursorRow >= levels) break;
-    rowSlots[cursorRow++] = slot;
-  }
-  for (let i = 0; i < regularRowLayouts.length && cursorRow < levels; i++) {
-    rowSlots[cursorRow++] = regularRowLayouts[i];
-  }
-  const zoneStart = cursorRow;
+  const zoneStart = regularRowLayouts.length;
   for (let i = 0; i < zoneRowCount && zoneStart + i < levels; i++) {
     rowSlots[zoneStart + i] = zoneRowSlots[i];
   }
@@ -476,16 +392,6 @@ export async function generateCounterImage(
     if (!slot) continue;
 
     const baseY = PADDING_TOP + row * (CELL_H + SHELF_BOARD_H);
-
-    if (slot.type === 'coop') {
-      await drawCoopRow(ctx, slot.units, labelW, displayAreaW, baseY, priceTagMap);
-      continue;
-    }
-
-    if (slot.type === 'inline-pair') {
-      await drawInlinePairRow(ctx, slot.pairs, labelW, displayAreaW, baseY, priceTagMap);
-      continue;
-    }
 
     if (slot.type === 'zone-group') {
       await drawGroupedZoneRow(ctx, slot.groups, labelW, displayAreaW, baseY, priceTagMap);
@@ -727,122 +633,5 @@ async function drawSpec(
   const price = priceTagMap?.get(spec.id);
   if (price !== undefined) {
     drawPriceTag(ctx, price, x, y, w, h);
-  }
-}
-
-/**
- * 画"条"图(整条卷烟):宽 COOP_CARTON_W(=5 包),高 CELL_H。
- * 从 /images/categories/{id}_ti.jpg 加载,缺图画占位(灰底 + 名称前三字 + "条")。
- */
-async function drawCarton(
-  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
-  spec: Category,
-  x: number,
-  y: number,
-): Promise<void> {
-  const w = COOP_CARTON_W;
-  const h = CELL_H;
-  // 条图命名:{spec_id}_ti.jpg(与烟包图同目录)
-  const cartonUrl = `/images/categories/${spec.id}_ti.jpg`;
-  const imgPath = path.join(CATEGORY_IMG_ROOT, cartonUrl);
-  let drawn = false;
-  if (fs.existsSync(imgPath)) {
-    try {
-      const img = await loadImage(imgPath);
-      ctx.drawImage(img, x, y, w, h);
-      drawn = true;
-    } catch {
-      drawn = false;
-    }
-  }
-  if (!drawn) {
-    ctx.fillStyle = '#E0D8CC';
-    ctx.fillRect(x, y, w, h);
-    const label = (spec.name ? spec.name.slice(0, 3) : spec.id) + '\n条';
-    const lines = label.split('\n');
-    ctx.fillStyle = '#888';
-    ctx.font = `bold 20px ${FONT_FAMILY}`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const lineH = 28;
-    const startY = y + h / 2 - ((lines.length - 1) * lineH) / 2;
-    for (let i = 0; i < lines.length; i++) {
-      ctx.fillText(lines[i], x + w / 2, startY + i * lineH);
-    }
-  }
-}
-
-/**
- * 绘制工商共育固定行:每个单元 = 条图(5 包宽) + 该规格 3 包(小缝隙)。
- * 单元间的大缝隙由剩余宽度均分;行宽不足时压缩缝隙到 0。
- */
-async function drawCoopRow(
-  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
-  units: Category[],
-  areaStartX: number,
-  areaW: number,
-  baseY: number,
-  priceTagMap?: ReadonlyMap<string, number>,
-): Promise<void> {
-  if (units.length === 0) return;
-
-  const n = units.length;
-  const totalUnitW = n * COOP_UNIT_W;
-  const nGaps = n - 1;
-  let interGap = nGaps > 0 ? Math.max(0, (areaW - totalUnitW) / nGaps) : 0;
-  // 缝隙封顶一包宽,避免两单元间空档过大;余量退两侧居中
-  if (interGap > MAX_INTER_GAP_PX) interGap = MAX_INTER_GAP_PX;
-  const contentW = totalUnitW + nGaps * interGap;
-  let cursor = areaStartX + Math.max(0, (areaW - contentW) / 2);
-
-  for (let i = 0; i < n; i++) {
-    if (i > 0) cursor += interGap;
-    const spec = units[i];
-    // 条图
-    await drawCarton(ctx, spec, cursor, baseY);
-    cursor += COOP_CARTON_W;
-    // 紧跟 3 包(单元内小缝隙)
-    for (let k = 0; k < COOP_PACKS_PER_UNIT; k++) {
-      await drawSpec(ctx, spec, cursor, baseY, CELL_W, CELL_H, priceTagMap);
-      cursor += CELL_W;
-      if (k < COOP_PACKS_PER_UNIT - 1) cursor += COOP_PACK_GAP_PX;
-    }
-  }
-}
-
-/**
- * 绘制内嵌红框对行:每对 = 主规格 + 副规格相邻(各 1 包),外套红框。
- * 对与对之间留 gap,缝隙超一包封顶并整体居中(与 drawGroupedZoneRow 一致)。
- * 红框对不参与 face-out 复制 —— 它们是固定 2 包单元。
- */
-async function drawInlinePairRow(
-  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
-  pairs: InlinePair[],
-  areaStartX: number,
-  areaW: number,
-  baseY: number,
-  priceTagMap?: ReadonlyMap<string, number>,
-): Promise<void> {
-  if (pairs.length === 0) return;
-
-  const pairW = 2 * CELL_W;
-  const totalW = pairs.length * pairW;
-  const nGaps = pairs.length - 1;
-  let interGap = nGaps > 0 ? Math.max(0, (areaW - totalW) / nGaps) : 0;
-  if (interGap > MAX_INTER_GAP_PX) interGap = MAX_INTER_GAP_PX;
-  const contentW = totalW + nGaps * interGap;
-  let cursor = areaStartX + Math.max(0, (areaW - contentW) / 2);
-
-  for (let i = 0; i < pairs.length; i++) {
-    if (i > 0) cursor += interGap;
-    const { primary, secondary } = pairs[i];
-    await drawSpec(ctx, primary, cursor, baseY, CELL_W, CELL_H, priceTagMap);
-    await drawSpec(ctx, secondary, cursor + CELL_W, baseY, CELL_W, CELL_H, priceTagMap);
-    // 红框框住整对(主+副),略向外扩 2px 不遮挡烟包
-    ctx.strokeStyle = INLINE_FRAME_COLOR;
-    ctx.lineWidth = INLINE_FRAME_W;
-    const off = INLINE_FRAME_W / 2 + 2;
-    ctx.strokeRect(cursor - off, baseY - off, pairW + off * 2, CELL_H + off * 2);
-    cursor += pairW;
   }
 }

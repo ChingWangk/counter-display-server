@@ -85,13 +85,6 @@ export interface ZoneMeta {
    *   backCabinet    - 背柜(仅 festivalSeason),走 generate.ts 背柜分支单图直出
    */
   targetCabinetType: 'displayCabinet' | 'backCabinet';
-  /** 布局类别,决定该专区在 generate / zone-select 的处理路径:
-   *   zoneRows     - 占独立行,zone-select 选柜台+行数(keyRecommend / newProduct / beadFlavor)
-   *   fixedTop     - 固定首柜前两行特殊布局,zone-select 仅开关(industrialCoop:条+3包+条+3包)
-   *   inlineRegular- 内嵌常规行红框对,zone-select 仅开关(productUpgrade / substitute)
-   *   backFestival - 背柜单图直出(festivalSeason)
-   */
-  layoutKind: 'zoneRows' | 'fixedTop' | 'inlineRegular' | 'backFestival';
 }
 
 /** 一组陈列单元：主规格 + N 个替代规格。
@@ -194,23 +187,8 @@ export interface SelectionResult {
   filteredHotSpecs?: { id: string; name: string }[];
   /** spec_id → 最新库存快照。仅常规客户策略会填充，其它策略缺省。 */
   inventoryById?: Map<string, SpecInventoryInfo>;
-  /** 根据 ctx.zoneAssignments 落位后的专区结果。生成图像时顶部行用此数据。
-   *  仅含 layoutKind='zoneRows' 的专区(keyRecommend/newProduct/beadFlavor);
-   *  基础版(industrialCoop/productUpgrade/substitute)走下面的专属字段,不进 zonePlacements。 */
+  /** 根据 ctx.zoneAssignments 落位后的专区结果。生成图像时顶部行用此数据。 */
   zonePlacements?: ZonePlacement[];
-  /** 工商共育(industrialCoop)启用时:已解析并补满 4 个的单元规格,顺序即陈列顺序。
-   *  imageGen 在首柜前两行按「条+3包+条+3包」渲染(每行 2 个)。 */
-  industrialCoopUnits?: Category[];
-  /** 产品升级 / 脱销平替启用时:内嵌常规行的红框对(主规格 + 1 个库存内副规格)。
-   *  imageGen 在首柜常规区把每对作为锁定相邻单元绘制并套红框,不参与 face-out 复制。 */
-  inlinePairs?: InlinePair[];
-}
-
-/** 内嵌红框对:主规格紧跟一个副规格,整体套红框。两端都来自客户已陈列规格(不额外加包)。 */
-export interface InlinePair {
-  primary: Category;
-  secondary: Category;
-  zoneId: 'productUpgrade' | 'substitute';
 }
 
 export type StrategyFn = (ctx: SelectionContext) => Promise<SelectionResult>;
@@ -237,7 +215,6 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     barColor: '#1976D2',
     displayMode: 'single',
     targetCabinetType: 'displayCabinet',
-    layoutKind: 'fixedTop',
   },
   productUpgrade: {
     id: 'productUpgrade',
@@ -249,7 +226,6 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     barColor: '#00838F',
     displayMode: 'grouped',
     targetCabinetType: 'displayCabinet',
-    layoutKind: 'inlineRegular',
   },
   substitute: {
     id: 'substitute',
@@ -261,7 +237,6 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     barColor: '#C2185B',
     displayMode: 'grouped',
     targetCabinetType: 'displayCabinet',
-    layoutKind: 'inlineRegular',
   },
   keyRecommend: {
     id: 'keyRecommend',
@@ -273,7 +248,6 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     barColor: '#8D6E63',
     displayMode: 'grouped',
     targetCabinetType: 'displayCabinet',
-    layoutKind: 'zoneRows',
   },
   newProduct: {
     id: 'newProduct',
@@ -285,7 +259,6 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     barColor: '#2D6A4F',
     displayMode: 'single',
     targetCabinetType: 'displayCabinet',
-    layoutKind: 'zoneRows',
   },
   festivalSeason: {
     id: 'festivalSeason',
@@ -297,7 +270,6 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     barColor: '#9C27B0',
     displayMode: 'backFestival',
     targetCabinetType: 'backCabinet',
-    layoutKind: 'backFestival',
   },
   beadFlavor: {
     id: 'beadFlavor',
@@ -309,7 +281,6 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     barColor: '#EF6C00',
     displayMode: 'single',
     targetCabinetType: 'displayCabinet',
-    layoutKind: 'zoneRows',
   },
 };
 

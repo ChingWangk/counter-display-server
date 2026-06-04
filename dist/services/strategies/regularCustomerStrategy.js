@@ -97,23 +97,13 @@ const regularCustomerStrategy = async (ctx) => {
     const classification = (0, zones_1.classifyZones)(withImages, extendedCategoryMap, customerOnSaleIds, inventoryById, substituteRules);
     // 按用户的 zoneAssignments 计算 zone 落位。注意:zone specs 同时保留在常规陈列 withImages 中,
     // 不再从常规池中扣除——同一规格会在 zone 行(带色条)与常规行各出现一次。
-    // buildZonePlacements 仅产出 zoneRows 专区(keyRecommend/newProduct/beadFlavor);
-    // 基础版三专区(工商共育/产品升级/平替)走下面的专属字段。
     const zonePlacements = (0, zones_1.buildZonePlacements)(classification, ctx.zoneAssignments ?? [], withImages, extendedCategoryMap);
-    // 基础版专区:按 zone-select 勾选的 toggle 启用,产出专属渲染数据
-    const enabledZoneIds = new Set((ctx.zoneAssignments ?? []).map(a => a.zone_id));
-    const industrialCoopUnits = enabledZoneIds.has('industrialCoop')
-        ? (0, zones_1.resolveIndustrialCoopUnits)(withImages, extendedCategoryMap)
-        : undefined;
-    const inlinePairs = (0, zones_1.buildInlinePairs)(classification, extendedCategoryMap, enabledZoneIds);
     return {
         specs: withImages,
         usedSpecIds,
         filteredHotSpecs,
         inventoryById,
         zonePlacements,
-        industrialCoopUnits,
-        inlinePairs,
     };
 };
 exports.regularCustomerStrategy = regularCustomerStrategy;

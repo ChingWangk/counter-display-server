@@ -3,7 +3,7 @@ import { RowDataPacket } from 'mysql2';
 import { Category } from '../../types';
 import { sortCategories } from '../sortCategories';
 import { getExtendedCategoryMap } from '../categoryCatalog';
-import { classifyZones, buildZonePlacements, buildInlinePairs, resolveIndustrialCoopUnits } from './zones';
+import { classifyZones, buildZonePlacements } from './zones';
 import { fetchSubstituteRules, getCustomerHasPos } from './substitute';
 import {
   SelectionContext,
@@ -11,7 +11,6 @@ import {
   StrategyFn,
   ValidationError,
   SpecInventoryInfo,
-  ZoneId,
 } from './types';
 
 /** 高价烟保护阈值：批发价 > 600 元/条 的紧俏烟即便资源不足也保留 */
@@ -129,8 +128,6 @@ export const regularCustomerStrategy: StrategyFn = async (ctx: SelectionContext)
 
   // 按用户的 zoneAssignments 计算 zone 落位。注意:zone specs 同时保留在常规陈列 withImages 中,
   // 不再从常规池中扣除——同一规格会在 zone 行(带色条)与常规行各出现一次。
-  // buildZonePlacements 仅产出 zoneRows 专区(keyRecommend/newProduct/beadFlavor);
-  // 基础版三专区(工商共育/产品升级/平替)走下面的专属字段。
   const zonePlacements = buildZonePlacements(
     classification,
     ctx.zoneAssignments ?? [],
@@ -138,20 +135,11 @@ export const regularCustomerStrategy: StrategyFn = async (ctx: SelectionContext)
     extendedCategoryMap,
   );
 
-  // 基础版专区:按 zone-select 勾选的 toggle 启用,产出专属渲染数据
-  const enabledZoneIds = new Set<ZoneId>((ctx.zoneAssignments ?? []).map(a => a.zone_id));
-  const industrialCoopUnits = enabledZoneIds.has('industrialCoop')
-    ? resolveIndustrialCoopUnits(withImages, extendedCategoryMap)
-    : undefined;
-  const inlinePairs = buildInlinePairs(classification, extendedCategoryMap, enabledZoneIds);
-
   return {
     specs: withImages,
     usedSpecIds,
     filteredHotSpecs,
     inventoryById,
     zonePlacements,
-    industrialCoopUnits,
-    inlinePairs,
   };
 };

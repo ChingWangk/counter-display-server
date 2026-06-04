@@ -34,7 +34,6 @@ exports.ZONE_META = {
         barColor: '#1976D2',
         displayMode: 'single',
         targetCabinetType: 'displayCabinet',
-        layoutKind: 'fixedTop',
     },
     productUpgrade: {
         id: 'productUpgrade',
@@ -46,7 +45,6 @@ exports.ZONE_META = {
         barColor: '#00838F',
         displayMode: 'grouped',
         targetCabinetType: 'displayCabinet',
-        layoutKind: 'inlineRegular',
     },
     substitute: {
         id: 'substitute',
@@ -58,7 +56,6 @@ exports.ZONE_META = {
         barColor: '#C2185B',
         displayMode: 'grouped',
         targetCabinetType: 'displayCabinet',
-        layoutKind: 'inlineRegular',
     },
     keyRecommend: {
         id: 'keyRecommend',
@@ -70,7 +67,6 @@ exports.ZONE_META = {
         barColor: '#8D6E63',
         displayMode: 'grouped',
         targetCabinetType: 'displayCabinet',
-        layoutKind: 'zoneRows',
     },
     newProduct: {
         id: 'newProduct',
@@ -82,7 +78,6 @@ exports.ZONE_META = {
         barColor: '#2D6A4F',
         displayMode: 'single',
         targetCabinetType: 'displayCabinet',
-        layoutKind: 'zoneRows',
     },
     festivalSeason: {
         id: 'festivalSeason',
@@ -94,7 +89,6 @@ exports.ZONE_META = {
         barColor: '#9C27B0',
         displayMode: 'backFestival',
         targetCabinetType: 'backCabinet',
-        layoutKind: 'backFestival',
     },
     beadFlavor: {
         id: 'beadFlavor',
@@ -106,7 +100,6 @@ exports.ZONE_META = {
         barColor: '#EF6C00',
         displayMode: 'single',
         targetCabinetType: 'displayCabinet',
-        layoutKind: 'zoneRows',
     },
 };
 /** 用于 zonesAvailable / zone-select 展示顺位的 ZoneId 数组。
