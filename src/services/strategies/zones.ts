@@ -495,6 +495,11 @@ export function buildZonePlacements(
   for (const assignment of assignments) {
     const meta = ZONE_META[assignment.zone_id];
     if (!meta) continue;
+    // 纯开关专区不产出占行 placement(zone-select 只送 counter_id='' 的占位 assignment):
+    //  - fixedTop(工商共育):由 generate.ts buildIndustrialCoopPlacement 单独构造顶部条行
+    //  - inlineRegular(产品升级/平替):由 generate.ts computeInlinePairs 嵌入常规行红框
+    // 若在此按空 counter_id 生成 placement,会在 generate.ts「柜台合法性校验」处落空 404。
+    if (meta.layoutKind === 'inlineRegular' || meta.layoutKind === 'fixedTop') continue;
     const groups = resolveGroupsForZone(
       assignment.zone_id,
       classification,
@@ -509,6 +514,7 @@ export function buildZonePlacements(
       rowCount: assignment.row_count,
       groups,
       displayMode: meta.displayMode,
+      layoutKind: meta.layoutKind,
       barColor: meta.barColor,
       priorityRank: meta.priorityRank,
       groupCount: groups.length,

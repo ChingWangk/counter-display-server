@@ -89,7 +89,8 @@ export interface ZoneMeta {
    *   zoneRows     - 占行专区,用户在 zone-select 选目标柜台 + 占用行数(默认,绝大多数专区)
    *   fixedTop     - 固定首柜前两行(仅开关):工商共育「条+3包+条+3包」固定陈列,
    *                  不让用户选柜台/行数,generate.ts 强制落到 displayCounters[0] 顶部两行
-   *   inlineRegular- (预留)内嵌常规行的红框提示(产品升级/平替,后续轮次),本轮未启用
+   *   inlineRegular- 内嵌常规行红框配对(产品升级/平替,仅开关):不占行,由 generate.ts computeInlinePairs
+   *                  从常规陈列找出主规格,右侧紧跟一个副规格,imageGen 用粗红框圈住这对
    *   backFestival - 背柜节日单图直出(仅 festivalSeason)
    */
   layoutKind: 'zoneRows' | 'fixedTop' | 'inlineRegular' | 'backFestival';
@@ -232,25 +233,25 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     id: 'productUpgrade',
     label: '产品升级',
     icon: '📈',
-    description: '上海集团新品搭配同产地/同品牌的集团紧俏组合陈列，借紧俏带动新品销量',
+    description: '勾选即在常规陈列中把待升级老品与同品牌升级新品并排,用红框圈出高亮,借常规曝光带动新品(自动嵌入常规行,不单独占行)',
     priorityRank: 1,
     tier: 'basic',
     barColor: '#00838F',
     displayMode: 'grouped',
     targetCabinetType: 'displayCabinet',
-    layoutKind: 'zoneRows',
+    layoutKind: 'inlineRegular',
   },
   substitute: {
     id: 'substitute',
     label: '平替专区',
     icon: '🔄',
-    description: '门店脱销规格 + 其强弱适配平替组合陈列，把"好卖的不够卖"转为可售品规',
+    description: '勾选即在常规陈列中把脱销规格与其平替并排,用红框圈出高亮,提示客人可买的替代款(自动嵌入常规行,不单独占行)',
     priorityRank: 2,
     tier: 'basic',
     barColor: '#C2185B',
     displayMode: 'grouped',
     targetCabinetType: 'displayCabinet',
-    layoutKind: 'zoneRows',
+    layoutKind: 'inlineRegular',
   },
   keyRecommend: {
     id: 'keyRecommend',

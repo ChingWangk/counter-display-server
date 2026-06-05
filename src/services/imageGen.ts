@@ -3,6 +3,7 @@ import * as path from 'path';
 import { createCanvas, loadImage, registerFont } from 'canvas';
 import { Counter, Category } from '../types';
 import { ZonePlacement, ZonePlacementGroup } from './strategies/types';
+import { InlineBoxedPair } from './strategies/inlinePairs';
 
 // 注册中文字体:Linux 默认 fallback 字体(DejaVu/Liberation)无 CJK,
 // 不注册会把 ctx.fillText 中的中文渲染为方块/乱码。逐个尝试常见路径,首个存在即注册。
@@ -103,6 +104,14 @@ interface RegularRowSlot {
 }
 type RowSlot = ZoneSingleRowSlot | ZoneGroupRowSlot | ZoneCartonRowSlot | RegularRowSlot;
 
+// 常规行内单个渲染包。普通包 boxRole 缺省;内嵌红框配对(产品升级/平替)的主规格 boxRole='L'、
+// 副规格 boxRole='R'(L、R 在行内紧贴,被同一红框圈住)。drawFlatRow 据此画红框。
+interface RenderPack {
+  spec: Category;
+  boxRole?: 'L' | 'R';
+  boxLabel?: string;   // 红框左上角标签:'产品升级' | '滞销平替'
+}
+
 /**
  * 无专区(新客户 / 未启用任何专区)柜台的"铺满整柜"布局参数。
  * 由 generate.ts 按归档版三档判定后传入。不传(undefined)时走专区模式:常规行顶部 cram、底部留给专区。
@@ -119,6 +128,11 @@ export interface RegularFillLayout {
 const CARTON_W = 5 * CELL_W;            // 条图宽 = 5 包宽 = 600px
 const COOP_PACKS_PER_UNIT = 3;          // 每个条单元 = 1 条 + 3 包
 const COOP_MIN_PACK_GAP = Math.round(0.12 * CELL_W);  // 3 包之间的小缝隙(偏小),≈14px
+
+// ---- 内嵌红框配对(inlineRegular:产品升级/平替)绘制常量 ----
+const INLINE_BOX_COLOR = '#E63946';   // 危险红,粗框醒目
+const INLINE_BOX_LINE_W = 6;          // 框线粗细(明显)
+const INLINE_BOX_TAB_H = 22;          // 左上角标签条高度
 
 // 同一专区跨 rowCount 行的合并标签信息:左侧画一条贯穿全部行的竖向 label
 interface ZoneLabelBlock {
@@ -215,6 +229,100 @@ function staggeredDistribute(total: number, rows: number): number[] {
 }
 
 /**
+ * 构造常规区渲染包列表:把内嵌红框配对(产品升级/平替)的副规格插到主规格右侧,
+ * 主+副成对不翻倍;double 模式普通包翻倍为两包;副规格若在序列别处出现则去重移除。
+ *
+ * - inlinePairs: Map<主规格 id, 配对>(generate.ts computeInlinePairs 产出,全局传入,
+ *   本函数仅对本柜 regularSpecs 内出现的主规格生效)
+ * - doubleMode:  归档版 double 档(稀疏)——普通包翻倍紧贴,红框配对始终单对不翻倍
+ * 主规格在本柜重复出现时只在首次配成红框,其余次作普通包。
+ * 副规格若原本排在主规格之前,则被前移到主规格右侧(去重移动,不重复画两次)。
+ */
+function buildRegularRenderPacks(
+  regularSpecs: Category[],
+  inlinePairs: ReadonlyMap<string, InlineBoxedPair> | undefined,
+  doubleMode: boolean,
+): RenderPack[] {
+  const out: RenderPack[] = [];
+  if (!inlinePairs || inlinePairs.size === 0) {
+    for (const s of regularSpecs) {
+      out.push({ spec: s });
+      if (doubleMode) out.push({ spec: s });
+    }
+    return out;
+  }
+  // 本柜出现的主规格 → 其副规格 id(用于把副规格的其它自然出现去重移除)
+  const secondaryIdsToRemove = new Set<string>();
+  const seen = new Set<string>();
+  for (const s of regularSpecs) {
+    if (inlinePairs.has(s.id) && !seen.has(s.id)) {
+      seen.add(s.id);
+      secondaryIdsToRemove.add(inlinePairs.get(s.id)!.secondary.id);
+    }
+  }
+  const pairedDone = new Set<string>();
+  for (const s of regularSpecs) {
+    const pair = inlinePairs.get(s.id);
+    if (pair && !pairedDone.has(s.id)) {
+      pairedDone.add(s.id);
+      out.push({ spec: s, boxRole: 'L', boxLabel: pair.boxLabel });
+      out.push({ spec: pair.secondary, boxRole: 'R', boxLabel: pair.boxLabel });
+      continue;
+    }
+    if (secondaryIdsToRemove.has(s.id)) continue;  // 该副规格已随主规格插入,跳过其它出现
+    out.push({ spec: s });
+    if (doubleMode) out.push({ spec: s });
+  }
+  return out;
+}
+
+/** 渲染包超出行容量时按顺序裁到 capacity:红框配对原子保留(整对或不要),普通包按序填充。 */
+function trimToCapacity(packs: RenderPack[], capacity: number): RenderPack[] {
+  if (packs.length <= capacity) return packs;
+  const cap = Math.max(0, capacity);
+  const out: RenderPack[] = [];
+  for (let i = 0; i < packs.length; i++) {
+    const p = packs[i];
+    if (p.boxRole === 'L' && i + 1 < packs.length && packs[i + 1].boxRole === 'R') {
+      if (out.length + 2 <= cap) out.push(p, packs[i + 1]);
+      i++;  // 跳过 R(整对处理)
+      continue;
+    }
+    if (out.length + 1 <= cap) out.push(p);
+  }
+  return out;
+}
+
+/**
+ * 含红框配对时的每行包数重排:在「不超过行宽 cap、不拆开红框配对(2 格须同行)」前提下,
+ * 尽量贴合 idealPerRow 的分布(standard=uniform 铺满 / 其余=staggered 错位)。
+ *
+ * 逐包放入当前行(普通包占 1 格、配对占 2 格):本行已达 ideal 目标 → 换行(维持分布形态);
+ * 本行 + need 超 cap → 换行(防顶破行宽 / 防拆对)。行数用尽后尾部未放下的包丢弃
+ * (与既有 cram 行为一致,丢的是低优先级尾包)。无配对时调用方直接用 idealPerRow,不经此函数。
+ */
+function distributePairAware(packs: RenderPack[], idealPerRow: number[], cap: number): number[] {
+  const rows = idealPerRow.length;
+  const counts = new Array(rows).fill(0);
+  if (rows <= 0 || cap <= 0) return counts;
+  let r = 0;
+  let i = 0;
+  while (i < packs.length && r < rows) {
+    const isPair = packs[i].boxRole === 'L' && i + 1 < packs.length && packs[i + 1].boxRole === 'R';
+    const need = isPair ? 2 : 1;
+    const fitsCap = counts[r] + need <= cap;
+    const reachedIdeal = counts[r] >= idealPerRow[r];
+    if (fitsCap && !reachedIdeal) {
+      counts[r] += need;
+      i += need;
+    } else {
+      r++;  // 本行已达目标 / 放不下 → 换行
+    }
+  }
+  return counts;
+}
+
+/**
  * 为单个柜台生成陈列图片
  *
  * 整张画布:左侧 labelW 宽的"专区标签栏"(仅当本柜台有专区行时才预留,否则 labelW=0) +
@@ -242,6 +350,8 @@ function staggeredDistribute(total: number, rows: number): number[] {
  *                      传入时常规行铺满 regularRows 行:double 把每品规翻倍为两包后
  *                      staggered 分布,expanded 单包 staggered,standard 单包 uniform;行内空隙由
  *                      drawFlatRow 均匀撑满整行宽、两端对齐。不传则走专区模式(常规顶部 cram + staggered 单包)。
+ * @param inlinePairs Map<主规格 id, 内嵌红框配对>(产品升级/平替)。本柜常规序列中出现的主规格,
+ *                    其右侧紧跟一个副规格并被粗红框圈住;副规格在序列别处的自然出现会被去重移除。
  */
 export async function generateCounterImage(
   counter: Counter,
@@ -250,6 +360,7 @@ export async function generateCounterImage(
   zonePlacements?: ZonePlacement[],
   priceTagMap?: ReadonlyMap<string, number>,
   regularLayout?: RegularFillLayout,
+  inlinePairs?: ReadonlyMap<string, InlineBoxedPair>,
 ): Promise<{ imageUrl: string; usedCount: number }> {
   const displayAreaW = Math.round(counter.length * PX_PER_CM);
   const levels = counter.levels;
@@ -262,34 +373,40 @@ export async function generateCounterImage(
 
   // ---- 1. 计算常规行布局 ----
   const clampedRegularRows = Math.max(0, Math.min(regularRows, levels));
+  const rowCapacity = singleMaxPerRow * clampedRegularRows;  // 常规区可容纳的总包数上限
   let regularRowLayouts: RegularRowSlot[];
-  // 实际要绘制的常规包列表:double 模式下每品规翻倍为两包,其余模式即 regularSpecs 本身。
-  let regularPacks: Category[] = regularSpecs;
+  // 常规渲染包列表(含内嵌红框配对):RenderPack 携带 boxRole/boxLabel,供 drawFlatRow 画红框。
+  let placedRegular: RenderPack[] = [];
   if (clampedRegularRows === 0 || regularSpecs.length === 0) {
     regularRowLayouts = [];
-  } else if (regularLayout) {
-    // 无专区铺满模式(归档版三档):铺满整柜所有层,按 mode 决定双包与分布方式。
-    //  - double:  先把每个品规翻倍为两包(同 id 紧贴),再 staggered 分布到各行
-    //  - expanded:单包,staggered 分布(空隙由 drawFlatRow 均匀撑满整行宽)
-    //  - standard:单包,uniform 分布(每行铺满,gap≈0)
-    if (regularLayout.mode === 'double') {
-      regularPacks = regularSpecs.flatMap(s => [s, s]);
-    }
-    const distribute = regularLayout.mode === 'standard' ? uniformDistribute : staggeredDistribute;
-    const perRow = distribute(regularPacks.length, clampedRegularRows);
-    regularRowLayouts = perRow.map(n => ({ type: 'regular' as const, specCount: n }));
   } else {
-    // 专区模式:常规顶部 cram,容量 = singleMaxPerRow × rows,余量留给底部专区行
-    const totalUsed = Math.min(singleMaxPerRow * clampedRegularRows, regularSpecs.length);
-    const perRow = staggeredDistribute(totalUsed, clampedRegularRows);
+    // 三档(double/expanded/standard,见 RegularFillLayout)与专区模式共用:先构造渲染包再分布。
+    //  - double:  普通包翻倍(同 id 紧贴),红框配对不翻倍;staggered 分布
+    //  - expanded:单包;staggered 分布(空隙由 drawFlatRow 均匀撑满整行宽)
+    //  - standard:单包;uniform 分布(每行铺满,gap≈0)
+    //  - 专区模式(无 regularLayout):常规顶部 cram,staggered 分布,余量留给底部专区
+    const doubleMode = !!regularLayout && regularLayout.mode === 'double';
+    let renderPacks = buildRegularRenderPacks(regularSpecs, inlinePairs, doubleMode);
+    // 容量封顶:超出行容量则从尾部裁(红框配对优先保留、绝不拆对);专区模式同样在此 cram。
+    if (renderPacks.length > rowCapacity) renderPacks = trimToCapacity(renderPacks, rowCapacity);
+    // 先按 mode 算"理想每行包数"(standard=uniform 铺满,其余=staggered 错位);含红框配对时
+    // 再用 distributePairAware 重排:不超行宽、不拆对前提下尽量贴合理想分布。无配对则直接用理想分布。
+    const idealDistribute = regularLayout && regularLayout.mode === 'standard' ? uniformDistribute : staggeredDistribute;
+    const idealPerRow = idealDistribute(renderPacks.length, clampedRegularRows);
+    const hasPairs = renderPacks.some(p => p.boxRole !== undefined);
+    const perRow = hasPairs
+      ? distributePairAware(renderPacks, idealPerRow, singleMaxPerRow)
+      : idealPerRow;
     regularRowLayouts = perRow.map(n => ({ type: 'regular' as const, specCount: n }));
+    placedRegular = renderPacks;
   }
 
   // ---- 2. 拆分专区:fixedTop(工商共育条行,固定在柜台最顶) vs 其余(常规之下的底部专区) ----
   const allZones = (zonePlacements ?? []).slice();
   const topZonePlacements = allZones.filter(z => z.layoutKind === 'fixedTop');
+  // inlineRegular(产品升级/平替)不占行——由常规行内红框渲染,这里排除,避免误当占行专区
   const bottomZonePlacements = allZones
-    .filter(z => z.layoutKind !== 'fixedTop')
+    .filter(z => z.layoutKind !== 'fixedTop' && z.layoutKind !== 'inlineRegular')
     .sort((a, b) => a.priorityRank - b.priorityRank || b.groupCount - a.groupCount);
 
   // 2a. 顶部 fixedTop 条行:每个 placement 的 groups(条单元)按 2 个/行切块为 zone-carton 行
@@ -391,9 +508,8 @@ export async function generateCounterImage(
   // 左侧专区标签栏仅在本柜台确有专区行(顶部条行或底部专区)时才预留宽度;否则 labelW=0,陈列区贴左缘。
   const labelW = (topRowSlots.length > 0 || bottomRowSlots.length > 0) ? ZONE_LABEL_W : 0;
 
-  // ---- 实际使用的 regular 包数(double 模式下 regularPacks 已翻倍)----
+  // ---- 实际使用的 regular 包数(含内嵌副规格;double 模式普通包已翻倍)----
   const usedCount = regularRowLayouts.reduce((s, r) => s + r.specCount, 0);
-  const placedRegular = regularPacks.slice(0, usedCount);
 
   // ---- 画布尺寸 ----
   const shelfBoards = levels - 1;
@@ -430,21 +546,22 @@ export async function generateCounterImage(
       continue;
     }
 
-    let rowSpecs: Category[];
+    let rowPacks: RenderPack[];
     let capGap = false;
     if (slot.type === 'zone-single') {
       // 单品专区残量行:内容固定不可加排面,空隙超一包即封顶并整行居中(capGap=true)
-      rowSpecs = slot.specs;
+      rowPacks = slot.specs.map(s => ({ spec: s }));
       capGap = true;
     } else {
       // 规整陈列行:double/expanded/standard 的包列表与行分布已在上游算好;
       // 行内空隙均匀撑满整行宽、两端对齐(capGap=false,不封顶不居中)。
-      rowSpecs = placedRegular.slice(regularIdx, regularIdx + slot.specCount);
+      // placedRegular 含内嵌红框配对(RenderPack 带 boxRole),drawFlatRow 据此画红框。
+      rowPacks = placedRegular.slice(regularIdx, regularIdx + slot.specCount);
       regularIdx += slot.specCount;
     }
-    if (rowSpecs.length === 0) continue;
+    if (rowPacks.length === 0) continue;
 
-    await drawFlatRow(ctx, rowSpecs, labelW, displayAreaW, baseY, priceTagMap, capGap);
+    await drawFlatRow(ctx, rowPacks, labelW, displayAreaW, baseY, priceTagMap, capGap);
   }
 
   // ---- 绘制层板(横贯整个画布,后续 zone label 会覆盖其在 label 栏内的部分) ----
@@ -480,8 +597,11 @@ export async function generateCounterImage(
 }
 
 /**
- * 绘制扁平行(常规 + 单品专区):同 id 紧贴,按 id 切换处加 gap,gap 由本行剩余宽度均分。
+ * 绘制扁平行(常规 + 单品专区):同组键紧贴,组键切换处加 gap,gap 由本行剩余宽度均分。
  * 烟包绘制于 [areaStartX, areaStartX + areaW] 区间内,左侧 areaStartX 留给专区标签栏。
+ *
+ * 内嵌红框配对(RenderPack.boxRole):主规格'L'与副规格'R'同组键(紧贴、无内部 gap),
+ * 红框两侧按普通组键切换留 gap;画完本行烟包后,按像素位置在每对 L/R 上叠加粗红框 + 标签。
  *
  * @param capGap 是否对超限空隙封顶并整行居中:
  *   - false(规整陈列行):空隙均匀撑满整行宽、两端对齐(double/expanded 的"扩大间距"语义)。
@@ -490,18 +610,27 @@ export async function generateCounterImage(
  */
 async function drawFlatRow(
   ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
-  rowSpecs: Category[],
+  rowPacks: RenderPack[],
   areaStartX: number,
   areaW: number,
   baseY: number,
   priceTagMap?: ReadonlyMap<string, number>,
   capGap: boolean = true,
 ): Promise<void> {
-  const packs = rowSpecs;
+  const packs = rowPacks;
+  if (packs.length === 0) return;
+
+  // 组键间隙:红框配对的 L/R 紧贴(无 gap),红框两侧留 gap;普通包按 id 切换留 gap。
+  const isGap = (prev: RenderPack, cur: RenderPack): boolean => {
+    if (cur.boxRole === 'R') return false;       // 副规格紧贴其主规格
+    if (cur.boxRole === 'L') return true;        // 红框前留 gap
+    if (prev.boxRole === 'R') return true;       // 红框后留 gap
+    return cur.spec.id !== prev.spec.id;         // 普通:id 切换处留 gap
+  };
 
   let diffTransitions = 0;
   for (let i = 1; i < packs.length; i++) {
-    if (packs[i].id !== packs[i - 1].id) diffTransitions++;
+    if (isGap(packs[i - 1], packs[i])) diffTransitions++;
   }
 
   const totalPackW = packs.length * CELL_W;
@@ -519,13 +648,61 @@ async function drawFlatRow(
     startX = areaStartX + (areaW - contentW) / 2;
   }
 
+  // 画包,记录每包左上角 x(供后续画红框)
+  const xs: number[] = new Array(packs.length);
   let cursor = startX;
   for (let col = 0; col < packs.length; col++) {
     if (col > 0) {
       cursor += CELL_W;
-      if (packs[col].id !== packs[col - 1].id) cursor += interGap;
+      if (isGap(packs[col - 1], packs[col])) cursor += interGap;
     }
-    await drawSpec(ctx, packs[col], cursor, baseY, CELL_W, CELL_H, priceTagMap);
+    xs[col] = cursor;
+    await drawSpec(ctx, packs[col].spec, cursor, baseY, CELL_W, CELL_H, priceTagMap);
+  }
+
+  // 红框 + 标签叠加在烟包之上;框线落配对自身 2 格 footprint 内侧,绝不覆盖相邻规格。
+  for (let col = 0; col + 1 < packs.length; col++) {
+    if (packs[col].boxRole === 'L' && packs[col + 1].boxRole === 'R') {
+      drawInlineBox(ctx, xs[col], xs[col + 1] + CELL_W, baseY, packs[col].boxLabel || '');
+    }
+  }
+}
+
+/**
+ * 画内嵌红框 + 左上角标签。框线落在配对自身 2 格 footprint 内侧(inset = 线宽/2 + 1),
+ * 因此无论相邻包多紧都不会覆盖相邻规格;标签条压在配对自身顶边内(红底白字)。
+ */
+function drawInlineBox(
+  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
+  xLeft: number,
+  xRight: number,
+  baseY: number,
+  label: string,
+): void {
+  const lw = INLINE_BOX_LINE_W;
+  const inset = lw / 2 + 1;
+  const x = xLeft + inset;
+  const y = baseY + inset;
+  const w = (xRight - xLeft) - 2 * inset;
+  const h = CELL_H - 2 * inset;
+  if (w <= 0 || h <= 0) return;
+
+  ctx.strokeStyle = INLINE_BOX_COLOR;
+  ctx.lineWidth = lw;
+  ctx.strokeRect(x, y, w, h);
+
+  if (label) {
+    const tabH = INLINE_BOX_TAB_H;
+    const fontSize = tabH - 8;
+    ctx.font = `bold ${fontSize}px ${FONT_FAMILY}`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    const textW = ctx.measureText(label).width;
+    const tabW = Math.min(w, textW + 12);
+    ctx.fillStyle = INLINE_BOX_COLOR;
+    ctx.fillRect(x, y, tabW, tabH);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillText(label, x + 6, y + tabH / 2 + 1);
   }
 }
 

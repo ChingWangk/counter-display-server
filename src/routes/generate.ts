@@ -16,6 +16,7 @@ import { autoExpandZonePlacements } from '../services/strategies/zones';
 import { selectFestivalImage } from '../services/strategies/festivalSeason';
 import { getExtendedCategoryMap } from '../services/categoryCatalog';
 import { buildIndustrialCoopPlacement } from '../services/strategies/industrialCoop';
+import { computeInlinePairs, InlineBoxedPair } from '../services/strategies/inlinePairs';
 import { manualStrategy } from '../services/strategies/manualStrategy';
 import { newCustomerStrategy } from '../services/strategies/newCustomerStrategy';
 import { regularCustomerStrategy } from '../services/strategies/regularCustomerStrategy';
@@ -141,11 +142,11 @@ router.post('/', async (req: Request, res: Response) => {
     const specs: Category[] = selection.specs;
     const usedSpecIds: Set<string> = selection.usedSpecIds;
     const filteredHotSpecs: { id: string; name: string }[] = selection.filteredHotSpecs || [];
-    // 工商共育走 fixedTop(首柜前两行固定陈列),从常规底部 zone 流中剥离,单独构造叠加层。
-    // (toggle 专区只送 { zone_id:'industrialCoop', counter_id:'', row_count:0 },若不剥离会在下方
-    //  「柜台合法性校验」处因空 counter_id 命中 404。)
+    // 仅占行专区(zoneRows)进入常规底部 zone 流。纯开关专区(fixedTop 工商共育 / inlineRegular
+    // 产品升级·平替)已在 buildZonePlacements 跳过(counter_id 为空,会落空校验),这里按
+    // layoutKind 再防御性过滤;它们各由 buildIndustrialCoopPlacement / computeInlinePairs 接管。
     const initialZonePlacements: ZonePlacement[] = (selection.zonePlacements || [])
-      .filter(p => p.zoneId !== 'industrialCoop');
+      .filter(p => (p.layoutKind ?? 'zoneRows') === 'zoneRows');
 
     // ---- 工商共育 fixedTop 叠加层:强制落到第一个展示柜台(displayCounters[0])的前两行 ----
     // 忽略 toggle 送来的空 counter_id,用 buildIndustrialCoopPlacement 按优先级 + 方案 A
@@ -169,6 +170,27 @@ router.post('/', async (req: Request, res: Response) => {
     // 某柜台被 fixedTop 占用后,其常规 / 底部专区可用层数 = levels - fixedTop 行数
     const effLevels = (c: { id: string; levels: number }): number =>
       c.levels - (fixedTopRowsByCounter.get(c.id) || 0);
+
+    // ---- 产品升级 / 平替:内嵌常规行红框配对(inlineRegular,不占行) ----
+    // 从常规池 specs 找出主规格(升级=待升级老品、平替=脱销规格),右侧紧跟一个副规格,
+    // imageGen 用粗红框圈住这对。配对计算见 computeInlinePairs(写死 6 组 + 自动派生)。
+    const wantUpgrade = displayCabinetAssignments.some(a => a.zone_id === 'productUpgrade');
+    const wantSubstitute = displayCabinetAssignments.some(a => a.zone_id === 'substitute');
+    let inlinePairs = new Map<string, InlineBoxedPair>();
+    if (wantUpgrade || wantSubstitute) {
+      const inv = selection.inventoryById;
+      const onSaleIds = new Set(
+        specs.filter(s => (inv?.get(s.id)?.stock_qty ?? 0) > 0).map(s => s.id),
+      );
+      inlinePairs = computeInlinePairs({
+        specs,
+        enableUpgrade: wantUpgrade,
+        enableSubstitute: wantSubstitute,
+        extendedMap: await getExtendedCategoryMap(),
+        onSaleIds,
+        inventoryById: inv ?? new Map(),
+      });
+    }
 
     // ---- 校验初始 zonePlacements 落位的柜台合法 ----
     for (const p of initialZonePlacements) {
@@ -287,6 +309,8 @@ router.post('/', async (req: Request, res: Response) => {
 
     // ---- 逐柜台生成图片 ----
     const results: CounterResult[] = [];
+    // 产品升级/平替 inlineRegular chip 占位(不占行,仅供 result 页 chip + 出样引导渲染)
+    const inlinePlacements: ZonePlacement[] = [];
     let offset = 0;
     for (let i = 0; i < displayCounters.length; i++) {
       const cabinet = displayCounters[i];
@@ -299,8 +323,39 @@ router.post('/', async (req: Request, res: Response) => {
           for (const a of g.alternatives) usedSpecIds.add(a.id);
         }
       }
+      // 内嵌红框配对:统计本柜命中的主规格(在 cabinetSpecs 内),按 zoneId 汇总为 chip 占位 placement。
+      // 主规格首次出现即记一对;副规格随主规格内嵌渲染,两者都并入 usedSpecIds。
+      if (inlinePairs.size > 0) {
+        const seenPid = new Set<string>();
+        const groupsByZone = new Map<'productUpgrade' | 'substitute', { primary: Category; alternatives: Category[] }[]>();
+        for (const s of cabinetSpecs) {
+          const pair = inlinePairs.get(s.id);
+          if (!pair || seenPid.has(s.id)) continue;
+          seenPid.add(s.id);
+          usedSpecIds.add(s.id);
+          usedSpecIds.add(pair.secondary.id);
+          const arr = groupsByZone.get(pair.zoneId) || [];
+          arr.push({ primary: s, alternatives: [pair.secondary] });
+          groupsByZone.set(pair.zoneId, arr);
+        }
+        for (const [zoneId, groups] of groupsByZone) {
+          const meta = ZONE_META[zoneId];
+          inlinePlacements.push({
+            zoneId,
+            label: meta.label,
+            counterId: cabinet.id,
+            rowCount: 0,
+            groups,
+            displayMode: meta.displayMode,
+            layoutKind: 'inlineRegular',
+            barColor: meta.barColor,
+            priorityRank: meta.priorityRank,
+            groupCount: groups.length,
+          });
+        }
+      }
       const regRows = regularRowsByCounter.get(cabinet.id) || 0;
-      const { imageUrl } = await generateCounterImage(cabinet, cabinetSpecs, regRows, cabinetZones, priceTagMap, regularLayout);
+      const { imageUrl } = await generateCounterImage(cabinet, cabinetSpecs, regRows, cabinetZones, priceTagMap, regularLayout, inlinePairs);
       results.push({
         counterId: cabinet.id,
         counterType: cabinet.type,
@@ -399,7 +454,7 @@ router.post('/', async (req: Request, res: Response) => {
         });
       }
     }
-    const allZonePlacements = [...zonePlacements, ...festivalPlacements];
+    const allZonePlacements = [...zonePlacements, ...inlinePlacements, ...festivalPlacements];
 
     const body: GenerateResponse = {
       success: true,

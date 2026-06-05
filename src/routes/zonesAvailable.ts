@@ -5,6 +5,7 @@ import { Category } from '../types';
 import { getExtendedCategoryMap } from '../services/categoryCatalog';
 import { classifyZones } from '../services/strategies/zones';
 import { fetchSubstituteRules, getCustomerHasPos } from '../services/strategies/substitute';
+import { computeInlinePairs } from '../services/strategies/inlinePairs';
 import { hasFestivalCandidates } from '../services/strategies/festivalSeason';
 import {
   AvailableZone,
@@ -137,10 +138,29 @@ router.post('/', async (req: Request, res: Response) => {
       substituteRules,
     );
 
+    // 产品升级 / 平替为 inlineRegular(纯开关)专区:可用性按「内嵌红框配对数」判定,
+    // 而非 classifyZones 的旧 grouped 结果(两者口径不同)。computeInlinePairs 与 /api/generate 同源,
+    // 保证 zone-select 列出开关 ⇔ 生成时确有红框可画。
+    const upgradePairCount = computeInlinePairs({
+      specs: sourceSpecs, enableUpgrade: true, enableSubstitute: false,
+      extendedMap, onSaleIds: customerOnSaleIds, inventoryById,
+    }).size;
+    const substitutePairCount = computeInlinePairs({
+      specs: sourceSpecs, enableUpgrade: false, enableSubstitute: true,
+      extendedMap, onSaleIds: customerOnSaleIds, inventoryById,
+    }).size;
+
     // ---- 4. 转换为 AvailableZone[],只保留 groupCount > 0 ----
     const result: AvailableZone[] = [];
     for (const zoneId of ZONE_PRIORITY_ORDER) {
       const meta = ZONE_META[zoneId as ZoneId];
+      if (meta.layoutKind === 'inlineRegular') {
+        // 产品升级/平替:纯开关专区,可用性=内嵌配对数(>0 才展示开关);groupCount 前端不显示
+        const cnt = zoneId === 'productUpgrade' ? upgradePairCount : substitutePairCount;
+        if (cnt === 0) continue;
+        result.push({ ...meta, groupCount: cnt, specs: [] });
+        continue;
+      }
       if (meta.displayMode === 'backFestival') {
         // 节日季节专区:数据流与其他 zone 完全隔离,这里仅判定"是否有图片素材且客户至少 1 张候选"
         if (!hasFestivalCandidates(customerOnSaleIds)) continue;
