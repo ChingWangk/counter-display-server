@@ -85,6 +85,14 @@ export interface ZoneMeta {
    *   backCabinet    - 背柜(仅 festivalSeason),走 generate.ts 背柜分支单图直出
    */
   targetCabinetType: 'displayCabinet' | 'backCabinet';
+  /** 布局类别(与前端 types/index.d.ts ZoneMeta.layoutKind 对齐):
+   *   zoneRows     - 占行专区,用户在 zone-select 选目标柜台 + 占用行数(默认,绝大多数专区)
+   *   fixedTop     - 固定首柜前两行(仅开关):工商共育「条+3包+条+3包」固定陈列,
+   *                  不让用户选柜台/行数,generate.ts 强制落到 displayCounters[0] 顶部两行
+   *   inlineRegular- (预留)内嵌常规行的红框提示(产品升级/平替,后续轮次),本轮未启用
+   *   backFestival - 背柜节日单图直出(仅 festivalSeason)
+   */
+  layoutKind: 'zoneRows' | 'fixedTop' | 'inlineRegular' | 'backFestival';
 }
 
 /** 一组陈列单元：主规格 + N 个替代规格。
@@ -132,6 +140,9 @@ export interface ZonePlacement {
   /** 展示模式：从 ZONE_META.displayMode 透传。imageGen 据此决定 primary 单宽还是双宽。
    *  backFestival 走 generate.ts 背柜分支单图直出,不进入 imageGen;仅用于响应 + 前端 result chip 渲染。 */
   displayMode: 'single' | 'grouped' | 'backFestival';
+  /** 从 ZONE_META.layoutKind 透传。fixedTop(工商共育)时 imageGen 把本专区的条行渲染在柜台最顶、
+   *  常规行整体下移;其余取值走常规底部 zone 行逻辑。缺省视为 zoneRows。 */
+  layoutKind?: 'zoneRows' | 'fixedTop' | 'inlineRegular' | 'backFestival';
   barColor: string;
   priorityRank: number;
   /** 用于柜台内子专区按组数(或单品专区规格数)降序排序 */
@@ -209,12 +220,13 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     id: 'industrialCoop',
     label: '工商共育',
     icon: '🤝',
-    description: '工商共育规格，独立行陈列以提升曝光',
+    description: '勾选即固定占据第一个柜台前两行,以「条+3包+条+3包」高曝光陈列(品规按优先级自动排布)',
     priorityRank: 1,
     tier: 'basic',
     barColor: '#1976D2',
     displayMode: 'single',
     targetCabinetType: 'displayCabinet',
+    layoutKind: 'fixedTop',
   },
   productUpgrade: {
     id: 'productUpgrade',
@@ -226,6 +238,7 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     barColor: '#00838F',
     displayMode: 'grouped',
     targetCabinetType: 'displayCabinet',
+    layoutKind: 'zoneRows',
   },
   substitute: {
     id: 'substitute',
@@ -237,6 +250,7 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     barColor: '#C2185B',
     displayMode: 'grouped',
     targetCabinetType: 'displayCabinet',
+    layoutKind: 'zoneRows',
   },
   keyRecommend: {
     id: 'keyRecommend',
@@ -248,6 +262,7 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     barColor: '#8D6E63',
     displayMode: 'grouped',
     targetCabinetType: 'displayCabinet',
+    layoutKind: 'zoneRows',
   },
   newProduct: {
     id: 'newProduct',
@@ -259,6 +274,7 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     barColor: '#2D6A4F',
     displayMode: 'single',
     targetCabinetType: 'displayCabinet',
+    layoutKind: 'zoneRows',
   },
   festivalSeason: {
     id: 'festivalSeason',
@@ -270,6 +286,7 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     barColor: '#9C27B0',
     displayMode: 'backFestival',
     targetCabinetType: 'backCabinet',
+    layoutKind: 'backFestival',
   },
   beadFlavor: {
     id: 'beadFlavor',
@@ -281,6 +298,7 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     barColor: '#EF6C00',
     displayMode: 'single',
     targetCabinetType: 'displayCabinet',
+    layoutKind: 'zoneRows',
   },
 };
 

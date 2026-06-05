@@ -15,6 +15,7 @@ import {
 import { autoExpandZonePlacements } from '../services/strategies/zones';
 import { selectFestivalImage } from '../services/strategies/festivalSeason';
 import { getExtendedCategoryMap } from '../services/categoryCatalog';
+import { buildIndustrialCoopPlacement } from '../services/strategies/industrialCoop';
 import { manualStrategy } from '../services/strategies/manualStrategy';
 import { newCustomerStrategy } from '../services/strategies/newCustomerStrategy';
 import { regularCustomerStrategy } from '../services/strategies/regularCustomerStrategy';
@@ -140,7 +141,34 @@ router.post('/', async (req: Request, res: Response) => {
     const specs: Category[] = selection.specs;
     const usedSpecIds: Set<string> = selection.usedSpecIds;
     const filteredHotSpecs: { id: string; name: string }[] = selection.filteredHotSpecs || [];
-    const initialZonePlacements: ZonePlacement[] = selection.zonePlacements || [];
+    // 工商共育走 fixedTop(首柜前两行固定陈列),从常规底部 zone 流中剥离,单独构造叠加层。
+    // (toggle 专区只送 { zone_id:'industrialCoop', counter_id:'', row_count:0 },若不剥离会在下方
+    //  「柜台合法性校验」处因空 counter_id 命中 404。)
+    const initialZonePlacements: ZonePlacement[] = (selection.zonePlacements || [])
+      .filter(p => p.zoneId !== 'industrialCoop');
+
+    // ---- 工商共育 fixedTop 叠加层:强制落到第一个展示柜台(displayCounters[0])的前两行 ----
+    // 忽略 toggle 送来的空 counter_id,用 buildIndustrialCoopPlacement 按优先级 + 方案 A
+    // 构造「条+3包+条+3包」两行落位;counterId 在此赋为首个展示柜台 id。
+    const fixedTopPlacements: ZonePlacement[] = [];
+    const fixedTopRowsByCounter = new Map<string, number>();
+    const wantIndustrialCoop = displayCabinetAssignments.some(a => a.zone_id === 'industrialCoop');
+    if (wantIndustrialCoop && displayCounters.length > 0) {
+      const coopExtendedMap = await getExtendedCategoryMap();
+      const eligible = specs
+        .map(s => coopExtendedMap.get(s.id))
+        .filter((c): c is Category => !!c && c.is_industrial_coop === true);
+      const target = displayCounters[0];
+      const coop = buildIndustrialCoopPlacement(eligible, target.levels);
+      if (coop) {
+        coop.counterId = target.id;
+        fixedTopPlacements.push(coop);
+        fixedTopRowsByCounter.set(target.id, coop.rowCount);
+      }
+    }
+    // 某柜台被 fixedTop 占用后,其常规 / 底部专区可用层数 = levels - fixedTop 行数
+    const effLevels = (c: { id: string; levels: number }): number =>
+      c.levels - (fixedTopRowsByCounter.get(c.id) || 0);
 
     // ---- 校验初始 zonePlacements 落位的柜台合法 ----
     for (const p of initialZonePlacements) {
@@ -167,8 +195,8 @@ router.post('/', async (req: Request, res: Response) => {
     let regularLayout: RegularFillLayout | undefined;
 
     if (noDisplayZones) {
-      // 归档版多柜台容量比例分配
-      const caps = displayCounters.map((c: any) => Math.floor(c.length / PACK_WIDTH_CM) * c.levels);
+      // 归档版多柜台容量比例分配(容量按 effLevels 计 —— fixedTop 占用的行不计入常规容量)
+      const caps = displayCounters.map((c: any) => Math.floor(c.length / PACK_WIDTH_CM) * effLevels(c));
       const totalCap = caps.reduce((a: number, b: number) => a + b, 0);
       if (specCount >= totalCap) {
         for (let i = 0; i < displayCounters.length; i++) allocations[i] = caps[i];
@@ -189,7 +217,7 @@ router.post('/', async (req: Request, res: Response) => {
           k++; steps++;
         }
       }
-      for (const c of displayCounters) regularRowsByCounter.set(c.id, c.levels);  // 铺满所有层
+      for (const c of displayCounters) regularRowsByCounter.set(c.id, effLevels(c));  // 铺满「fixedTop 之外」的所有层
 
       // 归档版三档布局判定(按品规稀疏度优化空隙,取代已废弃的 face-out 自适应排面填充):
       //  - specCount ≥ 总容量            → standard:uniform 分布,每行铺满,gap≈0
@@ -206,13 +234,13 @@ router.post('/', async (req: Request, res: Response) => {
       let remaining = specCount;
       for (const c of displayCounters) {
         const packsPerRow = Math.floor(c.length / PACK_WIDTH_CM);
-        const cap = packsPerRow * c.levels;
+        const cap = packsPerRow * effLevels(c);
         const used = Math.min(remaining, cap);
         allocations.push(used);
         remaining -= used;
         regularRowsByCounter.set(
           c.id,
-          packsPerRow > 0 ? Math.min(c.levels, Math.ceil(used / packsPerRow)) : 0,
+          packsPerRow > 0 ? Math.min(effLevels(c), Math.ceil(used / packsPerRow)) : 0,
         );
       }
     }
@@ -228,7 +256,7 @@ router.post('/', async (req: Request, res: Response) => {
     for (const c of displayCounters) {
       const zRows = initialZoneRowsByCounter.get(c.id) || 0;
       const regRows = regularRowsByCounter.get(c.id) || 0;
-      const freeRows = c.levels - regRows;
+      const freeRows = effLevels(c) - regRows;  // 底部专区只能落在「常规 + fixedTop 之外」的空闲层
       if (zRows > freeRows) {
         const body: GenerateResponse = {
           success: false,
@@ -240,11 +268,14 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     // ---- 自动扩展:把每个柜台剩余空行用已启用的专区填满(groupCount 优先,上限即柜台空闲层数) ----
-    const zonePlacements: ZonePlacement[] = autoExpandZonePlacements(
+    // 传 effLevels 作为各柜台层数 —— fixedTop(工商共育)占用的顶部行不参与底部专区扩展。
+    const bottomZonePlacements: ZonePlacement[] = autoExpandZonePlacements(
       initialZonePlacements,
-      displayCounters,
+      displayCounters.map((c: any) => ({ id: c.id, levels: effLevels(c) })),
       regularRowsByCounter,
     );
+    // 顶部 fixedTop(工商共育) + 底部其它专区,合并供逐柜台渲染(同一柜台可能两者皆有)
+    const zonePlacements: ZonePlacement[] = [...bottomZonePlacements, ...fixedTopPlacements];
 
     // ---- 拉价签白名单:根据 cust_info.has_pos 决定 ref_yangpu_avg_price 子集 ----
     // 价签是常规客户专属功能(基于客户库存与杨浦区均价对比),新客户走归档版不渲染。
