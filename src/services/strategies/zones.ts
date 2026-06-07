@@ -24,8 +24,8 @@ import {
  * - classifyProductUpgrade: 产品升级,上海集团新品+同产地/同品牌的集团紧俏 Top 2              → ZoneGroup[]
  * - classifySubstitute:    平替专区, 脱销→Top N 平替组合(alternatives 必须在客户在售)       → ZoneGroup[]
  * - classifySlowMoving:    (重点推荐区子逻辑)滞销,stock_days ≥ 30 且 stock_qty ≥ 3          → ZoneSpec[]
- * - classifyNostalgia:     (重点推荐区子逻辑)怀旧, is_delisted = true && successor 在售      → ZoneGroup[]
- * - classifyKeyRecommend:  重点推荐区 = 怀旧组 + 滞销组(去重)混排                             → ZoneGroup[]
+ * - classifyNostalgia:     (重点推荐区子逻辑)怀旧, is_delisted = true 单规格(星标,无需继任)        → ZoneGroup[]
+ * - classifyKeyRecommend:  重点推荐区 = 退市星标单品(前) + 滞销单品(后),去重混排                  → ZoneGroup[]
  * - classifyNewProduct:    尝鲜专区, launch_date 在窗口期(一/二类 24 月,其他 12 月)          → ZoneSpec[]
  * - classifyBeadFlavor:    爆珠口味组合,pack_type 含'爆珠',按口味聚集                        → ZoneSpec[]
  * - classifyZones:         一次性返回各专区结果,各专区独立计算,同一品规可在不同专区重复出现
@@ -271,31 +271,23 @@ export function classifySlowMoving(
 }
 
 /**
- * 怀旧专区:is_delisted = true 的退市规格作为 primary,其 successor_id 在客户在售则组队。
+ * 怀旧(重点推荐区子逻辑):退市规格 `is_delisted = true` 作为**单规格**陈列(不需要继任、不成组),
+ * imageGen 用**星标**(类价签形式)特殊标明,在重点推荐区**排在最前**。
  *
  * 入参:
- *  - specs: 客户在售规格(extendedMap 视图)。primary 必须在 specs 内(即"已退市但门店仍有库存")。
- *  - extendedMap: 全量 catalog,用于查 successor 的展示信息(name / imageUrl)
- *  - customerOnSaleIds: successor 必须在此集合内才能组队
+ *  - specs: 客户规格(extendedMap 视图)。退市品在 specs 内(门店进过该退市品)即可,不再校验继任在售。
  *
- * successor 缺失 / 未在售 → 整组淘汰(按用户决策:"successor 必须在售才组队")。
+ * 返回单品组(alternatives=[]),按 primary name 字典序稳定。
  */
 export function classifyNostalgia(
   specs: ReadonlyArray<Category>,
-  extendedMap: ReadonlyMap<string, Category>,
-  customerOnSaleIds: ReadonlySet<string>,
 ): ZoneGroup[] {
   const result: ZoneGroup[] = [];
   for (const spec of specs) {
     if (spec.is_delisted !== true) continue;
-    const successorId = spec.successor_id ?? null;
-    if (!successorId) continue;
-    if (!customerOnSaleIds.has(successorId)) continue;
-    const successor = extendedMap.get(successorId);
-    if (!successor) continue;
     result.push({
       primary: toZoneSpec(spec),
-      alternatives: [toZoneSpec(successor)],
+      alternatives: [],
     });
   }
   // 按 primary name 字典序稳定排序
@@ -304,30 +296,27 @@ export function classifyNostalgia(
 }
 
 /**
- * 重点推荐区(原"滞销夸夸角" + "怀旧专区"合并):grouped 模式,两类组混排。
+ * 重点推荐区(原"滞销夸夸角" + "怀旧专区"合并):grouped 模式,全为单品组(alternatives=[])。
  *
- *  - 怀旧组:classifyNostalgia 的结果,{primary: 退市规格, alternatives: [在售继任]}(2 包宽)
- *  - 滞销组:classifySlowMoving 的结果包装为 {primary: 滞销规格, alternatives: []}(1 包宽,单品)
+ *  - 怀旧(退市)组:classifyNostalgia 的结果,{primary: 退市规格, alternatives: []};imageGen 加**星标**,排最前
+ *  - 滞销组:classifySlowMoving 的结果包装为 {primary: 滞销规格, alternatives: []}
  *
- * 怀旧组在前、滞销组在后。同一 primary 不重复出现 —— 若某规格既退市又滞销,优先以怀旧组形态保留,
- * 滞销侧跳过(避免本专区内同一规格出现两次)。
+ * 退市组在前、滞销组在后。同一 primary 不重复 —— 既退市又滞销时优先以退市(星标)形态保留,滞销侧跳过。
  *
- * imageGen 的 grouped 绘制 + drawGroupedZoneRow 天然支持 alternatives=[] 的单品组(只画 primary),
- * 因此无需新增 displayMode。
+ * imageGen 的 grouped 绘制 + drawGroupedZoneRow 天然支持 alternatives=[] 的单品组(只画 primary,
+ * is_delisted 时叠星标),因此无需新增 displayMode。
  */
 export function classifyKeyRecommend(
   specs: ReadonlyArray<Category>,
-  extendedMap: ReadonlyMap<string, Category>,
-  customerOnSaleIds: ReadonlySet<string>,
   inventoryById: ReadonlyMap<string, SpecInventoryInfo>,
 ): ZoneGroup[] {
-  const nostalgiaGroups = classifyNostalgia(specs, extendedMap, customerOnSaleIds);
+  const nostalgiaGroups = classifyNostalgia(specs);
   const slowMovingSpecs = classifySlowMoving(specs, inventoryById);
 
   const seen = new Set<string>(nostalgiaGroups.map(g => g.primary.id));
   const slowGroups: ZoneGroup[] = [];
   for (const s of slowMovingSpecs) {
-    if (seen.has(s.id)) continue;  // 已作为怀旧 primary 出现,不重复
+    if (seen.has(s.id)) continue;  // 已作为退市 primary 出现,不重复
     seen.add(s.id);
     slowGroups.push({ primary: s, alternatives: [] });
   }
@@ -449,7 +438,7 @@ export function classifyZones(
   const industrialCoop = classifyIndustrialCoop(specs);
   const productUpgrade = classifyProductUpgrade(specs, extendedMap, customerOnSaleIds, now);
   const substitute = classifySubstitute(extendedMap, customerOnSaleIds, substituteRules, inventoryById);
-  const keyRecommend = classifyKeyRecommend(specs, extendedMap, customerOnSaleIds, inventoryById);
+  const keyRecommend = classifyKeyRecommend(specs, inventoryById);
   // 尝鲜专区:窗口期新品 + 注入在售的店长推荐重点品规(后者绕过上市窗口,如 310143)
   const newProduct = injectManagerPicks(classifyNewProduct(specs, now), extendedMap, customerOnSaleIds);
   const beadFlavor = classifyBeadFlavor(specs);

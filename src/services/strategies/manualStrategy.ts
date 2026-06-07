@@ -13,7 +13,7 @@ import { SelectionContext, SelectionResult, StrategyFn } from './types';
  * (带色条)与常规行各出现一次。manual 模式无 inventory:
  *  - 滞销专区会自然返回 [](无库存数据)
  *  - 平替专区也返回 [](manual 模式不查 ref_co_purchase_rules,无脱销源)
- *  - 工商共育 / 怀旧 / 尝鲜 依然可用,nostalgia 依赖 successor 是否在用户已选规格内
+ *  - 工商共育 / 怀旧(退市星标单品) / 尝鲜 依然可用;怀旧只看 is_delisted,不再依赖继任在售
  */
 export const manualStrategy: StrategyFn = async (ctx: SelectionContext): Promise<SelectionResult> => {
   const ids: string[] = ctx.requestCategories.map(c => c.id);

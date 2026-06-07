@@ -75,6 +75,7 @@ const MAX_INTER_GAP_PX = CELL_W;
 // 价签尺寸（贴在烟包底部）
 const PRICE_TAG_H = 26;
 const PRICE_TAG_FONT = `bold 16px ${FONT_FAMILY}`;
+const DELISTED_STAR_COLOR = '#E8A23D'; // 退市星标(琥珀金),重点推荐区单规格标明用
 
 // 图片输出目录（服务器上 Nginx 静态文件目录）
 const OUTPUT_DIR = '/www/wwwroot/47.103.65.4/images/generated';
@@ -214,6 +215,28 @@ function drawPriceTag(
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(`¥${price.toFixed(1)}`, x + w / 2, tagY + PRICE_TAG_H / 2);
+}
+
+/**
+ * 绘制退市星标:贴在烟包左上角的白底琥珀边 ★ 小标(形式同价签 drawPriceTag)。
+ * 仅重点推荐区的退市规格(is_delisted)单规格陈列时调用,特殊标明"退市经典"。
+ */
+function drawDelistedStar(
+  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
+  x: number,
+  y: number,
+  size: number,
+): void {
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(x, y, size, size);
+  ctx.strokeStyle = DELISTED_STAR_COLOR;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
+  ctx.fillStyle = DELISTED_STAR_COLOR;
+  ctx.font = `bold ${size - 6}px ${FONT_FAMILY}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('★', x + size / 2, y + size / 2 + 1);
 }
 
 /**
@@ -769,8 +792,10 @@ async function drawGroupedZoneRow(
   for (let gi = 0; gi < groups.length; gi++) {
     if (gi > 0) cursor += interGap;
     const g = groups[gi];
-    // primary 单包陈列:1 cell
-    await drawSpec(ctx, g.primary, cursor, baseY, CELL_W, CELL_H, priceTagMap);
+    // primary 单包陈列:1 cell;退市规格叠星标(类价签形式,左上角)
+    const primaryX = cursor;
+    await drawSpec(ctx, g.primary, primaryX, baseY, CELL_W, CELL_H, priceTagMap);
+    if (g.primary.is_delisted) drawDelistedStar(ctx, primaryX, baseY, PRICE_TAG_H);
     cursor += CELL_W;
     // 每个 alternative 单包陈列:1 cell
     for (const alt of g.alternatives) {

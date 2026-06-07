@@ -76,7 +76,7 @@ export interface ZoneMeta {
   /** 展示模式：
    *   single        - 单品陈列(每包紧贴,按 id 切换处留 gap),用于 industrialCoop / newProduct / beadFlavor
    *   grouped       - 分组陈列(primary + 每个 alternative 均单包,组与组之间留 gap),用于 substitute / productUpgrade / keyRecommend
-   *                   keyRecommend 的组可为"无 alternative 的单品"(原滞销品),与"带继任的组"(原怀旧品)混排
+   *                   keyRecommend 全为"无 alternative 的单品"(退市星标品 + 滞销品),imageGen 对退市品叠星标
    *   backFestival  - 背柜节日单图直出(整张背柜 = 1 张预拍图,不走 imageGen 绘制流程),用于 festivalSeason
    */
   displayMode: 'single' | 'grouped' | 'backFestival';
@@ -99,7 +99,7 @@ export interface ZoneMeta {
 /** 一组陈列单元：主规格 + N 个替代规格。
  *  - substitute：primary = 脱销规格，alternatives = 业务排序后 Top 2 在售平替
  *  - productUpgrade：primary = 上海集团新品(launch_date 在窗口期), alternatives = 同产地/同品牌的集团紧俏组合 Top 2
- *  - keyRecommend：两种组混排 —— 怀旧组{primary=退市规格, alternatives=[在售继任]} + 滞销组{primary=滞销规格, alternatives=[]}
+ *  - keyRecommend：全为单品 —— 退市星标品{primary=退市规格, alternatives=[]}(前) + 滞销品{primary=滞销规格, alternatives=[]}(后)
  */
 export interface ZoneGroup {
   primary: ZoneSpec;
@@ -183,9 +183,9 @@ export interface ZoneClassification {
   industrialCoop: ZoneSpec[];  // 工商共育：is_industrial_coop = true
   productUpgrade: ZoneGroup[]; // 产品升级：上海集团新品(launch_date 在窗口期) + 同产地/同品牌的集团紧俏组合 Top 2
   substitute: ZoneGroup[];     // 平替专区：{primary: 脱销规格, alternatives: 业务排序后 Top 2 在售平替}
-  /** 重点推荐区(原滞销夸夸角 + 怀旧专区合并):
-   *  怀旧组{primary: 退市规格, alternatives: [在售继任]} 与 滞销组{primary: 滞销规格, alternatives: []} 混排。
-   *  同一 primary 不重复(怀旧组优先,滞销与之 id 重复时跳过)。 */
+  /** 重点推荐区(原滞销夸夸角 + 怀旧专区合并):全为单品。
+   *  退市星标品{primary: 退市规格, alternatives: []}(前,imageGen 叠星标) 与 滞销品{primary: 滞销规格, alternatives: []}(后) 混排。
+   *  同一 primary 不重复(退市优先,滞销与之 id 重复时跳过)。 */
   keyRecommend: ZoneGroup[];
   newProduct: ZoneSpec[];      // 尝鲜专区：launch_date 在窗口期内（一二类 24 月，其他 12 月）
   /** 爆珠口味组合:pack_type 含'爆珠',按 flavor 分组聚集(薄荷>水果>功能性>原味>其他),组内按价格降序 */
@@ -260,7 +260,7 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     id: 'keyRecommend',
     label: '重点推荐区',
     icon: '⭐',
-    description: '滞销规格集中夸夸促销 + 退市经典搭配在售继任,把压货和老客需求一起盘活',
+    description: '退市经典单品星标置顶 + 滞销规格集中夸夸促销,把老客情怀与压货一起盘活',
     priorityRank: 2,
     tier: 'advanced',
     barColor: '#8D6E63',
