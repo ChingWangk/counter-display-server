@@ -150,6 +150,9 @@ export interface ZonePlacement {
   groupCount: number;
   /** festivalSeason 专用:用户选的节日 id。供前端 result 卡片"查看话术"按 festival_id 拉对应节日话术。 */
   festivalId?: FestivalId;
+  /** newProduct(尝鲜)专用:本柜需"店长推荐"高亮的重点品规 id(按优先级序,客户在售子集)。
+   *  imageGen 据此把这些规格排成 2×2 居中方块、加宽并垫店长推荐装饰;其余新品环绕。 */
+  highlightIds?: string[];
 }
 
 /** Category 形态的单组陈列单元(供 imageGen 绘制)。 */
@@ -269,7 +272,7 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     id: 'newProduct',
     label: '尝鲜专区',
     icon: '✨',
-    description: '近期上市的新规格（一/二类 24 月内，其他 12 月内）',
+    description: '近期上市的新规格(一/二类 24 月内,其他 12 月内),每个新品正反面陈列;中心 2×2 居中摆放在售的中华重点品规并以"店长推荐"背景高亮,其余按价位段降序环绕',
     priorityRank: 2,
     tier: 'advanced',
     barColor: '#2D6A4F',

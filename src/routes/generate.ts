@@ -12,7 +12,7 @@ import {
   ZONE_META,
   FestivalId,
 } from '../services/strategies/types';
-import { autoExpandZonePlacements } from '../services/strategies/zones';
+import { autoExpandZonePlacements, MANAGER_PICK_IDS } from '../services/strategies/zones';
 import { selectFestivalImage } from '../services/strategies/festivalSeason';
 import { getExtendedCategoryMap } from '../services/categoryCatalog';
 import { buildIndustrialCoopPlacement } from '../services/strategies/industrialCoop';
@@ -147,6 +147,15 @@ router.post('/', async (req: Request, res: Response) => {
     // layoutKind 再防御性过滤;它们各由 buildIndustrialCoopPlacement / computeInlinePairs 接管。
     const initialZonePlacements: ZonePlacement[] = (selection.zonePlacements || [])
       .filter(p => (p.layoutKind ?? 'zoneRows') === 'zoneRows');
+
+    // ---- 尝鲜专区「店长推荐」重点品规:计算本次需高亮的在售子集(MANAGER_PICK_IDS ∩ 在售) ----
+    // smart 取 stock_qty>0;manual 无库存,已选即视为在售(与 zonesAvailable / classifyZones 同口径)。
+    // 落位 highlightIds 盖章见下方 zonePlacements 组装后;imageGen 据此渲染 2×2 居中高亮 + 加宽。
+    const npInv = selection.inventoryById;
+    const npOnSaleIds = new Set(
+      specs.filter(s => (mode === 'smart' ? (npInv?.get(s.id)?.stock_qty ?? 0) > 0 : true)).map(s => s.id),
+    );
+    const managerPickIds = MANAGER_PICK_IDS.filter(id => npOnSaleIds.has(id));
 
     // ---- 工商共育 fixedTop 叠加层:强制落到第一个展示柜台(displayCounters[0])的前两行 ----
     // 忽略 toggle 送来的空 counter_id,用 buildIndustrialCoopPlacement 按优先级 + 方案 A
@@ -298,6 +307,13 @@ router.post('/', async (req: Request, res: Response) => {
     );
     // 顶部 fixedTop(工商共育) + 底部其它专区,合并供逐柜台渲染(同一柜台可能两者皆有)
     const zonePlacements: ZonePlacement[] = [...bottomZonePlacements, ...fixedTopPlacements];
+
+    // 尝鲜专区落位盖章 highlightIds(店长推荐中心高亮的在售重点品规),供 imageGen 渲染 2×2 + 加宽
+    if (managerPickIds.length > 0) {
+      for (const p of zonePlacements) {
+        if (p.zoneId === 'newProduct') p.highlightIds = managerPickIds;
+      }
+    }
 
     // ---- 拉价签白名单:根据 cust_info.has_pos 决定 ref_yangpu_avg_price 子集 ----
     // 价签是常规客户专属功能(基于客户库存与杨浦区均价对比),新客户走归档版不渲染。

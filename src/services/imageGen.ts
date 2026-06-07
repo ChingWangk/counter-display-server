@@ -102,7 +102,16 @@ interface RegularRowSlot {
   type: 'regular';
   specCount: number;
 }
-type RowSlot = ZoneSingleRowSlot | ZoneGroupRowSlot | ZoneCartonRowSlot | RegularRowSlot;
+// 尝鲜专区行(zoneRows·newProduct):每个单元 = 一个新品的「正+反」对;special=true 为店长推荐重点品规
+interface NpUnit {
+  spec: Category;
+  special: boolean;
+}
+interface ZoneNewProductRowSlot {
+  type: 'zone-newproduct';
+  units: NpUnit[];
+}
+type RowSlot = ZoneSingleRowSlot | ZoneGroupRowSlot | ZoneCartonRowSlot | ZoneNewProductRowSlot | RegularRowSlot;
 
 // 常规行内单个渲染包。普通包 boxRole 缺省;内嵌红框配对(产品升级/平替)的主规格 boxRole='L'、
 // 副规格 boxRole='R'(L、R 在行内紧贴,被同一红框圈住)。drawFlatRow 据此画红框。
@@ -133,6 +142,16 @@ const COOP_MIN_PACK_GAP = Math.round(0.12 * CELL_W);  // 3 包之间的小缝隙
 const INLINE_BOX_COLOR = '#E63946';   // 危险红,粗框醒目
 const INLINE_BOX_LINE_W = 6;          // 框线粗细(明显)
 const INLINE_BOX_TAB_H = 22;          // 左上角标签条高度
+
+// ---- 尝鲜专区(newProduct)正反面 + 店长推荐重点品规绘制常量 ----
+const NP_SPECIAL_CELL_W = 180;          // 重点品规单包宽(普通 120 的 1.5×,只加宽不加高)
+const MANAGER_PICK_BORDER = '#C0392B';  // 店长推荐外框(红)
+const MANAGER_PICK_RIBBON = '#C9A23F';  // 顶部绶带(金)
+const MANAGER_PICK_LABEL = '店长推荐';
+const MANAGER_PICK_LINE_W = 6;          // 外框线粗
+const MANAGER_PICK_TAB_H = 22;          // 顶部绶带高
+// 价位段(tier)降序:rank 越小越靠前(价位越高越靠前);无价类/未知排最后
+const TIER_RANK: Record<string, number> = { '一类': 0, '二类': 1, '三类': 2, '四类': 3, '五类': 4 };
 
 // 同一专区跨 rowCount 行的合并标签信息:左侧画一条贯穿全部行的竖向 label
 interface ZoneLabelBlock {
@@ -422,34 +441,27 @@ export async function generateCounterImage(
   }
 
   // 2b. 底部专区行:单品 staggered / 分组 bin-packing(逻辑同归档)
-  const bottomRowSlots: (ZoneSingleRowSlot | ZoneGroupRowSlot)[] = [];
+  const bottomRowSlots: (ZoneSingleRowSlot | ZoneGroupRowSlot | ZoneNewProductRowSlot)[] = [];
   const bottomLabelInfo: { rows: number; label: string; barColor: string }[] = [];
   for (const zone of bottomZonePlacements) {
     const before = bottomRowSlots.length;
-    if (zone.displayMode === 'single') {
-      // 单品专区:拉平 groups 为 primary 列表,等同于旧的 specs
+    if (zone.zoneId === 'newProduct') {
+      // 尝鲜专区:正反面 + 店长推荐重点品规 2×2 居中高亮(详见 layoutNewProductZone)。
+      // 返回恰好 zone.rowCount 行,每行一个 NpUnit[](可能为空,占位保持行网格)。
+      const npRows = layoutNewProductZone(zone, displayAreaW);
+      for (const units of npRows) bottomRowSlots.push({ type: 'zone-newproduct', units });
+    } else if (zone.displayMode === 'single') {
+      // 单品专区(爆珠口味组合等):拉平 groups 为 primary 列表,单包陈列(cap=packsPerRow-1 留 gap budget)。
+      // 注:newProduct 已在上面的专属分支处理(正反面 + 店长推荐),不再经此。
       const flatSpecs = zone.groups.map(g => g.primary);
       const perRow = uniformDistribute(flatSpecs.length, zone.rowCount);
-      // 仅新品尝鲜支持根据柜台余量自适应双包陈列(工商共育已走 fixedTop 条行,不再经此分支);
-      // 其余单品专区(如爆珠口味组合)始终单包陈列(每个 spec 独立曝光,不强调"重复抢占"视觉)
-      const canDoublePack = zone.zoneId === 'newProduct';
       let off = 0;
       for (let r = 0; r < zone.rowCount; r++) {
         const want = perRow[r];
         const rowSpecs = flatSpecs.slice(off, off + want);
         off += want;
-        // 自适应密度,避免行内过于稀疏或过度拥挤:
-        //  - 双包陈列(仅 newProduct):specs * 2 <= packsPerRow,每个 spec 重复 2 次紧贴,
-        //    drawFlatRow 会在 id 切换处自动留 gap
-        //  - 单包陈列:cap = packsPerRow - 1,保证至少 1 包宽度的 gap budget
-        let renderSpecs: Category[];
-        if (canDoublePack && rowSpecs.length > 0 && rowSpecs.length * 2 <= singleMaxPerRow) {
-          renderSpecs = rowSpecs.flatMap(s => [s, s]);
-        } else {
-          const cap = Math.max(1, singleMaxPerRow - 1);
-          renderSpecs = rowSpecs.slice(0, cap);
-        }
-        bottomRowSlots.push({ type: 'zone-single', specs: renderSpecs });
+        const cap = Math.max(1, singleMaxPerRow - 1);
+        bottomRowSlots.push({ type: 'zone-single', specs: rowSpecs.slice(0, cap) });
       }
     } else {
       // 分组专区:按行宽贪心分组,整组不可拆,超出本行行宽就换行
@@ -543,6 +555,12 @@ export async function generateCounterImage(
 
     if (slot.type === 'zone-group') {
       await drawGroupedZoneRow(ctx, slot.groups, labelW, displayAreaW, baseY, priceTagMap);
+      continue;
+    }
+
+    if (slot.type === 'zone-newproduct') {
+      // 尝鲜专区行:正反面 + 店长推荐重点品规 2×2 居中高亮
+      await drawNewProductRow(ctx, slot.units, labelW, displayAreaW, baseY, priceTagMap);
       continue;
     }
 
@@ -865,6 +883,241 @@ function drawCartonPlaceholder(
   for (let i = 0; i < lines.length; i++) {
     ctx.fillText(lines[i], x + w / 2, startY + i * lineH);
   }
+}
+
+/** 价位段(tier)排序键:价位越高 rank 越小;无价类/未知排最后。 */
+function tierRank(tier?: string | null): number {
+  const r = TIER_RANK[tier ?? ''];
+  return r === undefined ? 99 : r;
+}
+
+/**
+ * 尝鲜专区布局:每个新品 = 正反对(1 单元)。在售店长推荐重点品规(zone.highlightIds,优先级序)
+ * 排成 2×2 居中方块(special=true,加宽 + 店长推荐装饰);其余新品按价位段降序→价格降序环绕填充。
+ * 返回恰好 zone.rowCount 行(R 行),每行一个 NpUnit[](保序;空行占位保持行网格)。
+ *
+ * 居中:方块占垂直中部 blockRows 行(4 个→2 行 2×2;≤2 个→1 行;R=1 退化为单行最多 4 个),
+ * 行内由 drawNewProductRow 左右近似对称放 others 实现水平居中。缺位由 others 补(padding 到 2 列);
+ * others 顺序为 tier 降序→price 降序,自上而下、左右消费。
+ */
+function layoutNewProductZone(zone: ZonePlacement, areaW: number): NpUnit[][] {
+  const R = Math.max(1, zone.rowCount);
+  const allSpecs = zone.groups.map(g => g.primary);
+  const highlightIds = zone.highlightIds ?? [];
+  const highlightSet = new Set(highlightIds);
+  const byId = new Map(allSpecs.map(s => [s.id, s]));
+
+  const specials: Category[] = [];
+  for (const id of highlightIds) {
+    const c = byId.get(id);
+    if (c) specials.push(c);
+  }
+  const others = allSpecs
+    .filter(s => !highlightSet.has(s.id))
+    .sort((a, b) => {
+      const ra = tierRank(a.tier), rb = tierRank(b.tier);
+      return ra !== rb ? ra - rb : (b.price ?? 0) - (a.price ?? 0);
+    });
+
+  let oi = 0;
+  const nextOther = (): NpUnit | undefined =>
+    oi < others.length ? { spec: others[oi++], special: false } : undefined;
+
+  const rows: NpUnit[][] = Array.from({ length: R }, () => []);
+  const PAIR_W = 2 * CELL_W;                       // 普通正反对宽
+  const maxPairsPerRow = Math.max(1, Math.floor(areaW / PAIR_W));
+
+  if (specials.length === 0) {
+    // 无在售重点品规:全部 others 平铺(每行 maxPairsPerRow 个)
+    for (let r = 0; r < R; r++) {
+      for (let k = 0; k < maxPairsPerRow; k++) {
+        const o = nextOther();
+        if (!o) return rows;
+        rows[r].push(o);
+      }
+    }
+    return rows;
+  }
+
+  // 方块网格(specials 排布)
+  let blockGrid: Category[][];
+  if (R < 2) blockGrid = [specials.slice(0, 4)];
+  else if (specials.length <= 2) blockGrid = [specials];
+  else blockGrid = [specials.slice(0, 2), specials.slice(2, 4)];
+  const blockRows = blockGrid.length;
+  const blockCols = R < 2 ? blockGrid[0].length : 2;   // R≥2 时方块固定 2 列(缺位由 others 补)
+  const blockTopRow = Math.min(Math.max(0, Math.floor((R - blockRows) / 2)), R - blockRows);
+
+  // 重点对是否加宽:最宽块行(blockCols 个重点对)放得下才加宽,否则普通宽(仍高亮)
+  const specialPairW = blockCols * (2 * NP_SPECIAL_CELL_W) <= areaW ? 2 * NP_SPECIAL_CELL_W : PAIR_W;
+
+  for (let r = 0; r < R; r++) {
+    const bi = r - blockTopRow;
+    if (bi >= 0 && bi < blockRows) {
+      // 中心:本块行 specials(special=true),padding 到 blockCols(缺位由 others 补,普通宽)
+      const center: NpUnit[] = blockGrid[bi].map(s => ({ spec: s, special: true }));
+      while (center.length < blockCols) {
+        const o = nextOther();
+        if (!o) break;
+        center.push(o);
+      }
+      const centerW = center.reduce((s, u) => s + (u.special ? specialPairW : PAIR_W), 0);
+      const sidePairs = Math.max(0, Math.floor((areaW - centerW) / PAIR_W));
+      const leftN = Math.floor(sidePairs / 2);
+      const left: NpUnit[] = [];
+      for (let k = 0; k < leftN; k++) {
+        const o = nextOther();
+        if (!o) break;
+        left.push(o);
+      }
+      const right: NpUnit[] = [];
+      for (let k = left.length; k < sidePairs; k++) {
+        const o = nextOther();
+        if (!o) break;
+        right.push(o);
+      }
+      rows[r] = [...left, ...center, ...right];
+    } else {
+      for (let k = 0; k < maxPairsPerRow; k++) {
+        const o = nextOther();
+        if (!o) break;
+        rows[r].push(o);
+      }
+    }
+  }
+  return rows;
+}
+
+/**
+ * 绘制尝鲜专区行:units 为正反对序列。每对 = 正面(drawSpec)+ 反面(drawBackFace)紧贴,
+ * 对与对之间留 gap(剩余宽均分,超 MAX_INTER_GAP_PX 封顶并整行居中)。special 对加宽(若整行放得下)
+ * 并叠店长推荐装饰框。
+ */
+async function drawNewProductRow(
+  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
+  units: NpUnit[],
+  areaStartX: number,
+  areaW: number,
+  baseY: number,
+  priceTagMap?: ReadonlyMap<string, number>,
+): Promise<void> {
+  if (units.length === 0) return;
+
+  // 加宽可行性:special 全用加宽宽时整行是否溢出;溢出则全部回退普通宽(与 layout 同口径)
+  const wideTotal = units.reduce((s, u) => s + 2 * (u.special ? NP_SPECIAL_CELL_W : CELL_W), 0);
+  const wide = wideTotal <= areaW;
+  const packW = (u: NpUnit): number => (wide && u.special ? NP_SPECIAL_CELL_W : CELL_W);
+  const unitW = (u: NpUnit): number => 2 * packW(u);
+
+  const total = units.reduce((s, u) => s + unitW(u), 0);
+  const nGaps = units.length - 1;
+  let interGap = nGaps > 0 ? Math.max(0, (areaW - total) / nGaps) : 0;
+  let startX = areaStartX;
+  if (nGaps === 0) {
+    startX = areaStartX + (areaW - total) / 2;               // 单对居中
+  } else if (interGap > MAX_INTER_GAP_PX) {
+    interGap = MAX_INTER_GAP_PX;                              // 封顶并整体居中
+    const contentW = total + nGaps * MAX_INTER_GAP_PX;
+    startX = areaStartX + (areaW - contentW) / 2;
+  }
+
+  let cursor = startX;
+  for (let i = 0; i < units.length; i++) {
+    if (i > 0) cursor += interGap;
+    const u = units[i];
+    const w = packW(u);
+    await drawSpec(ctx, u.spec, cursor, baseY, w, CELL_H, priceTagMap);   // 正面(含价签)
+    await drawBackFace(ctx, u.spec, cursor + w, baseY, w, CELL_H);        // 反面(不画价签)
+    if (u.special) drawManagerPickDecor(ctx, cursor, baseY, 2 * w, CELL_H);
+    cursor += 2 * w;
+  }
+}
+
+/**
+ * 绘制新品反面图。反面按 {卷烟编码}_b.jpg 命名(在包图 imageUrl 后缀前插 _b),缺图画"背面待上传"占位。
+ */
+async function drawBackFace(
+  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
+  spec: Category,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): Promise<void> {
+  // /images/categories/310140.jpg → /images/categories/310140_b.jpg
+  const backUrl = spec.imageUrl.replace(/(\.[^./]+)$/, '_b$1');
+  const imgPath = path.join(CATEGORY_IMG_ROOT, backUrl);
+  if (fs.existsSync(imgPath)) {
+    try {
+      const img = await loadImage(imgPath);
+      ctx.drawImage(img, x, y, w, h);
+      return;
+    } catch {
+      // 加载失败 → 占位
+    }
+  }
+  drawBackPlaceholder(ctx, spec.name, x, y, w, h);
+}
+
+/** 反面占位图:浅灰底 + 边框 + 商品名(前 6 字) + "背面待上传"。提示上传 {编码}_b.jpg 后自动替换。 */
+function drawBackPlaceholder(
+  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
+  name: string,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): void {
+  ctx.fillStyle = '#D8CFC0';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = '#B0A48E';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+
+  const lines = [name.slice(0, 6), '背面待上传'];
+  ctx.fillStyle = '#7A6F5A';
+  ctx.font = `bold 18px ${FONT_FAMILY}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const lineH = 26;
+  const startY = y + h / 2 - ((lines.length - 1) * lineH) / 2;
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillText(lines[i], x + w / 2, startY + i * lineH);
+  }
+}
+
+/**
+ * 绘制「店长推荐」装饰:罩在重点对(正+反)footprint 内侧画粗红外框 + 左上角金色绶带「店长推荐」白字。
+ * 框线落 footprint 内侧(inset),不覆盖相邻规格(同 drawInlineBox)。
+ */
+function drawManagerPickDecor(
+  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): void {
+  const lw = MANAGER_PICK_LINE_W;
+  const inset = lw / 2 + 1;
+  const bx = x + inset, by = y + inset;
+  const bw = w - 2 * inset, bh = h - 2 * inset;
+  if (bw <= 0 || bh <= 0) return;
+
+  ctx.strokeStyle = MANAGER_PICK_BORDER;
+  ctx.lineWidth = lw;
+  ctx.strokeRect(bx, by, bw, bh);
+
+  const tabH = MANAGER_PICK_TAB_H;
+  const fontSize = tabH - 8;
+  ctx.font = `bold ${fontSize}px ${FONT_FAMILY}`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  const textW = ctx.measureText(MANAGER_PICK_LABEL).width;
+  const tabW = Math.min(bw, textW + 14);
+  ctx.fillStyle = MANAGER_PICK_RIBBON;
+  ctx.fillRect(bx, by, tabW, tabH);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillText(MANAGER_PICK_LABEL, bx + 7, by + tabH / 2 + 1);
 }
 
 /**

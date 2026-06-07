@@ -41,6 +41,11 @@ const SHANGHAI_TOBACCO_MFR = '上海烟草集团有限责任公司';
 
 const HIGH_TIER_VALUES = new Set(['一类', '二类']);
 
+/** 尝鲜专区「店长推荐」重点品规(中华细支/中支系列,按优先级序)。
+ *  这 4 个里**客户在售**的会被注入 newProduct 成员并由 imageGen 在中心 2×2 居中、加宽、垫店长推荐装饰。
+ *  注意 310143 在 dim_category_ext 无 launch_date,classifyNewProduct 选不到它 —— 靠 injectManagerPicks 绕过窗口注入。 */
+export const MANAGER_PICK_IDS: string[] = ['310140', '310141', '310142', '310143'];
+
 /** 爆珠口味组合的 flavor 外层顺序(薄荷>水果>功能性>原味>其他)。 */
 const BEAD_FLAVOR_ORDER = ['薄荷', '水果', '功能性', '原味'];
 
@@ -356,6 +361,26 @@ export function classifyNewProduct(
 }
 
 /**
+ * 把「店长推荐」重点品规(MANAGER_PICK_IDS)中**客户在售**且尚未入选的注入 newProduct,绕过上市窗口。
+ * 例:310143 无 launch_date,classifyNewProduct 不会选它,但只要客户在售就应进尝鲜专区中心被高亮。
+ * imageGen 凭 placement.highlightIds(generate.ts 计算)决定谁加框/加宽,这里只负责"让它进专区"。
+ * 原地 push 后返回同一数组(调用方 classifyZones 持有该新数组)。
+ */
+function injectManagerPicks(
+  newProduct: ZoneSpec[],
+  extendedMap: ReadonlyMap<string, Category>,
+  customerOnSaleIds: ReadonlySet<string>,
+): ZoneSpec[] {
+  const present = new Set(newProduct.map(s => s.id));
+  for (const id of MANAGER_PICK_IDS) {
+    if (present.has(id) || !customerOnSaleIds.has(id)) continue; // 仅在售、未重复
+    const c = extendedMap.get(id);
+    if (c) newProduct.push(toZoneSpec(c));
+  }
+  return newProduct;
+}
+
+/**
  * 爆珠口味组合:仅爆珠规格,按口味分组聚集陈列。
  *
  *  范围:pack_type 含 '爆珠' 的所有变体(爆珠 / 中支爆珠 / 细支爆珠 / 短支爆珠)。
@@ -425,7 +450,8 @@ export function classifyZones(
   const productUpgrade = classifyProductUpgrade(specs, extendedMap, customerOnSaleIds, now);
   const substitute = classifySubstitute(extendedMap, customerOnSaleIds, substituteRules, inventoryById);
   const keyRecommend = classifyKeyRecommend(specs, extendedMap, customerOnSaleIds, inventoryById);
-  const newProduct = classifyNewProduct(specs, now);
+  // 尝鲜专区:窗口期新品 + 注入在售的店长推荐重点品规(后者绕过上市窗口,如 310143)
+  const newProduct = injectManagerPicks(classifyNewProduct(specs, now), extendedMap, customerOnSaleIds);
   const beadFlavor = classifyBeadFlavor(specs);
 
   return { industrialCoop, productUpgrade, substitute, keyRecommend, newProduct, beadFlavor };
