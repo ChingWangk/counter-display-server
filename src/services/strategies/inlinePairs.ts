@@ -24,7 +24,7 @@ import { SpecInventoryInfo } from './types';
 const UPGRADE_PAIRS: Record<string, string> = {
   '310133': '310142', // 中华(双中支)¥424 → 中华(金双中)¥510
   '310310': '310317', // 牡丹(蓝中支)¥263 → 牡丹(玄华双中)¥339
-  '340135': '340142', // 黄山(红方印细支) → 黄山(升级款,待补图)
+  '340135': '340142', // 黄山(红方印细支)¥175 → 黄山(红方印金细支)¥263
 };
 
 /** 滞销平替写死配对(脱销主规格编码 → 平替副规格编码)。跨品牌、同价位段。 */
@@ -32,25 +32,6 @@ const SUBSTITUTE_PAIRS: Record<string, string> = {
   '330421': '423801', // 利群(软蓝)¥159 → 黄鹤楼(软蓝)¥164
   '330409': '310102', // 利群(软长嘴)¥318 → 中华(硬)¥382
   '320512': '360122', // 南京(炫赫门)¥155 → 金圣(青瓷)¥158
-};
-
-/**
- * 写死副规格中尚未录入 categories.json 的合成占位(用户后补品名/图片)。
- * imageUrl 命名即生效:上传 /images/categories/{id}.jpg 后 imageGen 的 drawSpec 自动显真图,
- * 在那之前画"未收录"占位包。一旦该 id 进入 dim_category_ext / categories.json,extendedMap 优先生效。
- */
-const SYNTHETIC_SECONDARY: Record<string, Category> = {
-  '340142': {
-    id: '340142',
-    name: '黄山(升级款)',
-    imageUrl: '/images/categories/340142.jpg',
-    price: 0,
-    brand: '黄山',
-    manufacturer: '',
-    category: 'provincial',
-    province: null,
-    is_hot: false,
-  },
 };
 
 const UPGRADE_LABEL = '产品升级';
@@ -89,8 +70,8 @@ export function computeInlinePairs(args: ComputeInlinePairsArgs): Map<string, In
   const pairs = new Map<string, InlineBoxedPair>();
   if (!enableUpgrade && !enableSubstitute) return pairs;
 
-  const resolveCat = (id: string): Category | undefined =>
-    extendedMap.get(id) ?? SYNTHETIC_SECONDARY[id];
+  // 写死副规格 id → catalog 解析(6 组配对的主/副规格现已全部录入 categories.json)
+  const resolveCat = (id: string): Category | undefined => extendedMap.get(id);
 
   const isHardcodedPrimary = (id: string): boolean =>
     Object.prototype.hasOwnProperty.call(UPGRADE_PAIRS, id) ||

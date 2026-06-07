@@ -1001,6 +1001,17 @@
     "is_hot": false
   },
   {
+    "id": "340142",
+    "name": "黄山(红方印金细支)",
+    "imageUrl": "/images/categories/340142.jpg",
+    "price": 263,
+    "brand": "黄山",
+    "manufacturer": "安徽中烟工业有限责任公司",
+    "category": "provincial",
+    "province": "安徽",
+    "is_hot": false
+  },
+  {
     "id": "340136",
     "name": "黄山(徽商新概念细支)",
     "imageUrl": "/images/categories/340136.jpg",
