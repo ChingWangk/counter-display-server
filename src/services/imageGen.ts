@@ -307,6 +307,9 @@ function placeUnitsClamped(unitWidths: number[], areaStartX: number, areaW: numb
   }
   return xs;
 }
+
+/**
+ * 构造常规区渲染包列表:把内嵌红框配对(产品升级/平替)的副规格插到主规格右侧,
  * 主+副成对不翻倍;double 模式普通包翻倍为两包;副规格若在序列别处出现则去重移除。
  *
  * - inlinePairs: Map<主规格 id, 配对>(generate.ts computeInlinePairs 产出,全局传入,
