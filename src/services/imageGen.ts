@@ -122,12 +122,13 @@ interface ZoneNewProductRowSlot {
 }
 type RowSlot = ZoneSingleRowSlot | ZoneGroupRowSlot | ZoneCartonRowSlot | ZoneNewProductRowSlot | RegularRowSlot;
 
-// 常规行内单个渲染包。普通包 boxRole 缺省;内嵌红框配对(产品升级/平替)的主规格 boxRole='L'、
-// 副规格 boxRole='R'(L、R 在行内紧贴,被同一红框圈住)。drawFlatRow 据此画红框。
+// 常规行内单个渲染包。普通包 boxRole 缺省;内嵌配对框(产品升级/平替)的主规格 boxRole='L'、
+// 副规格 boxRole='R'(L、R 在行内紧贴,被同一配对框圈住)。drawFlatRow 据此画框。
 interface RenderPack {
   spec: Category;
   boxRole?: 'L' | 'R';
-  boxLabel?: string;   // 红框左上角标签:'产品升级' | '滞销平替'
+  boxLabel?: string;   // 配对框左上角标签:'产品升级' | '滞销平替'
+  boxColor?: string;   // 配对框颜色(按专区:产品升级=绿、滞销平替=紫);缺省走兜底色
 }
 
 /**
@@ -147,10 +148,19 @@ const CARTON_W = 5 * CELL_W;            // 条图宽 = 5 包宽 = 600px
 const COOP_PACKS_PER_UNIT = 3;          // 每个条单元 = 1 条 + 3 包
 const COOP_MIN_PACK_GAP = Math.round(0.12 * CELL_W);  // 3 包之间的小缝隙(偏小),≈14px
 
-// ---- 内嵌红框配对(inlineRegular:产品升级/平替)绘制常量 ----
-const INLINE_BOX_COLOR = '#E63946';   // 危险红,粗框醒目
+// ---- 内嵌配对框(inlineRegular:产品升级/平替)绘制常量 ----
+// 配对框按专区着色以便一眼区分(工商共育是顶部条行,不画此框,故无需配色):
+//   产品升级 = 红(沿用)、滞销平替 = 绿。
+const INLINE_BOX_COLOR_UPGRADE = '#E63946';     // 产品升级:红(粗框醒目)
+const INLINE_BOX_COLOR_SUBSTITUTE = '#2E7D32';  // 滞销平替:森林绿(粗框醒目)
+const INLINE_BOX_COLOR_DEFAULT = '#E63946';     // 兜底红(理论上每对都带专区色,不会落到此值)
 const INLINE_BOX_LINE_W = 6;          // 框线粗细(明显)
 const INLINE_BOX_TAB_H = 22;          // 左上角标签条高度
+
+/** 内嵌配对框专区 → 框色:产品升级=红、滞销平替=绿。 */
+function inlineBoxColor(zoneId: InlineBoxedPair['zoneId']): string {
+  return zoneId === 'substitute' ? INLINE_BOX_COLOR_SUBSTITUTE : INLINE_BOX_COLOR_UPGRADE;
+}
 
 // ---- 尝鲜专区(newProduct)正反面 + 店长推荐重点品规绘制常量 ----
 // ---- 尝鲜专区(newProduct)店长推荐绘制常量(画幅统一,靠间隙+背景+👍 凸显,不拉宽烟包)----
@@ -349,8 +359,9 @@ function buildRegularRenderPacks(
     const pair = inlinePairs.get(s.id);
     if (pair && !pairedDone.has(s.id)) {
       pairedDone.add(s.id);
-      out.push({ spec: s, boxRole: 'L', boxLabel: pair.boxLabel });
-      out.push({ spec: pair.secondary, boxRole: 'R', boxLabel: pair.boxLabel });
+      const boxColor = inlineBoxColor(pair.zoneId);
+      out.push({ spec: s, boxRole: 'L', boxLabel: pair.boxLabel, boxColor });
+      out.push({ spec: pair.secondary, boxRole: 'R', boxLabel: pair.boxLabel, boxColor });
       continue;
     }
     if (secondaryIdsToRemove.has(s.id)) continue;  // 该副规格已随主规格插入,跳过其它出现
@@ -732,17 +743,22 @@ async function drawFlatRow(
     await drawSpec(ctx, packs[col].spec, cursor, baseY, CELL_W, CELL_H, priceTagMap);
   }
 
-  // 红框 + 标签叠加在烟包之上;框线落配对自身 2 格 footprint 内侧,绝不覆盖相邻规格。
+  // 配对框 + 标签叠加在烟包之上;框线落配对自身 2 格 footprint 内侧,绝不覆盖相邻规格。
   for (let col = 0; col + 1 < packs.length; col++) {
     if (packs[col].boxRole === 'L' && packs[col + 1].boxRole === 'R') {
-      drawInlineBox(ctx, xs[col], xs[col + 1] + CELL_W, baseY, packs[col].boxLabel || '');
+      drawInlineBox(
+        ctx, xs[col], xs[col + 1] + CELL_W, baseY,
+        packs[col].boxLabel || '',
+        packs[col].boxColor || INLINE_BOX_COLOR_DEFAULT,
+      );
     }
   }
 }
 
 /**
- * 画内嵌红框 + 左上角标签。框线落在配对自身 2 格 footprint 内侧(inset = 线宽/2 + 1),
- * 因此无论相邻包多紧都不会覆盖相邻规格;标签条压在配对自身顶边内(红底白字)。
+ * 画内嵌配对框 + 左上角标签。框线落在配对自身 2 格 footprint 内侧(inset = 线宽/2 + 1),
+ * 因此无论相邻包多紧都不会覆盖相邻规格;标签条压在配对自身顶边内(同色底白字)。
+ * color 由专区决定:产品升级=绿、滞销平替=紫。
  */
 function drawInlineBox(
   ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
@@ -750,6 +766,7 @@ function drawInlineBox(
   xRight: number,
   baseY: number,
   label: string,
+  color: string,
 ): void {
   const lw = INLINE_BOX_LINE_W;
   const inset = lw / 2 + 1;
@@ -759,7 +776,7 @@ function drawInlineBox(
   const h = CELL_H - 2 * inset;
   if (w <= 0 || h <= 0) return;
 
-  ctx.strokeStyle = INLINE_BOX_COLOR;
+  ctx.strokeStyle = color;
   ctx.lineWidth = lw;
   ctx.strokeRect(x, y, w, h);
 
@@ -771,7 +788,7 @@ function drawInlineBox(
     ctx.textBaseline = 'middle';
     const textW = ctx.measureText(label).width;
     const tabW = Math.min(w, textW + 12);
-    ctx.fillStyle = INLINE_BOX_COLOR;
+    ctx.fillStyle = color;
     ctx.fillRect(x, y, tabW, tabH);
     ctx.fillStyle = '#FFFFFF';
     ctx.fillText(label, x + 6, y + tabH / 2 + 1);

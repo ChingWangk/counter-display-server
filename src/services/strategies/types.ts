@@ -248,7 +248,7 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     id: 'substitute',
     label: '平替专区',
     icon: '🔄',
-    description: '勾选即在常规陈列中把脱销规格与其平替并排,用红框圈出高亮,提示客人可买的替代款(自动嵌入常规行,不单独占行)',
+    description: '勾选即在常规陈列中把脱销规格与其平替并排,用绿框圈出高亮,提示客人可买的替代款(自动嵌入常规行,不单独占行)',
     priorityRank: 2,
     tier: 'basic',
     barColor: '#C2185B',
