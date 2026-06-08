@@ -41,10 +41,11 @@ const SHANGHAI_TOBACCO_MFR = '上海烟草集团有限责任公司';
 
 const HIGH_TIER_VALUES = new Set(['一类', '二类']);
 
-/** 尝鲜专区「店长推荐」重点品规(中华细支/中支系列,按优先级序)。
- *  这 4 个里**客户在售**的会被注入 newProduct 成员并由 imageGen 在中心 2×2 居中、加宽、垫店长推荐装饰。
+/** 尝鲜专区「店长推荐」重点品规(中华 + 牡丹;按 3×2 网格 row-major 顺序:
+ *  上行 = 中华细支3mg / 5mg / 6mg(310140/310143/310141),下行 = 金双中 / 玄华双中 / 蓝彩细支(310142/310317/310316))。
+ *  这 6 个里**客户在售**的会被注入 newProduct 成员并由 imageGen 在中心 3×2 居中、垫店长推荐装饰。
  *  注意 310143 在 dim_category_ext 无 launch_date,classifyNewProduct 选不到它 —— 靠 injectManagerPicks 绕过窗口注入。 */
-export const MANAGER_PICK_IDS: string[] = ['310140', '310141', '310142', '310143'];
+export const MANAGER_PICK_IDS: string[] = ['310140', '310143', '310141', '310142', '310317', '310316'];
 
 /** 爆珠口味组合的 flavor 外层顺序(薄荷>水果>功能性>原味>其他)。 */
 const BEAD_FLAVOR_ORDER = ['薄荷', '水果', '功能性', '原味'];

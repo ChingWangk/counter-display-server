@@ -4,6 +4,7 @@ import { createCanvas, loadImage, registerFont } from 'canvas';
 import { Counter, Category } from '../types';
 import { ZonePlacement, ZonePlacementGroup } from './strategies/types';
 import { InlineBoxedPair } from './strategies/inlinePairs';
+import { sortCategories } from './sortCategories';
 
 // 注册中文字体:Linux 默认 fallback 字体(DejaVu/Liberation)无 CJK,
 // 不注册会把 ctx.fillText 中的中文渲染为方块/乱码。逐个尝试常见路径,首个存在即注册。
@@ -158,8 +159,6 @@ const MANAGER_PICK_BG = '#F0B429';             // 店长推荐高亮背景(深�
 const MANAGER_PICK_BG_BORDER = '#B8860B';      // 高亮背景描边(暗金)
 const MANAGER_PICK_PAD = Math.round(0.3 * CELL_W);   // 高亮带相对块矩形左右外扩 ~36
 const MANAGER_THUMB_PATH = '/images/decor/thumb.png'; // 大拇指资产(缺图走矢量兜底 drawVectorThumb)
-// 价位段(tier)降序:rank 越小越靠前(价位越高越靠前);无价类/未知排最后
-const TIER_RANK: Record<string, number> = { '一类': 0, '二类': 1, '三类': 2, '四类': 3, '五类': 4 };
 
 // 同一专区跨 rowCount 行的合并标签信息:左侧画一条贯穿全部行的竖向 label
 interface ZoneLabelBlock {
@@ -916,17 +915,11 @@ function drawCartonPlaceholder(
   }
 }
 
-/** 价位段(tier)排序键:价位越高 rank 越小;无价类/未知排最后。 */
-function tierRank(tier?: string | null): number {
-  const r = TIER_RANK[tier ?? ''];
-  return r === undefined ? 99 : r;
-}
-
 /**
  * 尝鲜专区布局(返回每行显式坐标 + 店长推荐高亮带):每个新品 = 正反对(宽 NP_UNIT_W,画幅统一)。
- * 全行单元(店长推荐 + 其余新品)用 placeUnitsClamped **统一间隙、整行居中**(相对位置居中,不强行像素居中,
- * 避免方块两侧空隙不对称);两块行用相同的"左侧 others 数 + 相同总单元数"保证 2×2 上下对齐。
- * 其余新品按 tier 降序→price 降序;块垂直居中。高亮带从 special 实际 x 取。
+ * 全行单元(店长推荐 + 其余新品)用 placeUnitsClamped **统一间隙、整行居中**(相对位置居中,不强行像素居中);
+ * 店长推荐排 ceil(n/2) 列 × 2 行的居中方块(6→3×2),两块行用相同"左侧 others 数 + 相同总单元数"保证上下对齐。
+ * 其余新品用 sortCategories(**产地集中 + 价格高→低,同新客户常规陈列策略**)排序;块垂直居中;高亮带从 special 实际 x 取。
  */
 function layoutNewProductZone(zone: ZonePlacement, areaW: number): NpRowLayout[] {
   const R = Math.max(1, zone.rowCount);
@@ -937,12 +930,8 @@ function layoutNewProductZone(zone: ZonePlacement, areaW: number): NpRowLayout[]
 
   const specials: Category[] = [];
   for (const id of highlightIds) { const c = byId.get(id); if (c) specials.push(c); }
-  const others = allSpecs
-    .filter(s => !highlightSet.has(s.id))
-    .sort((a, b) => {
-      const ra = tierRank(a.tier), rb = tierRank(b.tier);
-      return ra !== rb ? ra - rb : (b.price ?? 0) - (a.price ?? 0);
-    });
+  // 其余新品:产地集中 + 价格从高到低(产地/品牌顺序同新客户常规陈列 sortCategories)
+  const others = sortCategories(allSpecs.filter(s => !highlightSet.has(s.id)));
 
   const U = NP_UNIT_W;
   const cap = maxUnitsPerRow(areaW, U);   // 每行最多正反对数(GAP_MIN 下)
@@ -970,17 +959,18 @@ function layoutNewProductZone(zone: ZonePlacement, areaW: number): NpRowLayout[]
     return rows;
   }
 
-  // 店长推荐方块(row-major):4→2×2;3→[2,1];≤2→单行;R<2→单行最多 4
+  // 店长推荐方块(row-major,2 行均衡分列):n 个 → ceil(n/2) 列 × 2 行(6→3×2;4→2×2;5→[3,2];3→[2,1]);
+  // ≤2 或单行专区(R<2)→ 单行铺开。
   let blockGrid: Category[][];
-  if (R < 2) blockGrid = [specials.slice(0, 4)];
-  else if (specials.length <= 2) blockGrid = [specials];
-  else blockGrid = [specials.slice(0, 2), specials.slice(2, 4)];
+  if (R < 2 || specials.length <= 2) blockGrid = [specials];
+  else { const half = Math.ceil(specials.length / 2); blockGrid = [specials.slice(0, half), specials.slice(half)]; }
   const blockRows = blockGrid.length;
+  const blockCols = Math.max(...blockGrid.map(g => g.length));   // 最宽块行列数(= ceil(n/2))
   const blockTopRow = Math.min(Math.max(0, Math.floor((R - blockRows) / 2)), R - blockRows);
 
-  // 每行(含 specials)目标单元数:均匀且封顶 cap;块行左侧 others 数 leftN 两块行相同 → special 同 x → 对齐
-  const perRow = Math.min(cap, Math.max(2, Math.ceil((others.length + specials.length) / R)));
-  const leftN = Math.max(0, Math.floor((perRow - 2) / 2));
+  // 每行(含 specials)目标单元数:≥ 块列数、尽量均匀、封顶 cap;块行左侧 others 数 leftN 两块行相同 → special 同 x → 对齐
+  const perRow = Math.min(cap, Math.max(blockCols, Math.ceil((others.length + specials.length) / R)));
+  const leftN = Math.max(0, Math.floor((perRow - blockCols) / 2));
 
   for (let r = 0; r < R; r++) {
     const bi = r - blockTopRow;
