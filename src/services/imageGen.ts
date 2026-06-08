@@ -62,15 +62,15 @@ const ZONE_LABEL_BAR_W = 4;   // 标签左侧粗色条宽度
 const ZONE_LABEL_FONT_SIZE = 18;
 const ZONE_LABEL_LINE_H = 24; // 竖排每字垂直占位
 
-// 分组专区组与组之间至少留出的空隙(像素)。
-// bin-packing 时把此值计入下一组的占用宽度,避免组与组紧贴显得拥挤。
-const MIN_INTER_GROUP_GAP_PX = CELL_W;
-
 // 专区行内任意两包(或两组)之间"空缝隙"的上限 = 一包烟宽度。
 // 仅作用于内容固定、无法靠加排面填充的专区行(单品专区残量行 / 分组专区组间):
 // 缝隙超过一包即封顶,并把多余空间退到行两侧(居中),避免出现"一包多宽"的空档。
 // 规整陈列行(double/expanded/standard)不受此上限约束 —— 空隙均匀撑满整行宽、两端对齐。
 const MAX_INTER_GAP_PX = CELL_W;
+
+// 专区/专区模式常规行的"组间空隙"统一区间:下限 0.4 包、上限 1 包(= MAX_INTER_GAP_PX)。
+// 「组」= 不可拆单元(升级/平替主+副、尝鲜正+反、单规格),组内不留空;组间空隙恒落此区间且整体居中。
+const GAP_MIN_PX = Math.round(0.4 * CELL_W);   // 48
 
 // 价签尺寸（贴在烟包底部）
 const PRICE_TAG_H = 26;
@@ -103,14 +103,21 @@ interface RegularRowSlot {
   type: 'regular';
   specCount: number;
 }
-// 尝鲜专区行(zoneRows·newProduct):每个单元 = 一个新品的「正+反」对;special=true 为店长推荐重点品规
-interface NpUnit {
+// 尝鲜专区行(zoneRows·newProduct):每个单元 = 一个新品的「正+反」对(画幅统一);special=true 为店长推荐重点品规。
+// 布局阶段(layoutNewProductZone)算好每个单元左缘 x(相对陈列区 0);drawNewProductRow 再整体偏移 areaStartX。
+interface NpPlacedUnit {
   spec: Category;
   special: boolean;
+  x: number;   // 左缘 x(相对陈列区起点;正面 CELL_W,反面紧跟其右)
+}
+interface NpRowLayout {
+  units: NpPlacedUnit[];
+  /** 店长推荐高亮带(仅块行有):x0/x1 相对陈列区起点,两块行同值以对齐;withThumb=底块行画👍 */
+  bgBand?: { x0: number; x1: number; withThumb: boolean };
 }
 interface ZoneNewProductRowSlot {
   type: 'zone-newproduct';
-  units: NpUnit[];
+  row: NpRowLayout;
 }
 type RowSlot = ZoneSingleRowSlot | ZoneGroupRowSlot | ZoneCartonRowSlot | ZoneNewProductRowSlot | RegularRowSlot;
 
@@ -145,12 +152,12 @@ const INLINE_BOX_LINE_W = 6;          // 框线粗细(明显)
 const INLINE_BOX_TAB_H = 22;          // 左上角标签条高度
 
 // ---- 尝鲜专区(newProduct)正反面 + 店长推荐重点品规绘制常量 ----
-const NP_SPECIAL_CELL_W = 180;          // 重点品规单包宽(普通 120 的 1.5×,只加宽不加高)
-const MANAGER_PICK_BORDER = '#C0392B';  // 店长推荐外框(红)
-const MANAGER_PICK_RIBBON = '#C9A23F';  // 顶部绶带(金)
-const MANAGER_PICK_LABEL = '店长推荐';
-const MANAGER_PICK_LINE_W = 6;          // 外框线粗
-const MANAGER_PICK_TAB_H = 22;          // 顶部绶带高
+// ---- 尝鲜专区(newProduct)店长推荐绘制常量(画幅统一,靠间隙+背景+👍 凸显,不拉宽烟包)----
+const NP_UNIT_W = 2 * CELL_W;                  // 尝鲜单元 = 正+反两包(统一画幅)
+const MANAGER_PICK_BG = '#FFF1C9';             // 店长推荐高亮背景(柔金)
+const MANAGER_PICK_BG_BORDER = '#E0B84A';      // 高亮背景描边
+const MANAGER_PICK_PAD = Math.round(0.3 * CELL_W);   // 高亮带相对块矩形左右外扩 ~36
+const MANAGER_THUMB_PATH = '/images/decor/thumb.png'; // 大拇指资产(缺图走矢量兜底 drawVectorThumb)
 // 价位段(tier)降序:rank 越小越靠前(价位越高越靠前);无价类/未知排最后
 const TIER_RANK: Record<string, number> = { '一类': 0, '二类': 1, '三类': 2, '四类': 3, '五类': 4 };
 
@@ -271,7 +278,35 @@ function staggeredDistribute(total: number, rows: number): number[] {
 }
 
 /**
- * 构造常规区渲染包列表:把内嵌红框配对(产品升级/平替)的副规格插到主规格右侧,
+ * 一行最多能放几个等宽单元,使组间空隙仍 ≥ GAP_MIN_PX:
+ * k 个单元 + (k-1) 个 ≥GAP_MIN 空隙 ≤ areaW ⇒ k ≤ (areaW + GAP_MIN)/(unitW + GAP_MIN)。
+ */
+function maxUnitsPerRow(areaW: number, unitW: number): number {
+  if (unitW <= 0) return 0;
+  return Math.max(0, Math.floor((areaW + GAP_MIN_PX) / (unitW + GAP_MIN_PX)));
+}
+
+/**
+ * 把若干单元放进 [areaStartX, areaStartX + areaW]:组间空隙 = clamp(余量/间隔数, GAP_MIN_PX, MAX_INTER_GAP_PX),
+ * 整体居中(余量退两侧)。返回每个单元的左缘 x。
+ * 调用方须保证单元数 ≤ maxUnitsPerRow(否则按 GAP_MIN 仍放不下会轻微溢出)。
+ */
+function placeUnitsClamped(unitWidths: number[], areaStartX: number, areaW: number): number[] {
+  const n = unitWidths.length;
+  if (n === 0) return [];
+  const totalW = unitWidths.reduce((s, w) => s + w, 0);
+  const nGaps = n - 1;
+  let gap = nGaps > 0 ? (areaW - totalW) / nGaps : 0;
+  if (nGaps > 0) gap = Math.min(Math.max(gap, GAP_MIN_PX), MAX_INTER_GAP_PX);
+  const contentW = totalW + nGaps * gap;
+  let x = areaStartX + (areaW - contentW) / 2;   // 居中,余量退两侧
+  const xs: number[] = new Array(n);
+  for (let i = 0; i < n; i++) {
+    xs[i] = x;
+    x += unitWidths[i] + gap;
+  }
+  return xs;
+}
  * 主+副成对不翻倍;double 模式普通包翻倍为两包;副规格若在序列别处出现则去重移除。
  *
  * - inlinePairs: Map<主规格 id, 配对>(generate.ts computeInlinePairs 产出,全局传入,
@@ -373,13 +408,12 @@ function distributePairAware(packs: RenderPack[], idealPerRow: number[], cap: nu
  *
  * 行布局自上而下:
  *   [顶部] fixedTop 条行(工商共育):每行 条+3包+条+3包,固定在柜台最顶,把常规行整体下移
- *   [中部] 常规陈列(无专区时走三档 double/expanded/standard,详见 RegularFillLayout;行内空隙撑满整行宽)
+ *   [中部] 常规陈列:无专区走三档 double/expanded/standard(行内空隙撑满整行宽);专区模式均匀分布 +
+ *          组间空隙钳到 [0.4,1] 包、居中(placeUnitsClamped)
  *   [底部] 其余功能专区(左侧标签栏画专区名,同专区跨多行合并为一条):
- *     - 单品专区(newProduct/beadFlavor):
- *       · newProduct:自适应密度,稀疏时双包陈列,否则单包并保证至少 1 包宽 gap budget
- *       · beadFlavor:始终单包,cap = packsPerRow - 1
- *     - 分组专区(substitute/productUpgrade/keyRecommend):primary + 每个 alternative 均单包陈列,
- *       组与组之间至少留 MIN_INTER_GROUP_GAP_PX 宽空隙;keyRecommend 的滞销组 alternatives=[] 只画 primary
+ *     - 尝鲜(newProduct):每品正反面对,店长推荐 2×2 居中高亮背景带 + 👍,其余 tier 降序均匀环绕
+ *     - 爆珠(beadFlavor):单品均匀分布
+ *     - 重点推荐(keyRecommend):退市★ / 滞销单品,均匀分布;组间空隙 [0.4,1] 包、居中
  *   [最下] 空闲层(仅画层板,不放品规)
  *
  * 顶部 fixedTop 与底部专区各自按出现顺序展开;底部多个 zone 按 (priorityRank ASC, groupCount DESC) 排序,
@@ -433,7 +467,10 @@ export async function generateCounterImage(
     if (renderPacks.length > rowCapacity) renderPacks = trimToCapacity(renderPacks, rowCapacity);
     // 先按 mode 算"理想每行包数"(standard=uniform 铺满,其余=staggered 错位);含红框配对时
     // 再用 distributePairAware 重排:不超行宽、不拆对前提下尽量贴合理想分布。无配对则直接用理想分布。
-    const idealDistribute = regularLayout && regularLayout.mode === 'standard' ? uniformDistribute : staggeredDistribute;
+    // 无专区三档:standard=uniform 铺满 / expanded·double=staggered 错位;专区模式:uniform 均匀(每行规格数均匀)
+    const idealDistribute = regularLayout
+      ? (regularLayout.mode === 'standard' ? uniformDistribute : staggeredDistribute)
+      : uniformDistribute;
     const idealPerRow = idealDistribute(renderPacks.length, clampedRegularRows);
     const hasPairs = renderPacks.some(p => p.boxRole !== undefined);
     const perRow = hasPairs
@@ -469,10 +506,10 @@ export async function generateCounterImage(
   for (const zone of bottomZonePlacements) {
     const before = bottomRowSlots.length;
     if (zone.zoneId === 'newProduct') {
-      // 尝鲜专区:正反面 + 店长推荐重点品规 2×2 居中高亮(详见 layoutNewProductZone)。
-      // 返回恰好 zone.rowCount 行,每行一个 NpUnit[](可能为空,占位保持行网格)。
+      // 尝鲜专区:正反面 + 店长推荐 2×2 居中高亮(详见 layoutNewProductZone)。
+      // 返回恰好 zone.rowCount 行,每行一个 NpRowLayout(含显式坐标 + 块行高亮带;可能空行占位)。
       const npRows = layoutNewProductZone(zone, displayAreaW);
-      for (const units of npRows) bottomRowSlots.push({ type: 'zone-newproduct', units });
+      for (const row of npRows) bottomRowSlots.push({ type: 'zone-newproduct', row });
     } else if (zone.displayMode === 'single') {
       // 单品专区(爆珠口味组合等):拉平 groups 为 primary 列表,单包陈列(cap=packsPerRow-1 留 gap budget)。
       // 注:newProduct 已在上面的专属分支处理(正反面 + 店长推荐),不再经此。
@@ -487,33 +524,16 @@ export async function generateCounterImage(
         bottomRowSlots.push({ type: 'zone-single', specs: rowSpecs.slice(0, cap) });
       }
     } else {
-      // 分组专区:按行宽贪心分组,整组不可拆,超出本行行宽就换行
-      //   primary 和每个 alternative 均占 1 包宽(单包陈列)
-      //   一组宽度 = 1 + alts.length(2 个替代 → 3 包宽; 1 个替代 → 2 包宽,残缺组已排到末尾)
-      //   组与组之间预留 MIN_INTER_GROUP_GAP_PX,bin-packing 时把它计入下一组占用
-      const rowsOfGroups: ZonePlacementGroup[][] = [];
-      let curRow: ZonePlacementGroup[] = [];
-      let curWidthPx = 0;
-      for (const g of zone.groups) {
-        const gWidthPx = (1 + g.alternatives.length) * CELL_W;
-        if (gWidthPx > displayAreaW) continue;  // 一组都放不下整行,跳过
-        const need = curRow.length === 0
-          ? gWidthPx
-          : curWidthPx + MIN_INTER_GROUP_GAP_PX + gWidthPx;
-        if (need > displayAreaW) {
-          rowsOfGroups.push(curRow);
-          curRow = [g];
-          curWidthPx = gWidthPx;
-        } else {
-          curRow.push(g);
-          curWidthPx = need;
-        }
-      }
-      if (curRow.length > 0) rowsOfGroups.push(curRow);
-
-      // 把 rowsOfGroups 映射到 zone.rowCount 行(超出 rowCount 的丢弃,autoExpand 通常已给够行数)
+      // 分组专区(重点推荐区):每组(退市★/滞销均为单包,宽 = (1+alts)·CELL_W)按 uniformDistribute
+      // 均匀分到 rowCount 行(替代原贪心 bin-packing,杜绝"前几行塞满末行空");
+      // 行内由 drawGroupedZoneRow 用 placeUnitsClamped 钳制组间空隙 [0.4,1] 包、居中。
+      const groups = zone.groups.filter(g => (1 + g.alternatives.length) * CELL_W <= displayAreaW);
+      const perRow = uniformDistribute(groups.length, zone.rowCount);
+      let off = 0;
       for (let r = 0; r < zone.rowCount; r++) {
-        bottomRowSlots.push({ type: 'zone-group', groups: rowsOfGroups[r] ?? [] });
+        const rowGroups = groups.slice(off, off + perRow[r]);
+        off += perRow[r];
+        bottomRowSlots.push({ type: 'zone-group', groups: rowGroups });
       }
     }
     bottomLabelInfo.push({ rows: bottomRowSlots.length - before, label: zone.label, barColor: zone.barColor });
@@ -582,8 +602,8 @@ export async function generateCounterImage(
     }
 
     if (slot.type === 'zone-newproduct') {
-      // 尝鲜专区行:正反面 + 店长推荐重点品规 2×2 居中高亮
-      await drawNewProductRow(ctx, slot.units, labelW, displayAreaW, baseY, priceTagMap);
+      // 尝鲜专区行:正反面 + 店长推荐 2×2 居中(高亮背景带 + 👍)
+      await drawNewProductRow(ctx, slot.row, labelW, baseY, priceTagMap);
       continue;
     }
 
@@ -594,11 +614,12 @@ export async function generateCounterImage(
       rowPacks = slot.specs.map(s => ({ spec: s }));
       capGap = true;
     } else {
-      // 规整陈列行:double/expanded/standard 的包列表与行分布已在上游算好;
-      // 行内空隙均匀撑满整行宽、两端对齐(capGap=false,不封顶不居中)。
-      // placedRegular 含内嵌红框配对(RenderPack 带 boxRole),drawFlatRow 据此画红框。
+      // 规整陈列行:placedRegular 含内嵌红框配对(RenderPack 带 boxRole),drawFlatRow 据此画红框。
+      //  - 专区模式(regularLayout 缺省):capGap=true → 组间空隙钳到 [0.4,1] 包、居中(跨柜密度一致)
+      //  - 无专区三档(有 regularLayout):capGap=false → 空隙均匀撑满整行宽、两端对齐(铺满整柜)
       rowPacks = placedRegular.slice(regularIdx, regularIdx + slot.specCount);
       regularIdx += slot.specCount;
+      capGap = regularLayout === undefined;
     }
     if (rowPacks.length === 0) continue;
 
@@ -681,11 +702,12 @@ async function drawFlatRow(
     ? areaStartX
     : areaStartX + (areaW - totalPackW) / 2;
 
-  // 缝隙上限封顶(仅 capGap=true 的专区残量行):内容固定无法靠加排面填充,缝隙超一包时
-  // 封顶并整体居中,余量退两侧。规整陈列行(capGap=false)不封顶,空隙均匀撑满整行宽、两端对齐。
-  if (capGap && diffTransitions > 0 && interGap > MAX_INTER_GAP_PX) {
-    interGap = MAX_INTER_GAP_PX;
-    const contentW = totalPackW + diffTransitions * MAX_INTER_GAP_PX;
+  // capGap=true(专区行 / 专区模式常规行):组间空隙钳到 [GAP_MIN_PX, MAX_INTER_GAP_PX]、整体居中,
+  // 余量退两侧 —— 既不挤到无缝(≥0.4 包)也不留一包多的空档(≤1 包)。分布阶段已保证组数 ≤ maxUnitsPerRow,
+  // 故钳到 GAP_MIN 也不溢出。capGap=false(无专区三档):不钳,空隙均匀撑满整行宽、两端对齐。
+  if (capGap && diffTransitions > 0) {
+    interGap = Math.min(Math.max(interGap, GAP_MIN_PX), MAX_INTER_GAP_PX);
+    const contentW = totalPackW + diffTransitions * interGap;
     startX = areaStartX + (areaW - contentW) / 2;
   }
 
@@ -748,13 +770,9 @@ function drawInlineBox(
 }
 
 /**
- * 绘制分组专区行:primary 和每个 alternative 都是单包陈列(1 cell);
- * 组内紧贴,组与组之间留 gap = gapBudget / (groups.length - 1)。
- *
- * 烟包绘制于 [areaStartX, areaStartX + areaW] 区间内,左侧 areaStartX 留给专区标签栏。
- *
- * 进入此函数前 bin-packing 已确保 (totalGroupW + (nGaps × MIN_INTER_GROUP_GAP_PX)) <= areaW,
- * 因此 interGap = gapBudget / nGaps 必 >= MIN_INTER_GROUP_GAP_PX,组间总能留出可见空隙。
+ * 绘制分组专区行(重点推荐区):每组 primary + alternatives 单包紧贴(组内不留空);
+ * 组与组之间空隙由 placeUnitsClamped 钳到 [GAP_MIN_PX, MAX_INTER_GAP_PX]、整体居中。
+ * 退市 primary 左上角叠 ★ 星标。组宽 = (1 + alternatives.length)·CELL_W。
  */
 async function drawGroupedZoneRow(
   ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
@@ -767,37 +785,15 @@ async function drawGroupedZoneRow(
   if (groups.length === 0) return;
 
   const groupWidths = groups.map(g => (1 + g.alternatives.length) * CELL_W);
-  const totalGroupW = groupWidths.reduce((s, w) => s + w, 0);
-  const nGaps = groups.length - 1;
-  const gapBudget = Math.max(areaW - totalGroupW, 0);
+  const xs = placeUnitsClamped(groupWidths, areaStartX, areaW);
 
-  let interGap: number;
-  let startX: number;
-  if (nGaps === 0) {
-    interGap = 0;
-    startX = areaStartX + (areaW - totalGroupW) / 2;  // 单组居中
-  } else {
-    interGap = gapBudget / nGaps;
-    startX = areaStartX;
-    // 组间缝隙封顶一包宽:分组内容固定无法靠加排面填充,超限即封顶并整体居中,余量退两侧,
-    // 避免组与组之间出现"一包多宽"的空档(与规整行的缝隙上限一致,全客户统一)。
-    if (interGap > MAX_INTER_GAP_PX) {
-      interGap = MAX_INTER_GAP_PX;
-      const contentW = totalGroupW + nGaps * MAX_INTER_GAP_PX;
-      startX = areaStartX + (areaW - contentW) / 2;
-    }
-  }
-
-  let cursor = startX;
   for (let gi = 0; gi < groups.length; gi++) {
-    if (gi > 0) cursor += interGap;
     const g = groups[gi];
-    // primary 单包陈列:1 cell;退市规格叠星标(类价签形式,左上角)
-    const primaryX = cursor;
-    await drawSpec(ctx, g.primary, primaryX, baseY, CELL_W, CELL_H, priceTagMap);
-    if (g.primary.is_delisted) drawDelistedStar(ctx, primaryX, baseY, PRICE_TAG_H);
+    let cursor = xs[gi];
+    // primary 单包;退市规格叠星标(类价签形式,左上角)
+    await drawSpec(ctx, g.primary, cursor, baseY, CELL_W, CELL_H, priceTagMap);
+    if (g.primary.is_delisted) drawDelistedStar(ctx, cursor, baseY, PRICE_TAG_H);
     cursor += CELL_W;
-    // 每个 alternative 单包陈列:1 cell
     for (const alt of g.alternatives) {
       await drawSpec(ctx, alt, cursor, baseY, CELL_W, CELL_H, priceTagMap);
       cursor += CELL_W;
@@ -916,16 +912,34 @@ function tierRank(tier?: string | null): number {
   return r === undefined ? 99 : r;
 }
 
+/** 把 total 个名额按各槽容量 caps 比例分配(largest-remainder,夹 [0,cap]),Σ结果 = min(total, Σcaps)。 */
+function proportionalSplit(total: number, caps: number[]): number[] {
+  const totalCap = caps.reduce((a, b) => a + b, 0);
+  const out = caps.map(() => 0);
+  if (totalCap <= 0 || total <= 0) return out;
+  const t = Math.min(total, totalCap);
+  const raw = caps.map(c => (t * c) / totalCap);
+  for (let i = 0; i < caps.length; i++) out[i] = Math.min(caps[i], Math.floor(raw[i]));
+  let used = out.reduce((a, b) => a + b, 0);
+  const order = raw.map((v, i) => ({ i, frac: v - Math.floor(v) })).sort((a, b) => b.frac - a.frac);
+  let k = 0;
+  const guard = order.length * 4 + 4;
+  while (used < t && k < guard) {
+    const idx = order[k % order.length].i;
+    if (out[idx] < caps[idx]) { out[idx]++; used++; }
+    k++;
+  }
+  return out;
+}
+
 /**
- * 尝鲜专区布局:每个新品 = 正反对(1 单元)。在售店长推荐重点品规(zone.highlightIds,优先级序)
- * 排成 2×2 居中方块(special=true,加宽 + 店长推荐装饰);其余新品按价位段降序→价格降序环绕填充。
- * 返回恰好 zone.rowCount 行(R 行),每行一个 NpUnit[](保序;空行占位保持行网格)。
- *
- * 居中:方块占垂直中部 blockRows 行(4 个→2 行 2×2;≤2 个→1 行;R=1 退化为单行最多 4 个),
- * 行内由 drawNewProductRow 左右近似对称放 others 实现水平居中。缺位由 others 补(padding 到 2 列);
- * others 顺序为 tier 降序→price 降序,自上而下、左右消费。
+ * 尝鲜专区布局(返回每行显式坐标 + 店长推荐高亮带):每个新品 = 正反对(宽 NP_UNIT_W,画幅统一)。
+ * 店长推荐(zone.highlightIds)排 2×2 居中方块:块内相邻 special 间隙 = MAX_INTER_GAP_PX(加大间隙凸显),
+ * 块整体水平居中(两块行同 x → 上下对齐)、垂直居中;块行铺一条高亮背景带,底块行右下角带👍。
+ * 其余新品(tier 降序→price 降序)按各行可用空间比例**均匀**分布(块行填两侧、其它行整行),
+ * placeUnitsClamped 钳间隙 [0.4,1] 包并居中 —— 杜绝"前几行塞满末行空"。x 相对陈列区起点(0)。
  */
-function layoutNewProductZone(zone: ZonePlacement, areaW: number): NpUnit[][] {
+function layoutNewProductZone(zone: ZonePlacement, areaW: number): NpRowLayout[] {
   const R = Math.max(1, zone.rowCount);
   const allSpecs = zone.groups.map(g => g.primary);
   const highlightIds = zone.highlightIds ?? [];
@@ -933,10 +947,7 @@ function layoutNewProductZone(zone: ZonePlacement, areaW: number): NpUnit[][] {
   const byId = new Map(allSpecs.map(s => [s.id, s]));
 
   const specials: Category[] = [];
-  for (const id of highlightIds) {
-    const c = byId.get(id);
-    if (c) specials.push(c);
-  }
+  for (const id of highlightIds) { const c = byId.get(id); if (c) specials.push(c); }
   const others = allSpecs
     .filter(s => !highlightSet.has(s.id))
     .sort((a, b) => {
@@ -944,117 +955,108 @@ function layoutNewProductZone(zone: ZonePlacement, areaW: number): NpUnit[][] {
       return ra !== rb ? ra - rb : (b.price ?? 0) - (a.price ?? 0);
     });
 
+  const U = NP_UNIT_W;
   let oi = 0;
-  const nextOther = (): NpUnit | undefined =>
-    oi < others.length ? { spec: others[oi++], special: false } : undefined;
+  // 在 [regionStartX, regionStartX+regionW] 放 ≤n 个 others(钳间隙+居中),返回带 x 的单元
+  const placeOthers = (n: number, regionStartX: number, regionW: number): NpPlacedUnit[] => {
+    const take = Math.min(n, maxUnitsPerRow(regionW, U), others.length - oi);
+    if (take <= 0) return [];
+    const cats = others.slice(oi, oi + take);
+    oi += take;
+    const xs = placeUnitsClamped(cats.map(() => U), regionStartX, regionW);
+    return cats.map((c, i) => ({ spec: c, special: false, x: xs[i] }));
+  };
 
-  const rows: NpUnit[][] = Array.from({ length: R }, () => []);
-  const PAIR_W = 2 * CELL_W;                       // 普通正反对宽
-  const maxPairsPerRow = Math.max(1, Math.floor(areaW / PAIR_W));
+  const rows: NpRowLayout[] = Array.from({ length: R }, () => ({ units: [] as NpPlacedUnit[] }));
 
   if (specials.length === 0) {
-    // 无在售重点品规:全部 others 平铺(每行 maxPairsPerRow 个)
-    for (let r = 0; r < R; r++) {
-      for (let k = 0; k < maxPairsPerRow; k++) {
-        const o = nextOther();
-        if (!o) return rows;
-        rows[r].push(o);
-      }
-    }
+    // 无在售重点品规:others 均匀分布到各行
+    const cap = maxUnitsPerRow(areaW, U);
+    const perRow = uniformDistribute(Math.min(others.length, cap * R), R);
+    for (let r = 0; r < R; r++) rows[r].units = placeOthers(Math.min(perRow[r], cap), 0, areaW);
     return rows;
   }
 
-  // 方块网格(specials 排布)
-  let blockGrid: Category[][];
-  if (R < 2) blockGrid = [specials.slice(0, 4)];
-  else if (specials.length <= 2) blockGrid = [specials];
-  else blockGrid = [specials.slice(0, 2), specials.slice(2, 4)];
-  const blockRows = blockGrid.length;
-  const blockCols = R < 2 ? blockGrid[0].length : 2;   // R≥2 时方块固定 2 列(缺位由 others 补)
+  // 2×2 块:R≥2 固定 2 列、≤2 行;R<2 单行最多 4 列。块内间隙默认加大(1 包),小柜逐步缩。
+  const blockCols = R < 2 ? Math.min(specials.length, 4) : 2;
+  const blockRows = R < 2 ? 1 : (specials.length <= 2 ? 1 : 2);
   const blockTopRow = Math.min(Math.max(0, Math.floor((R - blockRows) / 2)), R - blockRows);
+  const blockW = (g: number) => blockCols * U + (blockCols - 1) * g;
+  let blockGap = MAX_INTER_GAP_PX;
+  if (blockW(blockGap) > areaW) blockGap = GAP_MIN_PX;
+  if (blockW(blockGap) > areaW) blockGap = Math.max(0, (areaW - blockCols * U) / Math.max(1, blockCols - 1));
+  const Wb = blockW(blockGap);
+  const blockX0 = Math.max(0, (areaW - Wb) / 2);
+  const colX = (col: number): number => blockX0 + col * (U + blockGap);
 
-  // 重点对是否加宽:最宽块行(blockCols 个重点对)放得下才加宽,否则普通宽(仍高亮)
-  const specialPairW = blockCols * (2 * NP_SPECIAL_CELL_W) <= areaW ? 2 * NP_SPECIAL_CELL_W : PAIR_W;
+  // 高亮带区间(两块行同值 → 对齐):块矩形左右外扩 PAD,夹 [0, areaW]
+  const bandX0 = Math.max(0, blockX0 - MANAGER_PICK_PAD);
+  const bandX1 = Math.min(areaW, blockX0 + Wb + MANAGER_PICK_PAD);
+  const sideLeftW = Math.max(0, bandX0);
+  const sideRightW = Math.max(0, areaW - bandX1);
+
+  // others 各行容量 → 比例均匀分配(避免空行):块行 = 左右两侧容量和;非块行 = 整行容量
+  const rowCap: number[] = [];
+  for (let r = 0; r < R; r++) {
+    const isB = r >= blockTopRow && r < blockTopRow + blockRows;
+    rowCap.push(isB ? maxUnitsPerRow(sideLeftW, U) + maxUnitsPerRow(sideRightW, U) : maxUnitsPerRow(areaW, U));
+  }
+  const otherPerRow = proportionalSplit(others.length, rowCap);
 
   for (let r = 0; r < R; r++) {
     const bi = r - blockTopRow;
-    if (bi >= 0 && bi < blockRows) {
-      // 中心:本块行 specials(special=true),padding 到 blockCols(缺位由 others 补,普通宽)
-      const center: NpUnit[] = blockGrid[bi].map(s => ({ spec: s, special: true }));
-      while (center.length < blockCols) {
-        const o = nextOther();
-        if (!o) break;
-        center.push(o);
-      }
-      const centerW = center.reduce((s, u) => s + (u.special ? specialPairW : PAIR_W), 0);
-      const sidePairs = Math.max(0, Math.floor((areaW - centerW) / PAIR_W));
-      const leftN = Math.floor(sidePairs / 2);
-      const left: NpUnit[] = [];
-      for (let k = 0; k < leftN; k++) {
-        const o = nextOther();
-        if (!o) break;
-        left.push(o);
-      }
-      const right: NpUnit[] = [];
-      for (let k = left.length; k < sidePairs; k++) {
-        const o = nextOther();
-        if (!o) break;
-        right.push(o);
-      }
-      rows[r] = [...left, ...center, ...right];
+    const isB = bi >= 0 && bi < blockRows;
+    if (isB) {
+      const rowSpecials = R < 2 ? specials.slice(0, blockCols) : specials.slice(bi * 2, bi * 2 + 2);
+      const blockUnits: NpPlacedUnit[] = rowSpecials.map((s, col) => ({ spec: s, special: true, x: colX(col) }));
+      const want = otherPerRow[r];
+      const left = placeOthers(Math.floor(want / 2), 0, sideLeftW);
+      const right = placeOthers(want - left.length, bandX1, sideRightW);
+      rows[r] = {
+        units: [...left, ...blockUnits, ...right],
+        bgBand: { x0: bandX0, x1: bandX1, withThumb: bi === blockRows - 1 },
+      };
     } else {
-      for (let k = 0; k < maxPairsPerRow; k++) {
-        const o = nextOther();
-        if (!o) break;
-        rows[r].push(o);
-      }
+      rows[r] = { units: placeOthers(otherPerRow[r], 0, areaW) };
     }
   }
   return rows;
 }
 
 /**
- * 绘制尝鲜专区行:units 为正反对序列。每对 = 正面(drawSpec)+ 反面(drawBackFace)紧贴,
- * 对与对之间留 gap(剩余宽均分,超 MAX_INTER_GAP_PX 封顶并整行居中)。special 对加宽(若整行放得下)
- * 并叠店长推荐装饰框。
+ * 绘制尝鲜专区行(按 layoutNewProductZone 算好的显式 x):先铺店长推荐高亮背景带(块行),
+ * 再画各单元(正面 drawSpec + 反面 drawBackFace,均 CELL_W 统一画幅),最后底块行右下角画👍。
+ * row.units[*].x / bgBand 的 x 相对陈列区起点,这里整体偏移 areaStartX(= 左侧标签栏宽 labelW)。
  */
 async function drawNewProductRow(
   ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
-  units: NpUnit[],
+  row: NpRowLayout,
   areaStartX: number,
-  areaW: number,
   baseY: number,
   priceTagMap?: ReadonlyMap<string, number>,
 ): Promise<void> {
-  if (units.length === 0) return;
-
-  // 加宽可行性:special 全用加宽宽时整行是否溢出;溢出则全部回退普通宽(与 layout 同口径)
-  const wideTotal = units.reduce((s, u) => s + 2 * (u.special ? NP_SPECIAL_CELL_W : CELL_W), 0);
-  const wide = wideTotal <= areaW;
-  const packW = (u: NpUnit): number => (wide && u.special ? NP_SPECIAL_CELL_W : CELL_W);
-  const unitW = (u: NpUnit): number => 2 * packW(u);
-
-  const total = units.reduce((s, u) => s + unitW(u), 0);
-  const nGaps = units.length - 1;
-  let interGap = nGaps > 0 ? Math.max(0, (areaW - total) / nGaps) : 0;
-  let startX = areaStartX;
-  if (nGaps === 0) {
-    startX = areaStartX + (areaW - total) / 2;               // 单对居中
-  } else if (interGap > MAX_INTER_GAP_PX) {
-    interGap = MAX_INTER_GAP_PX;                              // 封顶并整体居中
-    const contentW = total + nGaps * MAX_INTER_GAP_PX;
-    startX = areaStartX + (areaW - contentW) / 2;
+  // 1) 店长推荐高亮背景带(块行):柔金底 + 描边,满行高
+  if (row.bgBand) {
+    const bx = areaStartX + row.bgBand.x0;
+    const bw = row.bgBand.x1 - row.bgBand.x0;
+    if (bw > 0) {
+      ctx.fillStyle = MANAGER_PICK_BG;
+      ctx.fillRect(bx, baseY, bw, CELL_H);
+      ctx.strokeStyle = MANAGER_PICK_BG_BORDER;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(bx + 1, baseY + 1, bw - 2, CELL_H - 2);
+    }
   }
-
-  let cursor = startX;
-  for (let i = 0; i < units.length; i++) {
-    if (i > 0) cursor += interGap;
-    const u = units[i];
-    const w = packW(u);
-    await drawSpec(ctx, u.spec, cursor, baseY, w, CELL_H, priceTagMap);   // 正面(含价签)
-    await drawBackFace(ctx, u.spec, cursor + w, baseY, w, CELL_H);        // 反面(不画价签)
-    if (u.special) drawManagerPickDecor(ctx, cursor, baseY, 2 * w, CELL_H);
-    cursor += 2 * w;
+  // 2) 烟包:正面 + 反面紧贴(画幅统一 CELL_W)
+  for (const u of row.units) {
+    const x = areaStartX + u.x;
+    await drawSpec(ctx, u.spec, x, baseY, CELL_W, CELL_H, priceTagMap);       // 正面(含价签)
+    await drawBackFace(ctx, u.spec, x + CELL_W, baseY, CELL_W, CELL_H);       // 反面(不画价签)
+  }
+  // 3) 👍:底块行高亮带右下角(资产优先,缺图矢量兜底)
+  if (row.bgBand?.withThumb) {
+    const sz = Math.round(0.6 * CELL_W);
+    await drawManagerThumb(ctx, areaStartX + row.bgBand.x1 - sz - 6, baseY + CELL_H - sz - 6, sz);
   }
 }
 
@@ -1112,37 +1114,45 @@ function drawBackPlaceholder(
 }
 
 /**
- * 绘制「店长推荐」装饰:罩在重点对(正+反)footprint 内侧画粗红外框 + 左上角金色绶带「店长推荐」白字。
- * 框线落 footprint 内侧(inset),不覆盖相邻规格(同 drawInlineBox)。
+ * 绘制店长推荐👍:优先载入资产 /images/decor/thumb.png(用户上传),缺图走矢量兜底 drawVectorThumb。
+ * (x, y, size) = 左上角 + 边长。
  */
-function drawManagerPickDecor(
+async function drawManagerThumb(
   ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
   x: number,
   y: number,
-  w: number,
-  h: number,
+  size: number,
+): Promise<void> {
+  const p = path.join(CATEGORY_IMG_ROOT, MANAGER_THUMB_PATH);
+  if (fs.existsSync(p)) {
+    try {
+      const img = await loadImage(p);
+      ctx.drawImage(img, x, y, size, size);
+      return;
+    } catch {
+      // 加载失败 → 矢量兜底
+    }
+  }
+  drawVectorThumb(ctx, x, y, size);
+}
+
+/** 矢量大拇指兜底:红圆底 + 白色简化"竖拇指"(资产缺失时用,保证总能显示)。 */
+function drawVectorThumb(
+  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
+  x: number,
+  y: number,
+  size: number,
 ): void {
-  const lw = MANAGER_PICK_LINE_W;
-  const inset = lw / 2 + 1;
-  const bx = x + inset, by = y + inset;
-  const bw = w - 2 * inset, bh = h - 2 * inset;
-  if (bw <= 0 || bh <= 0) return;
-
-  ctx.strokeStyle = MANAGER_PICK_BORDER;
-  ctx.lineWidth = lw;
-  ctx.strokeRect(bx, by, bw, bh);
-
-  const tabH = MANAGER_PICK_TAB_H;
-  const fontSize = tabH - 8;
-  ctx.font = `bold ${fontSize}px ${FONT_FAMILY}`;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  const textW = ctx.measureText(MANAGER_PICK_LABEL).width;
-  const tabW = Math.min(bw, textW + 14);
-  ctx.fillStyle = MANAGER_PICK_RIBBON;
-  ctx.fillRect(bx, by, tabW, tabH);
+  const cx = x + size / 2, cy = y + size / 2, r = size / 2;
+  ctx.fillStyle = '#E63946';
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+  const u = size / 10;
   ctx.fillStyle = '#FFFFFF';
-  ctx.fillText(MANAGER_PICK_LABEL, bx + 7, by + tabH / 2 + 1);
+  ctx.fillRect(cx - 2 * u, cy - 0.5 * u, 3.6 * u, 3.8 * u);    // 手掌
+  ctx.fillRect(cx - 1.1 * u, cy - 3 * u, 1.7 * u, 3 * u);      // 竖起的拇指
+  ctx.fillRect(cx - 2.4 * u, cy + 2.8 * u, 4.2 * u, 1.1 * u);  // 袖口
 }
 
 /**

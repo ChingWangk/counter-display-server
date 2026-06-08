@@ -261,17 +261,37 @@ router.post('/', async (req: Request, res: Response) => {
       else mode = 'double';
       regularLayout = { mode };
     } else {
-      // 专区模式:顺序分配,前置柜台先吃满,被常规填满的层不允许放置专区
-      let remaining = specCount;
-      for (const c of displayCounters) {
-        const packsPerRow = Math.floor(c.length / PACK_WIDTH_CM);
-        const cap = packsPerRow * effLevels(c);
-        const used = Math.min(remaining, cap);
-        allocations.push(used);
-        remaining -= used;
+      // 专区模式:常规按"最小间隙容量"比例均衡分到各柜(把所有常规行视为一个空间,各柜密度一致),
+      // 余量行留给底部专区。perRowCap 取 GAP_MIN(0.4 包)下每行可放数(≈ packsPerRow/1.4),
+      // 避免前柜挤到无缝、后柜某行空旷(详见 imageGen placeUnitsClamped / 框架文档 §8.3)。
+      const perRowCap = displayCounters.map((c: any) =>
+        Math.max(1, Math.floor(Math.floor(c.length / PACK_WIDTH_CM) / 1.4)));
+      const caps = displayCounters.map((c: any, i: number) => perRowCap[i] * effLevels(c));
+      const totalCap = caps.reduce((a: number, b: number) => a + b, 0);
+      if (specCount >= totalCap) {
+        for (let i = 0; i < displayCounters.length; i++) allocations[i] = caps[i];
+      } else {
+        for (let i = 0; i < displayCounters.length; i++) {
+          allocations[i] = totalCap > 0 ? Math.round((specCount * caps[i]) / totalCap) : 0;
+        }
+        // 四舍五入误差按容量从大到小的柜台优先 ±1,夹在 [0, cap]
+        let diff = specCount - allocations.reduce((a, b) => a + b, 0);
+        const order = caps.map((_: number, i: number) => i).sort((a: number, b: number) => caps[b] - caps[a]);
+        let k = 0;
+        const maxSteps = (order.length + 1) * (specCount + 1);
+        let steps = 0;
+        while (diff !== 0 && order.length > 0 && steps < maxSteps) {
+          const idx = order[k % order.length];
+          if (diff > 0 && allocations[idx] < caps[idx]) { allocations[idx]++; diff--; }
+          else if (diff < 0 && allocations[idx] > 0) { allocations[idx]--; diff++; }
+          k++; steps++;
+        }
+      }
+      for (let i = 0; i < displayCounters.length; i++) {
+        const c = displayCounters[i];
         regularRowsByCounter.set(
           c.id,
-          packsPerRow > 0 ? Math.min(effLevels(c), Math.ceil(used / packsPerRow)) : 0,
+          perRowCap[i] > 0 ? Math.min(effLevels(c), Math.ceil(allocations[i] / perRowCap[i])) : 0,
         );
       }
     }
