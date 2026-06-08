@@ -17,7 +17,9 @@ import { SpecInventoryInfo } from './types';
  *    · 升级:同品牌 + 同支型(pack_type) + 副规格更贵(有价差) + 上市更晚;取上市最新(tie 价差最小)。忽略库存。
  *    · 平替:主规格须脱销(stock_qty=0);副规格按 同品牌 → 同价位段(tier) → 同支型 取最优,且强制客户在售。
  *
- * 隔离:产品升级优先于平替;同一 primaryId 不重复配;副规格不得又被当作别组主规格(防链式/重复框)。
+ * 优先级:**写死配对(升级/平替)> 自动派生**;同档内升级 > 平替。
+ *   —— 写死优先于派生,避免"写死平替主规格恰好也能派生升级"被升级抢走(如 320512)。
+ * 同一 primaryId 不重复配;副规格不得又被当作别组主规格(防链式/重复框)。
  */
 
 /** 产品升级写死配对(主规格编码 → 升级副规格编码)。同品牌、副规格价更高。 */
@@ -95,34 +97,24 @@ export function computeInlinePairs(args: ComputeInlinePairsArgs): Map<string, In
     // primary 的扩展视图(specs 通常已是 extendedMap 视图,兜底再查一次)
     const primary = extendedMap.get(pid) ?? spec;
 
-    // ---- 1) 产品升级(优先) ----
-    if (enableUpgrade) {
-      const hardId = UPGRADE_PAIRS[pid];
-      const secondary = hardId
-        ? resolveCat(hardId)                                  // 写死:无条件
-        : deriveUpgradeSecondary(primary, extendedMap, isExcluded);
-      if (secondary && secondary.id !== pid) {
-        pairs.set(pid, { primaryId: pid, secondary, zoneId: 'productUpgrade', boxLabel: UPGRADE_LABEL });
-        usedSecondaryIds.add(secondary.id);
-        continue;
-      }
-    }
+    // 命中即落位并跳过本规格(secondary 须存在且非自身)。
+    const trySet = (secondary: Category | undefined, zoneId: 'productUpgrade' | 'substitute', label: string): boolean => {
+      if (!secondary || secondary.id === pid) return false;
+      pairs.set(pid, { primaryId: pid, secondary, zoneId, boxLabel: label });
+      usedSecondaryIds.add(secondary.id);
+      return true;
+    };
 
-    // ---- 2) 滞销平替(主规格未被升级占用时) ----
-    if (enableSubstitute) {
-      const hardId = SUBSTITUTE_PAIRS[pid];
-      let secondary: Category | undefined;
-      if (hardId) {
-        secondary = resolveCat(hardId);                        // 写死:无条件(忽略副规格库存)
-      } else if (inventoryById.get(pid)?.stock_qty === 0) {    // 派生:主规格须脱销
-        secondary = deriveSubstituteSecondary(primary, extendedMap, onSaleIds, isExcluded);
-      }
-      if (secondary && secondary.id !== pid) {
-        pairs.set(pid, { primaryId: pid, secondary, zoneId: 'substitute', boxLabel: SUBSTITUTE_LABEL });
-        usedSecondaryIds.add(secondary.id);
-        continue;
-      }
-    }
+    // ---- 1) 写死配对优先(升级 / 平替,无条件,先于一切派生)----
+    // 否则"写死平替主规格恰好也能派生升级"会被升级抢走(如 320512:写死平替→360122,
+    // 同时可派生升级→320517);写死优先保证它出平替框。
+    if (enableUpgrade && UPGRADE_PAIRS[pid] && trySet(resolveCat(UPGRADE_PAIRS[pid]), 'productUpgrade', UPGRADE_LABEL)) continue;
+    if (enableSubstitute && SUBSTITUTE_PAIRS[pid] && trySet(resolveCat(SUBSTITUTE_PAIRS[pid]), 'substitute', SUBSTITUTE_LABEL)) continue;
+
+    // ---- 2) 自动派生(写死未命中时;升级优先于平替)----
+    if (enableUpgrade && trySet(deriveUpgradeSecondary(primary, extendedMap, isExcluded), 'productUpgrade', UPGRADE_LABEL)) continue;
+    if (enableSubstitute && inventoryById.get(pid)?.stock_qty === 0 &&
+        trySet(deriveSubstituteSecondary(primary, extendedMap, onSaleIds, isExcluded), 'substitute', SUBSTITUTE_LABEL)) continue;
   }
 
   return pairs;
