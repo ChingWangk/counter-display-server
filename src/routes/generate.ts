@@ -225,6 +225,16 @@ router.post('/', async (req: Request, res: Response) => {
     const regularRowsByCounter = new Map<string, number>();
     let regularLayout: RegularFillLayout | undefined;
 
+    // 用户在 zone-select 分配的初始 zone 行数(每柜)。专区模式下常规分配要**先给这些行让位**,
+    // 否则常规(0.4 包间隙 → 每行容量降至 ~packsPerRow/1.4,需更多行)会吃掉用户的专区行而触发 400。
+    const initialZoneRowsByCounter = new Map<string, number>();
+    for (const p of initialZonePlacements) {
+      initialZoneRowsByCounter.set(
+        p.counterId,
+        (initialZoneRowsByCounter.get(p.counterId) || 0) + p.rowCount,
+      );
+    }
+
     if (noDisplayZones) {
       // 归档版多柜台容量比例分配(容量按 effLevels 计 —— fixedTop 占用的行不计入常规容量)
       const caps = displayCounters.map((c: any) => Math.floor(c.length / PACK_WIDTH_CM) * effLevels(c));
@@ -266,7 +276,10 @@ router.post('/', async (req: Request, res: Response) => {
       // 避免前柜挤到无缝、后柜某行空旷(详见 imageGen placeUnitsClamped / 框架文档 §8.3)。
       const perRowCap = displayCounters.map((c: any) =>
         Math.max(1, Math.floor(Math.floor(c.length / PACK_WIDTH_CM) / 1.4)));
-      const caps = displayCounters.map((c: any, i: number) => perRowCap[i] * effLevels(c));
+      // 各柜常规可用行 = effLevels - 用户已分配的 zone 行(给专区让位);容量 = perRowCap × 可用行
+      const availRows = displayCounters.map((c: any) =>
+        Math.max(0, effLevels(c) - (initialZoneRowsByCounter.get(c.id) || 0)));
+      const caps = displayCounters.map((_c: any, i: number) => perRowCap[i] * availRows[i]);
       const totalCap = caps.reduce((a: number, b: number) => a + b, 0);
       if (specCount >= totalCap) {
         for (let i = 0; i < displayCounters.length; i++) allocations[i] = caps[i];
@@ -291,19 +304,13 @@ router.post('/', async (req: Request, res: Response) => {
         const c = displayCounters[i];
         regularRowsByCounter.set(
           c.id,
-          perRowCap[i] > 0 ? Math.min(effLevels(c), Math.ceil(allocations[i] / perRowCap[i])) : 0,
+          perRowCap[i] > 0 ? Math.min(availRows[i], Math.ceil(allocations[i] / perRowCap[i])) : 0,
         );
       }
     }
 
-    // ---- 校验:用户分配的 zone 行数必须落在「常规之外的空闲层」内 ----
-    const initialZoneRowsByCounter = new Map<string, number>();
-    for (const p of initialZonePlacements) {
-      initialZoneRowsByCounter.set(
-        p.counterId,
-        (initialZoneRowsByCounter.get(p.counterId) || 0) + p.rowCount,
-      );
-    }
+    // ---- 校验:用户分配的 zone 行数必须落在「常规之外的空闲层」内(常规已先给 zone 让位,
+    //      正常不触发;仅当用户分配的 zone 行 > 柜台可用层时才报错)----
     for (const c of displayCounters) {
       const zRows = initialZoneRowsByCounter.get(c.id) || 0;
       const regRows = regularRowsByCounter.get(c.id) || 0;
