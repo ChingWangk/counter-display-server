@@ -11,6 +11,12 @@ import {
   ZONE_META,
   ZONE_PRIORITY_ORDER,
 } from './types';
+import {
+  beadSubzoneMeta,
+  beadSubzoneRank,
+  flavorToSubzoneId,
+  compareBeadWithinSubzone,
+} from './beadSubzones';
 
 /**
  * 专区分类器集合。
@@ -27,7 +33,7 @@ import {
  * - classifyNostalgia:     (重点推荐区子逻辑)怀旧, is_delisted = true 单规格(星标,无需继任)        → ZoneGroup[]
  * - classifyKeyRecommend:  重点推荐区 = 退市星标单品(前) + 滞销单品(后),去重混排                  → ZoneGroup[]
  * - classifyNewProduct:    尝鲜专区, launch_date 在窗口期(一/二类 24 月,其他 12 月)          → ZoneSpec[]
- * - classifyBeadFlavor:    爆珠口味组合,pack_type 含'爆珠',按口味聚集                        → ZoneSpec[]
+ * - classifyBeadFlavor:    爆珠口味组合,pack_type 含'爆珠',按口味分 3 子专区聚集               → ZoneSpec[]
  * - classifyZones:         一次性返回各专区结果,各专区独立计算,同一品规可在不同专区重复出现
  *
  * 分组专区的 alternatives 不参与去重(允许跨专区出现)。
@@ -47,8 +53,6 @@ const HIGH_TIER_VALUES = new Set(['一类', '二类']);
  *  注意 310143 在 dim_category_ext 无 launch_date,classifyNewProduct 选不到它 —— 靠 injectManagerPicks 绕过窗口注入。 */
 export const MANAGER_PICK_IDS: string[] = ['310140', '310143', '310141', '310142', '310317', '310316'];
 
-/** 爆珠口味组合的 flavor 外层顺序(薄荷>水果>功能性>原味>其他)。 */
-const BEAD_FLAVOR_ORDER = ['薄荷', '水果', '功能性', '原味'];
 
 function monthsBetween(from: Date, to: Date): number {
   return (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
@@ -371,51 +375,54 @@ function injectManagerPicks(
 }
 
 /**
- * 爆珠口味组合:仅爆珠规格,按口味分组聚集陈列。
+ * 爆珠口味组合:仅爆珠规格,按口味分 3 个子专区(果香花香 / 酒香饮品 / 特色草本 + 未匹配的"其他")聚集陈列。
+ * 分类与段内排序规则全部集中在 beadSubzones.ts(用户唯一维护处)。
  *
  *  范围:pack_type 含 '爆珠' 的所有变体(爆珠 / 中支爆珠 / 细支爆珠 / 短支爆珠)。
- *  允许与 shortSlimBead 重叠 —— 各专区独立计算,同一爆珠规格可同时出现在两个专区。
+ *  允许与其它专区重叠 —— 各专区独立计算,同一爆珠规格可同时出现在多个专区。
  *
- *  排序(语义:"同口味集中摆放方便横向比较"):
- *   - 外层 flavor 顺序:薄荷 > 水果 > 功能性 > 原味 > 其他(包括 null / 空)
- *   - 组内按 price 降序(高价位放前,先抓住客户)
- *  tie 时保留入参顺序(JS sort 稳定)。
+ *  输出:扁平 ZoneSpec[],**已是最终陈列序**:
+ *   - 外层 = BEAD_SUBZONES 配置顺序,"其他"段恒最后(beadSubzoneRank);
+ *   - 段内 = compareBeadWithinSubzone(铺市面↑ → 订足率↓ → 兜底价↓);
+ *   - 每项带 subzoneId,供 buildZonePlacements 切段 + imageGen 左栏分段竖标。
  *
- *  注意:imageGen 的 single 模式按 spec id 切换处加 gap,所以"同 flavor 组内"和
- *  "不同 flavor 之间"的视觉间隙是一致的(都因 id 切换出现 gap)。若后续需要"同 flavor
- *  紧贴 + 组间大 gap"的强分组视觉,需扩展 displayMode 为 clustered,本轮不做。
+ *  缺失数据上报:收集缺 market_coverage / order_fill_rate 的爆珠,console.warn 一条汇总
+ *  (pm2 logs 可见),方便补齐;数据补全前这些规格在段内退化为按价格排。
  */
 export function classifyBeadFlavor(specs: ReadonlyArray<Category>): ZoneSpec[] {
+  const beads = specs.filter(s => (s.pack_type ?? '').includes('爆珠'));
+  if (beads.length === 0) return [];
+
+  // 按子专区分桶
   const buckets = new Map<string, Category[]>();
-  for (const spec of specs) {
-    if (!(spec.pack_type ?? '').includes('爆珠')) continue;
-    const flavor = spec.flavor || '其他';
-    const list = buckets.get(flavor);
-    if (list) list.push(spec);
-    else buckets.set(flavor, [spec]);
+  for (const s of beads) {
+    const szId = flavorToSubzoneId(s.flavor);
+    const list = buckets.get(szId);
+    if (list) list.push(s);
+    else buckets.set(szId, [s]);
   }
-  // 组内按 price desc
-  for (const list of buckets.values()) {
-    list.sort((a, b) => (b.price ?? 0) - (a.price ?? 0));
-  }
+
+  // 段内排序 + 按子专区 rank(配置顺序,其他段最后)拼扁平
+  const orderedIds = [...buckets.keys()].sort((a, b) => beadSubzoneRank(a) - beadSubzoneRank(b));
   const result: ZoneSpec[] = [];
-  // 外层按 BEAD_FLAVOR_ORDER 顺序拼接
-  for (const f of BEAD_FLAVOR_ORDER) {
-    const list = buckets.get(f);
-    if (!list) continue;
+  for (const szId of orderedIds) {
+    const list = buckets.get(szId)!;
+    list.sort(compareBeadWithinSubzone);
     for (const s of list) {
-      result.push({ id: s.id, name: s.name, imageUrl: s.imageUrl });
+      result.push({ id: s.id, name: s.name, imageUrl: s.imageUrl, subzoneId: szId });
     }
   }
-  // 兜底:未在 BEAD_FLAVOR_ORDER 中的 flavor(含'其他')排到最后,按 flavor 名字典序稳定
-  const tailFlavors = [...buckets.keys()]
-    .filter(f => !BEAD_FLAVOR_ORDER.includes(f))
-    .sort();
-  for (const f of tailFlavors) {
-    for (const s of buckets.get(f)!) {
-      result.push({ id: s.id, name: s.name, imageUrl: s.imageUrl });
-    }
+
+  // 缺失指标上报(开发自查;不影响出图)
+  const missing = beads.filter(s => s.market_coverage == null || s.order_fill_rate == null);
+  if (missing.length > 0) {
+    const sample = missing.slice(0, 20).map(s => `${s.id}${s.name ? '(' + s.name + ')' : ''}`).join('、');
+    console.warn(
+      `[beadFlavor] ${missing.length}/${beads.length} 个爆珠缺 铺市面(market_coverage)/订足率(order_fill_rate),` +
+      `这些规格段内暂按价格降序排。补全后自动按业务排序。示例:${sample}${missing.length > 20 ? ' …' : ''}`
+    );
   }
+
   return result;
 }
 
@@ -463,6 +470,16 @@ function resolveGroupsForZone(
   // festivalSeason 数据流隔离,不进 classification;buildZonePlacements 调用方已过滤,此处仅防御
   if (meta.displayMode === 'backFestival') return [];
   const clsKey = zoneId as Exclude<ZoneId, 'festivalSeason'>;
+  // 爆珠:保留 classifyBeadFlavor 的「子专区序 + 段内业务排序」,不经 sortedSourceSpecs 重排
+  // (下方 generic single 分支会用常规排序覆盖顺序,故爆珠在此单独处理)。
+  if (zoneId === 'beadFlavor') {
+    const out: ZonePlacementGroup[] = [];
+    for (const s of classification.beadFlavor) {
+      const primary = extendedMap.get(s.id);
+      if (primary) out.push({ primary, alternatives: [] });
+    }
+    return out;
+  }
   if (meta.displayMode === 'single') {
     const specs = classification[clsKey] as ZoneSpec[];
     const idSet = new Set(specs.map(s => s.id));
@@ -535,9 +552,31 @@ export function buildZonePlacements(
       priorityRank: meta.priorityRank,
       groupCount: groups.length,
     };
+    // 爆珠:按 primary 的 flavor 重算子专区,切连续同段为 subZones(groups 已是子专区有序序列)
+    if (assignment.zone_id === 'beadFlavor') {
+      placement.subZones = buildBeadSubZones(groups);
+    }
     placements.push(placement);
   }
   return placements;
+}
+
+/** 把爆珠的(子专区有序)groups 切成 subZones 元信息:连续相同子专区为一段,取配置的 label/icon/color + count。 */
+function buildBeadSubZones(
+  groups: ReadonlyArray<ZonePlacementGroup>,
+): NonNullable<ZonePlacement['subZones']> {
+  const out: NonNullable<ZonePlacement['subZones']> = [];
+  for (const g of groups) {
+    const szId = flavorToSubzoneId(g.primary.flavor);
+    const last = out[out.length - 1];
+    if (last && last.id === szId) {
+      last.count += 1;
+    } else {
+      const m = beadSubzoneMeta(szId);
+      out.push({ id: m.id, label: m.label, iconImage: m.iconImage, barColor: m.barColor, count: 1 });
+    }
+  }
+  return out;
 }
 
 /**

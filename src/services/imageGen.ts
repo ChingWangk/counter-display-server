@@ -176,6 +176,15 @@ interface ZoneLabelBlock {
   rowCount: number;
   label: string;
   barColor: string;
+  iconImage?: string;  // 段顶小图标贴图(爆珠子专区用;缺图画 barColor 色块占位)
+}
+
+/** 底部专区每段的左侧标签信息。爆珠按子专区产多条(各带 iconImage);其它专区每 zone 一条。 */
+interface BottomLabelInfo {
+  rows: number;
+  label: string;
+  barColor: string;
+  iconImage?: string;
 }
 
 /**
@@ -293,6 +302,68 @@ function staggeredDistribute(total: number, rows: number): number[] {
 function maxUnitsPerRow(areaW: number, unitW: number): number {
   if (unitW <= 0) return 0;
   return Math.max(0, Math.floor((areaW + GAP_MIN_PX) / (unitW + GAP_MIN_PX)));
+}
+
+/**
+ * 爆珠子专区分段排版:把 zone.rowCount 行按各子专区(subZones)的规格数比例分配(每段 ≥1 行),
+ * 每段内规格 uniformDistribute 到该段行、单包陈列(zone-single),并产出一条带 iconImage 的左侧标签。
+ *
+ * groups 已是「子专区有序」序列(buildZonePlacements 保证),subZones[i].count 即各段规格数。
+ * 兜底:行数 < 非空段数时,只渲染前 rowCount 段(各 1 行),其余段规格并入最后一段(cram),并 warn。
+ * 返回的 slots 行数恰为 zone.rowCount(与 generate.ts 预留一致)。
+ */
+function planBeadSubzoneRows(
+  zone: ZonePlacement,
+  displayAreaW: number,
+): { slots: ZoneSingleRowSlot[]; labels: BottomLabelInfo[] } {
+  const flat = zone.groups.map(g => g.primary);
+  const cap = Math.max(1, maxUnitsPerRow(displayAreaW, CELL_W));
+  const R = Math.max(1, zone.rowCount);
+  let segs = (zone.subZones ?? []).filter(s => s.count > 0);
+  if (segs.length === 0) segs = [{ id: 'all', label: zone.label, iconImage: '', barColor: zone.barColor, count: flat.length }];
+
+  // 行数不足以每段 1 行:保留前 R-1 段,其余并入第 R 段(用其首段的 label/icon)。
+  if (R < segs.length) {
+    console.warn(`[beadFlavor] 行数不足:${R} 行 < ${segs.length} 子专区,后 ${segs.length - R + 1} 段并入第 ${R} 段`);
+    const head = segs.slice(0, R - 1);
+    const tail = segs.slice(R - 1);
+    const tailCount = tail.reduce((s, z) => s + z.count, 0);
+    segs = [...head, { ...tail[0], count: tailCount }];
+  }
+
+  // 按规格数比例分行,每段 ≥1,修正总和到 R(多退少补,优先动规格数最多的段)。
+  const totalSpecs = segs.reduce((s, z) => s + z.count, 0) || 1;
+  const rowsForSub = segs.map(z => Math.max(1, Math.round((R * z.count) / totalSpecs)));
+  const orderByCount = segs.map((_, i) => i).sort((a, b) => segs[b].count - segs[a].count);
+  let diff = R - rowsForSub.reduce((a, b) => a + b, 0);
+  while (diff !== 0) {
+    let moved = false;
+    for (const i of orderByCount) {
+      if (diff === 0) break;
+      if (diff > 0) { rowsForSub[i] += 1; diff--; moved = true; }
+      else if (rowsForSub[i] > 1) { rowsForSub[i] -= 1; diff++; moved = true; }
+    }
+    if (!moved) break;  // 全为 1 且仍需减(R<段数,已被上面兜底,不应到此)
+  }
+
+  const slots: ZoneSingleRowSlot[] = [];
+  const labels: BottomLabelInfo[] = [];
+  let off = 0;
+  for (let i = 0; i < segs.length; i++) {
+    const seg = segs[i];
+    const rows = rowsForSub[i];
+    const segSpecs = flat.slice(off, off + seg.count);
+    off += seg.count;
+    const perRow = uniformDistribute(Math.min(segSpecs.length, cap * rows), rows);
+    let so = 0;
+    for (let r = 0; r < rows; r++) {
+      const take = Math.min(perRow[r], cap);
+      slots.push({ type: 'zone-single', specs: segSpecs.slice(so, so + take) });
+      so += take;
+    }
+    labels.push({ rows, label: seg.label, barColor: seg.barColor, iconImage: seg.iconImage });
+  }
+  return { slots, labels };
 }
 
 /**
@@ -520,9 +591,16 @@ export async function generateCounterImage(
 
   // 2b. 底部专区行:单品 staggered / 分组 bin-packing(逻辑同归档)
   const bottomRowSlots: (ZoneSingleRowSlot | ZoneGroupRowSlot | ZoneNewProductRowSlot)[] = [];
-  const bottomLabelInfo: { rows: number; label: string; barColor: string }[] = [];
+  const bottomLabelInfo: BottomLabelInfo[] = [];
   for (const zone of bottomZonePlacements) {
     const before = bottomRowSlots.length;
+    // 爆珠:按子专区(subZones)分段渲染,每段一条左侧标签(分段竖标 + 段图标)。自带标签,处理完即跳过末尾通用 push。
+    if (zone.zoneId === 'beadFlavor' && zone.subZones && zone.subZones.length > 0) {
+      const plan = planBeadSubzoneRows(zone, displayAreaW);
+      for (const s of plan.slots) bottomRowSlots.push(s);
+      for (const l of plan.labels) bottomLabelInfo.push(l);
+      continue;
+    }
     if (zone.zoneId === 'newProduct') {
       // 尝鲜专区:正反面 + 店长推荐 2×2 居中高亮(详见 layoutNewProductZone)。
       // 返回恰好 zone.rowCount 行,每行一个 NpRowLayout(含显式坐标 + 块行高亮带;可能空行占位)。
@@ -575,7 +653,7 @@ export async function generateCounterImage(
   }
   let bottomCursor = bottomStartRow;
   for (const info of bottomLabelInfo) {
-    zoneLabelBlocks.push({ startRow: bottomCursor, rowCount: info.rows, label: info.label, barColor: info.barColor });
+    zoneLabelBlocks.push({ startRow: bottomCursor, rowCount: info.rows, label: info.label, barColor: info.barColor, iconImage: info.iconImage });
     bottomCursor += info.rows;
   }
 
@@ -661,7 +739,7 @@ export async function generateCounterImage(
     const bottomRow = Math.min(topRow + block.rowCount - 1, levels - 1);
     const startY = PADDING_TOP + topRow * (CELL_H + SHELF_BOARD_H);
     const endY = PADDING_TOP + bottomRow * (CELL_H + SHELF_BOARD_H) + CELL_H;
-    drawZoneLabel(ctx, 0, startY, ZONE_LABEL_W, endY - startY, block.label, block.barColor);
+    await drawZoneLabel(ctx, 0, startY, ZONE_LABEL_W, endY - startY, block.label, block.barColor, block.iconImage);
   }
 
   // ---- 输出文件 ----
@@ -1149,9 +1227,11 @@ function drawVectorThumb(
 
 /**
  * 绘制专区左侧说明标签:白底 + barColor 左侧粗色条 + barColor 竖排专区名,
- * 高度可跨多行(用于同专区 rowCount > 1 时合并为一条贯穿的 label)。
+ * 高度可跨多行(同专区 rowCount > 1 合并为一条贯穿的 label)。
+ * iconPath(爆珠子专区用):段顶画一个小图标,资产优先(/www/...+iconPath),缺图画 barColor 色块占位,
+ * 竖排文字相应下移避让;不传 iconPath 时与原行为完全一致。
  */
-function drawZoneLabel(
+async function drawZoneLabel(
   ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
   x: number,
   y: number,
@@ -1159,12 +1239,45 @@ function drawZoneLabel(
   h: number,
   label: string,
   barColor: string,
-): void {
+  iconPath?: string,
+): Promise<void> {
   ctx.fillStyle = '#F5F0E8';
   ctx.fillRect(x, y, w, h);
 
   ctx.fillStyle = barColor;
   ctx.fillRect(x, y, ZONE_LABEL_BAR_W, h);
+
+  const innerX = x + ZONE_LABEL_BAR_W;
+  const innerW = w - ZONE_LABEL_BAR_W;
+  let textTop = y;
+  let textRegionH = h;
+
+  // 段顶小图标(仅当指定 iconPath 且段高足够):资产优先,缺图画 barColor 色块占位。
+  const iconSize = Math.min(innerW - 4, Math.round(0.26 * CELL_W));
+  if (iconPath && iconSize > 0 && h >= iconSize + 2 * ZONE_LABEL_LINE_H) {
+    const iconX = innerX + (innerW - iconSize) / 2;
+    const iconY = y + 8;
+    let drawn = false;
+    const p = path.join(CATEGORY_IMG_ROOT, iconPath);
+    if (fs.existsSync(p)) {
+      try {
+        const img = await loadImage(p);
+        ctx.drawImage(img, iconX, iconY, iconSize, iconSize);
+        drawn = true;
+      } catch {
+        // 加载失败 → 色块占位
+      }
+    }
+    if (!drawn) {
+      ctx.fillStyle = barColor;
+      ctx.fillRect(iconX, iconY, iconSize, iconSize);
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(iconX, iconY, iconSize, iconSize);
+    }
+    textTop = iconY + iconSize + 6;
+    textRegionH = y + h - textTop;
+  }
 
   ctx.fillStyle = barColor;
   ctx.font = `bold ${ZONE_LABEL_FONT_SIZE}px ${FONT_FAMILY}`;
@@ -1173,8 +1286,8 @@ function drawZoneLabel(
 
   const chars = label.split('');
   const totalH = chars.length * ZONE_LABEL_LINE_H;
-  const textCenterX = x + ZONE_LABEL_BAR_W + (w - ZONE_LABEL_BAR_W) / 2;
-  let textY = y + (h - totalH) / 2 + ZONE_LABEL_LINE_H / 2;
+  const textCenterX = innerX + innerW / 2;
+  let textY = textTop + Math.max(0, (textRegionH - totalH) / 2) + ZONE_LABEL_LINE_H / 2;
   for (const ch of chars) {
     ctx.fillText(ch, textCenterX, textY);
     textY += ZONE_LABEL_LINE_H;

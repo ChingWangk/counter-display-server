@@ -153,6 +153,9 @@ export interface ZonePlacement {
   /** newProduct(尝鲜)专用:本柜需"店长推荐"高亮的重点品规 id(按优先级序,客户在售子集)。
    *  imageGen 据此把这些规格排成 2×2 居中方块、加宽并垫店长推荐装饰;其余新品环绕。 */
   highlightIds?: string[];
+  /** beadFlavor(爆珠)专用:左侧分段竖标的分段元信息,顺序与 groups 中子专区出现顺序一致。
+   *  imageGen 据每段 count 切分扁平 groups、按段分配行,并在左栏逐段画 label + iconImage。 */
+  subZones?: { id: string; label: string; iconImage: string; barColor: string; count: number }[];
 }
 
 /** Category 形态的单组陈列单元(供 imageGen 绘制)。 */
@@ -174,6 +177,8 @@ export interface ZoneSpec {
   successor_id?: string | null;
   /** 尝鲜专区：上市日期 YYYY-MM-DD */
   launch_date?: string | null;
+  /** 爆珠专区：所属口味子专区 id（见 beadSubzones.ts；classifyBeadFlavor 标注，供落位切段）。 */
+  subzoneId?: string;
 }
 
 /** 常规客户专区分类结果。任一专区为空数组表示当前数据下无匹配规格。
@@ -188,7 +193,8 @@ export interface ZoneClassification {
    *  同一 primary 不重复(退市优先,滞销与之 id 重复时跳过)。 */
   keyRecommend: ZoneGroup[];
   newProduct: ZoneSpec[];      // 尝鲜专区：launch_date 在窗口期内（一二类 24 月，其他 12 月）
-  /** 爆珠口味组合:pack_type 含'爆珠',按 flavor 分组聚集(薄荷>水果>功能性>原味>其他),组内按价格降序 */
+  /** 爆珠口味组合:pack_type 含'爆珠',按 flavor 分 3 个口味子专区(果香花香 / 酒香饮品 / 特色草本 + 其他),
+   *  扁平输出已是「子专区顺序 + 段内按铺市面↑/订足率↓/价↓」的最终序,每项带 subzoneId(见 beadSubzones.ts) */
   beadFlavor: ZoneSpec[];
 }
 
@@ -296,7 +302,7 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     id: 'beadFlavor',
     label: '爆珠口味组合',
     icon: '🫐',
-    description: '爆珠规格按口味聚集(薄荷/水果/功能性),便于顾客横向比较口味',
+    description: '爆珠规格按口味分 3 个子专区(果香花香 / 酒香饮品 / 特色草本)左侧分段竖标陈列;各子专区内按铺市面低→高、订足率高→低排列(缺数据则按价格),便于顾客横向比较口味',
     priorityRank: 2,
     tier: 'advanced',
     barColor: '#EF6C00',

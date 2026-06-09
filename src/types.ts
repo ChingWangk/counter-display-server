@@ -26,6 +26,8 @@ export interface Category {
   is_industrial_coop?: boolean;   // 是否工商共育
   is_delisted?: boolean;          // 是否已退市（用于怀旧专区）
   successor_id?: string | null;   // 退市后的继任规格 id
+  market_coverage?: number | null; // 铺市面（分布广度，0~100；爆珠子专区内升序——低的排前）
+  order_fill_rate?: number | null; // 订足率（订货满足率，0~100；爆珠子专区内降序——高的排前）
 }
 
 export interface GenerateRequest {

@@ -21,6 +21,8 @@ interface ExtRow extends RowDataPacket {
   is_industrial_coop: number;
   is_delisted: number;
   successor_id: string | null;
+  market_coverage: number | string | null;
+  order_fill_rate: number | string | null;
 }
 
 let extendedMap: Map<string, Category> | null = null;
@@ -30,6 +32,13 @@ const EXT_CACHE_TTL_MS = 5 * 60 * 1000;
 function toDateStr(d: Date | string | null): string | null {
   if (!d) return null;
   return d instanceof Date ? d.toISOString().slice(0, 10) : d;
+}
+
+/** DECIMAL 列经 mysql2 可能回传字符串;统一转 number,null/空 → null。 */
+function toNum(v: number | string | null | undefined): number | null {
+  if (v == null) return null;
+  const n = typeof v === 'number' ? v : parseFloat(v);
+  return Number.isFinite(n) ? n : null;
 }
 
 /**
@@ -46,14 +55,17 @@ export async function getExtendedCategoryMap(): Promise<Map<string, Category>> {
   try {
     const [rows] = await pool.execute<ExtRow[]>(
       `SELECT spec_id, pack_type, flavor, tier, launch_date,
-              is_industrial_coop, is_delisted, successor_id
+              is_industrial_coop, is_delisted, successor_id,
+              market_coverage, order_fill_rate
          FROM dim_category_ext`
     );
     for (const r of rows) ext.set(r.spec_id, r);
   } catch (err: unknown) {
     const code = (err as { code?: string }).code;
-    if (code === 'ER_NO_SUCH_TABLE') {
-      console.warn('[categoryCatalog] dim_category_ext not ready, returning base categories');
+    // ER_NO_SUCH_TABLE: 表未建;ER_BAD_FIELD_ERROR: 老库尚未 ALTER 出 market_coverage/order_fill_rate 等新列。
+    // 两种都降级为"纯基础数据"(扩展字段保持 undefined),不阻断整条出图链路。
+    if (code === 'ER_NO_SUCH_TABLE' || code === 'ER_BAD_FIELD_ERROR') {
+      console.warn(`[categoryCatalog] dim_category_ext 不可用(${code}),返回基础品类(扩展字段为空)`);
     } else {
       throw err;
     }
@@ -71,6 +83,8 @@ export async function getExtendedCategoryMap(): Promise<Map<string, Category>> {
       is_industrial_coop: Boolean(e.is_industrial_coop),
       is_delisted: Boolean(e.is_delisted),
       successor_id: e.successor_id,
+      market_coverage: toNum(e.market_coverage),
+      order_fill_rate: toNum(e.order_fill_rate),
     } : c);
   }
   extendedMap = merged;
