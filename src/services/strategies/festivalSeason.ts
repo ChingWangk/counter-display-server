@@ -95,6 +95,7 @@ function monthsBetween(dateStr: string, now: Date): number {
 interface Candidate {
   specId: string;
   fileName: string;
+  isPreferred: boolean;
   ruleScore: number;
   isHighTier: boolean;
   wholesale: number;
@@ -194,6 +195,9 @@ async function fetchLatestWholesaleQty(): Promise<Map<string, number>> {
  * @param extendedMap       全量 catalog(含 ext 字段),用于查 tier/pack_type/flavor/price
  * @param now               今天的日期,决定季节(夏秋/冬春)
  * @param excludeImageUrls  已在其他背柜用过的图片 URL,本次跳过(用于跨背柜去重)
+ * @param preferredSpecId   用户为本背柜显式选定的商品(zone-select 单选);命中其变体则置顶选用,
+ *                          且**不受 customerSpecIds 在售范围限制**(用户既已挑明)。其变体被去重占用尽时,
+ *                          自然回退到其余候选(= 自动选图),不让该柜空着。
  * @returns 完整 URL 路径(如 `/images/back-festival/12345_1.png`);无可用图片时返回 null
  */
 export async function selectFestivalImage(
@@ -202,6 +206,7 @@ export async function selectFestivalImage(
   extendedMap: ReadonlyMap<string, Category>,
   now: Date = new Date(),
   excludeImageUrls: ReadonlySet<string> = new Set(),
+  preferredSpecId?: string | null,
 ): Promise<string | null> {
   const imageIndex = getImageIndex();
   if (imageIndex.size === 0) return null;
@@ -212,7 +217,9 @@ export async function selectFestivalImage(
 
   const candidates: Candidate[] = [];
   for (const [specId, fileNames] of imageIndex) {
-    if (!customerSpecIds.has(specId)) continue;
+    const isPreferred = preferredSpecId != null && specId === preferredSpecId;
+    // 显式选中的 spec 不受在售范围限制;其余候选仍需落在客户在售/勾选范围内。
+    if (!isPreferred && !customerSpecIds.has(specId)) continue;
     const cat = extendedMap.get(specId);
     if (!cat) continue;
     // 命中节日 rules 的条数(春节 4 条规则全中 → 4 分;端午全中 → 3 分;...)
@@ -226,6 +233,7 @@ export async function selectFestivalImage(
       candidates.push({
         specId,
         fileName,
+        isPreferred,
         ruleScore,
         isHighTier: HIGH_TIERS.has(cat.tier ?? ''),
         wholesale: wholesaleMap.get(specId) ?? 0,
@@ -238,6 +246,8 @@ export async function selectFestivalImage(
   if (candidates.length === 0) return null;
 
   candidates.sort((a, b) => {
+    // 用户显式选定的商品置顶(仅 preferredSpecId 存在时该层才有区分度)
+    if (a.isPreferred !== b.isPreferred) return a.isPreferred ? -1 : 1;
     if (a.ruleScore !== b.ruleScore) return b.ruleScore - a.ruleScore;
     if (a.isHighTier !== b.isHighTier) return a.isHighTier ? -1 : 1;
     if (a.wholesale !== b.wholesale) return b.wholesale - a.wholesale;
@@ -246,6 +256,27 @@ export async function selectFestivalImage(
   });
 
   return `${IMAGE_URL_PREFIX}/${candidates[0].fileName}`;
+}
+
+/**
+ * 列出"可选节日商品"——所有有 back-festival 图片素材的 spec(= 有商品编码的商品),
+ * 供 zone-select 弹窗让用户为某背柜单选一个具体礼盒图。前端显示 name,缩略图用首个变体图。
+ *  - name:catalog(categories.json/ext)有则用其商品名,无则用编码兜底(始终有可显示文案)。
+ *  - thumbUrl:`/images/back-festival/{首个变体文件}`(前端拼 STATIC_BASE_URL)。
+ *  - 不限客户在售范围(贴合"有编码的商品"口径);按 name 升序稳定。
+ */
+export function listFestivalSelectableSpecs(
+  extendedMap: ReadonlyMap<string, Category>,
+): { id: string; name: string; thumbUrl: string }[] {
+  const imageIndex = getImageIndex();
+  const out: { id: string; name: string; thumbUrl: string }[] = [];
+  for (const [specId, fileNames] of imageIndex) {
+    if (fileNames.length === 0) continue;
+    const name = extendedMap.get(specId)?.name ?? specId;
+    out.push({ id: specId, name, thumbUrl: `${IMAGE_URL_PREFIX}/${fileNames[0]}` });
+  }
+  out.sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN'));
+  return out;
 }
 
 /**

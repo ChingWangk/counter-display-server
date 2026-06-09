@@ -86,9 +86,12 @@ const CATEGORY_IMG_ROOT = '/www/wwwroot/47.103.65.4';
 
 // ---- 每行布局描述 ----
 // 单品专区行:specs 是扁平 Category[],每包紧贴,按 id 切换处留 gap(与常规行算法一致)
+// 双包白名单(爆珠)时 specs 为「每规格连放两包」(同 id 相邻紧贴 → drawFlatRow 自然成对)。
+// bgColor:整行背景色(爆珠子专区 = 该段标签色,与左侧标签栏一致);缺省不填背景。
 interface ZoneSingleRowSlot {
   type: 'zone-single';
   specs: Category[];
+  bgColor?: string;
 }
 // 分组专区行:groups 是 ZonePlacementGroup[],primary + alternatives 均单包陈列,组与组之间留 gap
 interface ZoneGroupRowSlot {
@@ -305,8 +308,15 @@ function maxUnitsPerRow(areaW: number, unitW: number): number {
 }
 
 /**
+ * 双包白名单(§8.3.4,2026-06-08 重启):列入的专区按「每规格两包紧贴」促销陈列。
+ * 当前仅爆珠(zone-single 经 planBeadSubzoneRows)。移出本集合即恢复单包。
+ */
+const DOUBLE_PACK_ZONES = new Set<string>(['beadFlavor']);
+
+/**
  * 爆珠子专区分段排版:把 zone.rowCount 行按各子专区(subZones)的规格数比例分配(每段 ≥1 行),
- * 每段内规格 uniformDistribute 到该段行、单包陈列(zone-single),并产出一条带 iconImage 的左侧标签。
+ * 每段内规格 uniformDistribute 到该段行;**双包白名单**内每规格放两包紧贴(promotion 视觉),
+ * 并给每行打上该子专区标签色作整行背景(与左侧标签栏一致)。产出每段一条带 iconImage 的左侧标签。
  *
  * groups 已是「子专区有序」序列(buildZonePlacements 保证),subZones[i].count 即各段规格数。
  * 兜底:行数 < 非空段数时,只渲染前 rowCount 段(各 1 行),其余段规格并入最后一段(cram),并 warn。
@@ -317,7 +327,9 @@ function planBeadSubzoneRows(
   displayAreaW: number,
 ): { slots: ZoneSingleRowSlot[]; labels: BottomLabelInfo[] } {
   const flat = zone.groups.map(g => g.primary);
-  const cap = Math.max(1, maxUnitsPerRow(displayAreaW, CELL_W));
+  const doublePack = DOUBLE_PACK_ZONES.has(zone.zoneId);
+  const unitW = doublePack ? 2 * CELL_W : CELL_W;          // 双包 = 每规格占 2 格
+  const cap = Math.max(1, maxUnitsPerRow(displayAreaW, unitW)); // 每行最多放几个规格(双包按对算)
   const R = Math.max(1, zone.rowCount);
   let segs = (zone.subZones ?? []).filter(s => s.count > 0);
   if (segs.length === 0) segs = [{ id: 'all', label: zone.label, iconImage: '', barColor: zone.barColor, count: flat.length }];
@@ -354,12 +366,16 @@ function planBeadSubzoneRows(
     const rows = rowsForSub[i];
     const segSpecs = flat.slice(off, off + seg.count);
     off += seg.count;
+    // perRow:每行放几个规格(双包时每规格 = 一对);take 封顶 cap,尾部超出 cram 丢弃。
     const perRow = uniformDistribute(Math.min(segSpecs.length, cap * rows), rows);
     let so = 0;
     for (let r = 0; r < rows; r++) {
       const take = Math.min(perRow[r], cap);
-      slots.push({ type: 'zone-single', specs: segSpecs.slice(so, so + take) });
+      const rowSpecs = segSpecs.slice(so, so + take);
       so += take;
+      // 双包:每规格连放两包(同 id 相邻 → drawFlatRow 自然成对、对间留 [0.4,1] 包空隙)。
+      const packs = doublePack ? rowSpecs.flatMap(s => [s, s]) : rowSpecs;
+      slots.push({ type: 'zone-single', specs: packs, bgColor: seg.barColor });
     }
     labels.push({ rows, label: seg.label, barColor: seg.barColor, iconImage: seg.iconImage });
   }
@@ -707,6 +723,11 @@ export async function generateCounterImage(
     let rowPacks: RenderPack[];
     let capGap = false;
     if (slot.type === 'zone-single') {
+      // 爆珠子专区:先把整行背景填成该段标签色(与左侧标签栏一致),再在其上画包。
+      if (slot.bgColor) {
+        ctx.fillStyle = slot.bgColor;
+        ctx.fillRect(labelW, baseY, displayAreaW, CELL_H);
+      }
       // 单品专区残量行:内容固定不可加排面,空隙超一包即封顶并整行居中(capGap=true)
       rowPacks = slot.specs.map(s => ({ spec: s }));
       capGap = true;

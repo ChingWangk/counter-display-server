@@ -410,9 +410,11 @@ router.post('/', async (req: Request, res: Response) => {
     // ---- 背柜:节日季节专区优先(单图直出);未命中节日的背柜走主题图逻辑 ----
     // 节日命中的背柜跳过 back-cabinet-select 主题匹配,跟用户在 zone-select 上的"节日优先"约定一致。
     const festivalByBackCounter = new Map<string, FestivalId>();
+    const festivalSpecByBackCounter = new Map<string, string>();  // counter → 用户单选的商品 spec_id(可选)
     for (const a of backCabinetAssignments) {
       if (a.zone_id === 'festivalSeason' && a.festival_id) {
         festivalByBackCounter.set(a.counter_id, a.festival_id);
+        if (a.festival_spec_id) festivalSpecByBackCounter.set(a.counter_id, a.festival_spec_id);
       }
     }
     let extendedMap: ReadonlyMap<string, Category> | null = null;
@@ -448,6 +450,7 @@ router.post('/', async (req: Request, res: Response) => {
           extendedMap,
           new Date(),
           usedFestivalImages,
+          festivalSpecByBackCounter.get(counter.id),  // 用户单选的商品(可选);命中则优先用其礼盒图
         );
         if (festivalUrl) {
           usedFestivalImages.add(festivalUrl);

@@ -125,6 +125,8 @@ export interface ZoneAssignment {
   row_count: number;
   /** 仅 zone_id === 'festivalSeason' 时填充,选哪个节日。 */
   festival_id?: FestivalId;
+  /** 仅 festivalSeason:用户为该背柜单选的商品(spec_id),空=后端自动智能选图。每背柜各自独立。 */
+  festival_spec_id?: string;
 }
 
 /** 策略层根据 zoneAssignments 计算的最终落位：具体哪些 group 落到哪个柜台的几行。 */

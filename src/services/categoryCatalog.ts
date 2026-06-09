@@ -21,8 +21,12 @@ interface ExtRow extends RowDataPacket {
   is_industrial_coop: number;
   is_delisted: number;
   successor_id: string | null;
-  market_coverage: number | string | null;
-  order_fill_rate: number | string | null;
+}
+
+/** ref_market_coverage / ref_order_fill_rate 取数行(每月快照,取最新月)。 */
+interface MetricRow extends RowDataPacket {
+  spec_id: string;
+  val: number | string | null;
 }
 
 let extendedMap: Map<string, Category> | null = null;
@@ -42,39 +46,48 @@ function toNum(v: number | string | null | undefined): number | null {
 }
 
 /**
- * 合并 categories.json 基础字段 + dim_category_ext 扩展字段，5 分钟 TTL 缓存。
- * 表未就绪（ER_NO_SUCH_TABLE）时降级返回纯基础数据，扩展字段保持 undefined。
- * 新列（market_coverage/order_fill_rate）尚未 ALTER 时（ER_BAD_FIELD_ERROR）回退到旧列集，
- * 仅这两项为空、其余 ext 字段照常合并——避免"加了代码没加列"导致所有专区(工商共育/爆珠/升级…)消失。
- * 用于专区策略（滞销 / 怀旧 / 尝鲜 / 爆珠等）需要 tier / launch_date / is_delisted / flavor 等的场景。
+ * 取某月度快照 ref 表"最新 snapshot_month"的 spec_id → 数值 Map(用于铺市面/订足率)。
+ * 表/列名为本模块写死常量(非用户输入,无注入风险)。表未就绪(ER_NO_SUCH_TABLE)→ 空 Map。
+ */
+async function fetchLatestMetricMap(table: string, valueCol: string): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  try {
+    const [rows] = await pool.execute<MetricRow[]>(
+      `SELECT spec_id, ${valueCol} AS val FROM ${table}
+        WHERE snapshot_month = (SELECT MAX(snapshot_month) FROM ${table})`
+    );
+    for (const r of rows) {
+      const n = toNum(r.val);
+      if (n != null) map.set(r.spec_id, n);
+    }
+  } catch (err: unknown) {
+    if ((err as { code?: string }).code !== 'ER_NO_SUCH_TABLE') throw err;
+  }
+  return map;
+}
+
+/**
+ * 合并 categories.json 基础字段 + dim_category_ext 扩展字段 + 铺市面/订足率(ref 表),5 分钟 TTL 缓存。
+ * dim_category_ext 表未就绪（ER_NO_SUCH_TABLE）时降级返回纯基础数据,扩展字段保持 undefined。
+ * 铺市面(ref_market_coverage)/ 订足率(ref_order_fill_rate)取各自最新 snapshot_month,叠加到 Category
+ * 的 market_coverage / order_fill_rate(供爆珠子专区排序);两表缺数据则这两项为空 → 爆珠按价格兜底。
+ * 用于专区策略（滞销 / 怀旧 / 尝鲜 / 爆珠等）需要 tier / launch_date / is_delisted / flavor / 指标等的场景。
  */
 export async function getExtendedCategoryMap(): Promise<Map<string, Category>> {
   if (extendedMap && Date.now() - extendedLoadedAt < EXT_CACHE_TTL_MS) {
     return extendedMap;
   }
 
-  // 旧列集(不含 market_coverage/order_fill_rate);新列存在时附加之。
-  const LEGACY_COLS = 'spec_id, pack_type, flavor, tier, launch_date, is_industrial_coop, is_delisted, successor_id';
-  const FULL_COLS = `${LEGACY_COLS}, market_coverage, order_fill_rate`;
-
   const ext = new Map<string, ExtRow>();
   try {
-    let rows: ExtRow[];
-    try {
-      [rows] = await pool.execute<ExtRow[]>(`SELECT ${FULL_COLS} FROM dim_category_ext`);
-    } catch (err: unknown) {
-      // 新列尚未 ALTER:回退旧列(保住 pack_type/flavor/is_industrial_coop 等),两项指标置空 → 爆珠暂按价格排。
-      if ((err as { code?: string }).code === 'ER_BAD_FIELD_ERROR') {
-        console.warn('[categoryCatalog] market_coverage/order_fill_rate 列缺失,回退旧列(爆珠暂按价格排序)。请执行 bead-subzone-ext.sql 加列。');
-        [rows] = await pool.execute<ExtRow[]>(`SELECT ${LEGACY_COLS} FROM dim_category_ext`);
-      } else {
-        throw err;
-      }
-    }
+    const [rows] = await pool.execute<ExtRow[]>(
+      `SELECT spec_id, pack_type, flavor, tier, launch_date,
+              is_industrial_coop, is_delisted, successor_id
+         FROM dim_category_ext`
+    );
     for (const r of rows) ext.set(r.spec_id, r);
   } catch (err: unknown) {
     const code = (err as { code?: string }).code;
-    // 表整体未就绪:仅此情形才降级为"纯基础数据"(扩展字段全空)。
     if (code === 'ER_NO_SUCH_TABLE') {
       console.warn('[categoryCatalog] dim_category_ext 表未就绪,返回基础品类(扩展字段为空)');
     } else {
@@ -82,10 +95,16 @@ export async function getExtendedCategoryMap(): Promise<Map<string, Category>> {
     }
   }
 
+  // 铺市面/订足率来自独立 ref 表(与 dim_category_ext 解耦),各取最新月快照。
+  const [coverageMap, fillMap] = await Promise.all([
+    fetchLatestMetricMap('ref_market_coverage', 'coverage_rate'),
+    fetchLatestMetricMap('ref_order_fill_rate', 'fill_rate'),
+  ]);
+
   const merged = new Map<string, Category>();
   for (const c of baseCategories) {
     const e = ext.get(c.id);
-    merged.set(c.id, e ? {
+    const base: Category = e ? {
       ...c,
       pack_type: e.pack_type,
       flavor: e.flavor,
@@ -94,9 +113,12 @@ export async function getExtendedCategoryMap(): Promise<Map<string, Category>> {
       is_industrial_coop: Boolean(e.is_industrial_coop),
       is_delisted: Boolean(e.is_delisted),
       successor_id: e.successor_id,
-      market_coverage: toNum(e.market_coverage),
-      order_fill_rate: toNum(e.order_fill_rate),
-    } : c);
+    } : { ...c };
+    const mc = coverageMap.get(c.id);
+    const fr = fillMap.get(c.id);
+    if (mc != null) base.market_coverage = mc;
+    if (fr != null) base.order_fill_rate = fr;
+    merged.set(c.id, base);
   }
   extendedMap = merged;
   extendedLoadedAt = Date.now();
