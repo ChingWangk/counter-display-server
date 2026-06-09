@@ -44,28 +44,39 @@ function toNum(v: number | string | null | undefined): number | null {
 /**
  * 合并 categories.json 基础字段 + dim_category_ext 扩展字段，5 分钟 TTL 缓存。
  * 表未就绪（ER_NO_SUCH_TABLE）时降级返回纯基础数据，扩展字段保持 undefined。
- * 用于专区策略（滞销 / 怀旧 / 尝鲜）需要 tier / launch_date / is_delisted 等的场景。
+ * 新列（market_coverage/order_fill_rate）尚未 ALTER 时（ER_BAD_FIELD_ERROR）回退到旧列集，
+ * 仅这两项为空、其余 ext 字段照常合并——避免"加了代码没加列"导致所有专区(工商共育/爆珠/升级…)消失。
+ * 用于专区策略（滞销 / 怀旧 / 尝鲜 / 爆珠等）需要 tier / launch_date / is_delisted / flavor 等的场景。
  */
 export async function getExtendedCategoryMap(): Promise<Map<string, Category>> {
   if (extendedMap && Date.now() - extendedLoadedAt < EXT_CACHE_TTL_MS) {
     return extendedMap;
   }
 
+  // 旧列集(不含 market_coverage/order_fill_rate);新列存在时附加之。
+  const LEGACY_COLS = 'spec_id, pack_type, flavor, tier, launch_date, is_industrial_coop, is_delisted, successor_id';
+  const FULL_COLS = `${LEGACY_COLS}, market_coverage, order_fill_rate`;
+
   const ext = new Map<string, ExtRow>();
   try {
-    const [rows] = await pool.execute<ExtRow[]>(
-      `SELECT spec_id, pack_type, flavor, tier, launch_date,
-              is_industrial_coop, is_delisted, successor_id,
-              market_coverage, order_fill_rate
-         FROM dim_category_ext`
-    );
+    let rows: ExtRow[];
+    try {
+      [rows] = await pool.execute<ExtRow[]>(`SELECT ${FULL_COLS} FROM dim_category_ext`);
+    } catch (err: unknown) {
+      // 新列尚未 ALTER:回退旧列(保住 pack_type/flavor/is_industrial_coop 等),两项指标置空 → 爆珠暂按价格排。
+      if ((err as { code?: string }).code === 'ER_BAD_FIELD_ERROR') {
+        console.warn('[categoryCatalog] market_coverage/order_fill_rate 列缺失,回退旧列(爆珠暂按价格排序)。请执行 bead-subzone-ext.sql 加列。');
+        [rows] = await pool.execute<ExtRow[]>(`SELECT ${LEGACY_COLS} FROM dim_category_ext`);
+      } else {
+        throw err;
+      }
+    }
     for (const r of rows) ext.set(r.spec_id, r);
   } catch (err: unknown) {
     const code = (err as { code?: string }).code;
-    // ER_NO_SUCH_TABLE: 表未建;ER_BAD_FIELD_ERROR: 老库尚未 ALTER 出 market_coverage/order_fill_rate 等新列。
-    // 两种都降级为"纯基础数据"(扩展字段保持 undefined),不阻断整条出图链路。
-    if (code === 'ER_NO_SUCH_TABLE' || code === 'ER_BAD_FIELD_ERROR') {
-      console.warn(`[categoryCatalog] dim_category_ext 不可用(${code}),返回基础品类(扩展字段为空)`);
+    // 表整体未就绪:仅此情形才降级为"纯基础数据"(扩展字段全空)。
+    if (code === 'ER_NO_SUCH_TABLE') {
+      console.warn('[categoryCatalog] dim_category_ext 表未就绪,返回基础品类(扩展字段为空)');
     } else {
       throw err;
     }
