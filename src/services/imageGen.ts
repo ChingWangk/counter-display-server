@@ -56,12 +56,16 @@ const SHELF_BOARD_H = 12;
 const SHELF_BOARD_COLOR = '#8B6914';
 const SHELF_BOARD_SHADOW = '#6B4F10';
 
-// 专区左侧说明标签宽度。标签写竖排专区名,左侧带粗色条强化,
-// 在陈列区域外侧延伸,不挤占柜台陈列容量(包数)。
-const ZONE_LABEL_W = 40;
-const ZONE_LABEL_BAR_W = 4;   // 标签左侧粗色条宽度
-const ZONE_LABEL_FONT_SIZE = 18;
-const ZONE_LABEL_LINE_H = 24; // 竖排每字垂直占位
+// 专区左侧说明标签:左侧带粗色条 + 竖排专区名,在陈列区域外侧延伸,不挤占柜台陈列容量(包数)。
+const ZONE_LABEL_BAR_W = 4;       // 标签左侧粗色条宽度
+const ZONE_LABEL_FONT_SIZE = 36;  // 竖排专区名字号(2026-06-10 放大两倍,原 18)
+const ZONE_LABEL_LINE_H = 48;     // 竖排每字垂直占位(随字号同步放大,原 24)
+const ZONE_LABEL_W = 56;          // 非爆珠专区竖排标签栏宽度(字号放大后略加宽,原 40)
+// 爆珠子专区左栏(加宽):色条 + 每行一个 ≈ 烟包大小的图标(子专区跨多行则每行行首都有)+ 右侧竖排子专区名。
+// 加宽只增画布左侧宽度,不缩减烟包陈列区(canvasW = labelW + displayAreaW)。
+const BEAD_ICON_COL_W = CELL_W;   // 图标列宽 ≈ 烟包宽(120)
+const BEAD_LABEL_TEXT_W = 44;     // 右侧竖排名文字带宽(容纳放大后的字)
+const BEAD_LABEL_W = ZONE_LABEL_BAR_W + BEAD_ICON_COL_W + BEAD_LABEL_TEXT_W; // 4+120+44 = 168
 
 // 专区行内任意两包(或两组)之间"空缝隙"的上限 = 一包烟宽度。
 // 仅作用于内容固定、无法靠加排面填充的专区行(单品专区残量行 / 分组专区组间):
@@ -674,7 +678,12 @@ export async function generateCounterImage(
   }
 
   // 左侧专区标签栏仅在本柜台确有专区行(顶部条行或底部专区)时才预留宽度;否则 labelW=0,陈列区贴左缘。
-  const labelW = (topRowSlots.length > 0 || bottomRowSlots.length > 0) ? ZONE_LABEL_W : 0;
+  // 左侧专区标签栏宽度:含爆珠子专区(带 iconImage,每行画 ≈ 烟包大图标)→ 加宽到 BEAD_LABEL_W;
+  // 其它专区 → ZONE_LABEL_W;本柜台无任何专区行 → 0(陈列区贴左缘)。加宽只增左侧留白,不缩减烟包区。
+  const hasBeadIconLabel = zoneLabelBlocks.some(b => !!b.iconImage);
+  const labelW = (topRowSlots.length > 0 || bottomRowSlots.length > 0)
+    ? (hasBeadIconLabel ? BEAD_LABEL_W : ZONE_LABEL_W)
+    : 0;
 
   // ---- 实际使用的 regular 包数(含内嵌副规格;double 模式普通包已翻倍)----
   const usedCount = regularRowLayouts.reduce((s, r) => s + r.specCount, 0);
@@ -760,7 +769,8 @@ export async function generateCounterImage(
     const bottomRow = Math.min(topRow + block.rowCount - 1, levels - 1);
     const startY = PADDING_TOP + topRow * (CELL_H + SHELF_BOARD_H);
     const endY = PADDING_TOP + bottomRow * (CELL_H + SHELF_BOARD_H) + CELL_H;
-    await drawZoneLabel(ctx, 0, startY, ZONE_LABEL_W, endY - startY, block.label, block.barColor, block.iconImage);
+    const visibleRows = bottomRow - topRow + 1;  // 爆珠按此行数逐行画图标
+    await drawZoneLabel(ctx, 0, startY, labelW, endY - startY, block.label, block.barColor, block.iconImage, visibleRows);
   }
 
   // ---- 输出文件 ----
@@ -1247,10 +1257,15 @@ function drawVectorThumb(
 }
 
 /**
- * 绘制专区左侧说明标签:白底 + barColor 左侧粗色条 + barColor 竖排专区名,
+ * 绘制专区左侧说明标签:白底 + barColor 左侧粗色条 + barColor 竖排专区名(字号已 ×2)。
  * 高度可跨多行(同专区 rowCount > 1 合并为一条贯穿的 label)。
- * iconPath(爆珠子专区用):段顶画一个小图标,资产优先(/www/...+iconPath),缺图画 barColor 色块占位,
- * 竖排文字相应下移避让;不传 iconPath 时与原行为完全一致。
+ *
+ * iconPath(爆珠子专区用):左栏加宽,色条右侧为「图标列」——按 rowCount **逐行各画一个 ≈ 烟包大小的图标**
+ * (子专区跨多行 → 每行行首都有;资产优先 CATEGORY_IMG_ROOT + iconPath,只加载一次逐行复用,缺图画 barColor
+ * 色块占位),竖排专区名移到图标列右侧的文字带。不传 iconPath 时:竖排名在色条之外的整个内宽居中。
+ *
+ * 竖排名字号/行高用放大后的 ZONE_LABEL_FONT_SIZE/LINE_H;若字数 × 行高超出块高(如单行块放长名),
+ * 等比缩小以避免溢出到层板(见 drawVerticalZoneName)。
  */
 async function drawZoneLabel(
   ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
@@ -1261,6 +1276,7 @@ async function drawZoneLabel(
   label: string,
   barColor: string,
   iconPath?: string,
+  rowCount?: number,
 ): Promise<void> {
   ctx.fillStyle = '#F5F0E8';
   ctx.fillRect(x, y, w, h);
@@ -1268,50 +1284,80 @@ async function drawZoneLabel(
   ctx.fillStyle = barColor;
   ctx.fillRect(x, y, ZONE_LABEL_BAR_W, h);
 
-  const innerX = x + ZONE_LABEL_BAR_W;
-  const innerW = w - ZONE_LABEL_BAR_W;
-  let textTop = y;
-  let textRegionH = h;
+  // 竖排名占位区:有图标时收窄到右侧文字带,无图标时占色条之外的整个内宽
+  let textLeft = x + ZONE_LABEL_BAR_W;
+  const textRight = x + w;
 
-  // 段顶小图标(仅当指定 iconPath 且段高足够):资产优先,缺图画 barColor 色块占位。
-  const iconSize = Math.min(innerW - 4, Math.round(0.26 * CELL_W));
-  if (iconPath && iconSize > 0 && h >= iconSize + 2 * ZONE_LABEL_LINE_H) {
-    const iconX = innerX + (innerW - iconSize) / 2;
-    const iconY = y + 8;
-    let drawn = false;
+  if (iconPath && rowCount && rowCount > 0) {
+    const iconLeft = x + ZONE_LABEL_BAR_W;
+    const iconRight = x + w - BEAD_LABEL_TEXT_W;
+    const iconColW = Math.max(0, iconRight - iconLeft);
+    const insetX = 4;
+    const insetY = 6;
+    const boxW = iconColW - 2 * insetX;
+    const boxH = CELL_H - 2 * insetY;
+    // 资产只加载一次,逐行复用绘制(子专区跨多行则每行行首一个 ≈ 烟包大图标)
+    let iconImg: Awaited<ReturnType<typeof loadImage>> | null = null;
     const p = path.join(CATEGORY_IMG_ROOT, iconPath);
     if (fs.existsSync(p)) {
       try {
-        const img = await loadImage(p);
-        ctx.drawImage(img, iconX, iconY, iconSize, iconSize);
-        drawn = true;
+        iconImg = await loadImage(p);
       } catch {
-        // 加载失败 → 色块占位
+        iconImg = null;  // 加载失败 → 落到色块占位
       }
     }
-    if (!drawn) {
-      ctx.fillStyle = barColor;
-      ctx.fillRect(iconX, iconY, iconSize, iconSize);
-      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(iconX, iconY, iconSize, iconSize);
+    if (boxW > 0 && boxH > 0) {
+      for (let r = 0; r < rowCount; r++) {
+        const bx = iconLeft + insetX;
+        const by = y + r * (CELL_H + SHELF_BOARD_H) + insetY;
+        if (iconImg) {
+          ctx.drawImage(iconImg, bx, by, boxW, boxH);
+        } else {
+          ctx.fillStyle = barColor;
+          ctx.fillRect(bx, by, boxW, boxH);
+          ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(bx, by, boxW, boxH);
+        }
+      }
     }
-    textTop = iconY + iconSize + 6;
-    textRegionH = y + h - textTop;
+    textLeft = iconRight;
   }
 
-  ctx.fillStyle = barColor;
-  ctx.font = `bold ${ZONE_LABEL_FONT_SIZE}px ${FONT_FAMILY}`;
+  drawVerticalZoneName(ctx, label, (textLeft + textRight) / 2, y, h, barColor);
+}
+
+/**
+ * 竖排专区名(每字一行),在 centerX 水平居中、在块高 [blockY, blockY+blockH] 垂直居中。
+ * 字数 × 行高超出块高时(如单行块放长名)等比缩小字号/行高,避免竖排文字溢出到层板。
+ */
+function drawVerticalZoneName(
+  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
+  label: string,
+  centerX: number,
+  blockY: number,
+  blockH: number,
+  color: string,
+): void {
+  const chars = label.split('');
+  if (chars.length === 0) return;
+  let fontSize = ZONE_LABEL_FONT_SIZE;
+  let lineH = ZONE_LABEL_LINE_H;
+  const need = chars.length * lineH;
+  if (need > blockH) {
+    const scale = blockH / need;
+    lineH = Math.max(1, Math.floor(lineH * scale));
+    fontSize = Math.max(12, Math.floor(fontSize * scale));
+  }
+  ctx.fillStyle = color;
+  ctx.font = `bold ${fontSize}px ${FONT_FAMILY}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-
-  const chars = label.split('');
-  const totalH = chars.length * ZONE_LABEL_LINE_H;
-  const textCenterX = innerX + innerW / 2;
-  let textY = textTop + Math.max(0, (textRegionH - totalH) / 2) + ZONE_LABEL_LINE_H / 2;
+  const totalH = chars.length * lineH;
+  let textY = blockY + Math.max(0, (blockH - totalH) / 2) + lineH / 2;
   for (const ch of chars) {
-    ctx.fillText(ch, textCenterX, textY);
-    textY += ZONE_LABEL_LINE_H;
+    ctx.fillText(ch, centerX, textY);
+    textY += lineH;
   }
 }
 

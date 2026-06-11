@@ -69,10 +69,10 @@ function matchRule(rule: string, c: Category, now: Date): boolean {
     case '时尚新品前置':
       return !!c.launch_date && monthsBetween(c.launch_date, now) <= 6;
     case '薄荷爆珠优先':
-      return c.flavor === '薄荷' && (c.pack_type ?? '').includes('爆珠');
+      return c.flavor === '草本' && (c.pack_type ?? '').includes('爆珠');
     case '水果爆珠':
     case '爆珠水果':
-      return c.flavor === '水果' && (c.pack_type ?? '').includes('爆珠');
+      return c.flavor === '果香' && (c.pack_type ?? '').includes('爆珠');
     case '中支偏好':
       return (c.pack_type ?? '').includes('中支');
     case '细支偏好':
@@ -156,7 +156,7 @@ function getSeason(now: Date): SeasonType {
 function matchesSeason(c: Category, season: SeasonType): boolean {
   const packType = c.pack_type ?? '';
   if (season === 'summerAutumn') {
-    return packType.includes('爆珠') && c.flavor === '薄荷';
+    return packType.includes('爆珠') && c.flavor === '草本';
   }
   return packType.includes('短支');
 }

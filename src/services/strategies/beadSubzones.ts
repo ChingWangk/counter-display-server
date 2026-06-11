@@ -14,9 +14,10 @@ import { Category } from '../../types';
  *   - 换左栏分段底色 → 改 barColor。
  *
  * 注意:flavors 里的字符串必须与 dim_category_ext.flavor 的真实取值**完全一致**才会命中。
- *   现库 flavor 取值偏粗(如 薄荷 / 水果 / 功能性 / 原味 …),下面是按常见爆珠口味预置的猜测值,
- *   请二选一对齐:① 在 DB 把爆珠的 flavor 补细到这些取值;② 把下面 flavors 改成你库里的真实取值。
- *   可先执行:SELECT spec_id, name, flavor FROM dim_category_ext WHERE pack_type LIKE '%爆珠%';
+ *   现库 flavor 已归一化为四种 + 空:果香 / 酒香 / 草本 / 其它(非爆珠烟为空),
+ *   分别对齐下面 fruitFloral / liquorDrink / herbal / (other 兜底)。归一化规则与脚本见
+ *   scripts/normalize_flavor.py;数组里其余字符串为冗余别名,保留以兼容未来更细的口味取值。
+ *   核对命令:SELECT spec_id, spec_name, flavor FROM dim_category_ext WHERE pack_type LIKE '%爆珠%';
  */
 export interface BeadSubzoneDef {
   /** 稳定 id(渲染分段 / 日志用,勿随意改) */
@@ -37,21 +38,21 @@ export const BEAD_SUBZONES: BeadSubzoneDef[] = [
     id: 'fruitFloral',
     label: '果香花香',
     iconImage: '/images/decor/bead-fruit.png',
-    barColor: '#E0533D',
-    flavors: ['水果', '果香', '花香', '香甜', '蓝莓', '西瓜', '柑橘', '葡萄', '水蜜桃', '玫瑰', '茉莉'],
+    barColor: '#C0D663',
+    flavors: ['水果香', '果香', '花香', '香甜', '蓝莓', '青柠', '西瓜', '柑橘', '葡萄', '水蜜桃', '玫瑰', '茉莉'],
   },
   {
     id: 'liquorDrink',
     label: '酒香饮品',
     iconImage: '/images/decor/bead-liquor.png',
-    barColor: '#7B4DA8',
+    barColor: '#BF4382',
     flavors: ['酒香', '洋酒', '威士忌', '朗姆', '咖啡', '可乐', '奶茶', '饮品', '气泡'],
   },
   {
     id: 'herbal',
     label: '特色草本',
     iconImage: '/images/decor/bead-herbal.png',
-    barColor: '#3E8E5A',
+    barColor: '#24D6A0',
     flavors: ['薄荷', '草本', '茶香', '清凉', '原味', '功能性', '人参', '凉茶'],
   },
 ];
