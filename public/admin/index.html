@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>柜台陈列助手 · 可视化后台管理平台</title>
+<style>
+  :root{
+    --green:#2D6A4F; --green-d:#1B4D3A; --green-l:#3E8E6B;
+    --cream:#F5F0E8; --paper:#FBF9F5; --ink:#222; --grey:#6B6B6B; --line:#E6E0D4;
+    --danger:#E63946; --ok:#2E9E5B; --warn:#C9742B;
+    --c-customer:#2D6A4F; --c-goods:#1D6FB8; --c-rule:#7A3FB0; --c-market:#C9742B;
+    --shadow:0 6rpx 22rpx rgba(27,77,58,.10); --r-card:14px; --r-btn:8px;
+    --sp:32px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:"PingFang SC","Microsoft YaHei","微软雅黑",-apple-system,sans-serif;
+    color:var(--ink); background:var(--cream); line-height:1.55; font-size:14px;
+    background-image:radial-gradient(1200px 480px at 80% -120px, rgba(62,142,107,.12), transparent 60%);
+  }
+  a{color:inherit}
+
+  /* ---------- topbar ---------- */
+  .topbar{
+    position:sticky; top:0; z-index:30; backdrop-filter:saturate(1.4) blur(8px);
+    background:linear-gradient(100deg,var(--green-d),var(--green));
+    color:#fff; box-shadow:0 4px 18px rgba(27,77,58,.28);
+  }
+  .topbar-in{max-width:1280px;margin:0 auto;padding:14px var(--sp);display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:12px;min-width:0}
+  .brand .logo{
+    width:42px;height:42px;border-radius:11px;display:grid;place-items:center;font-size:22px;
+    background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.25);
+  }
+  .brand h1{font-size:18px;margin:0;font-weight:700;letter-spacing:.5px}
+  .brand p{margin:1px 0 0;font-size:11.5px;opacity:.85}
+  .spacer{flex:1 1 auto}
+  .src-toggle{display:flex;align-items:center;gap:10px;font-size:12px}
+  .src-toggle input[type=text]{
+    width:160px;padding:6px 9px;border-radius:7px;border:1px solid rgba(255,255,255,.35);
+    background:rgba(255,255,255,.12);color:#fff;font-size:12px;outline:none;
+  }
+  .src-toggle input::placeholder{color:rgba(255,255,255,.6)}
+  .switch{position:relative;display:inline-block;width:42px;height:23px;cursor:pointer;flex:none}
+  .switch input{display:none}
+  .switch .track{position:absolute;inset:0;background:rgba(255,255,255,.3);border-radius:20px;transition:.25s}
+  .switch .dot{position:absolute;top:2.5px;left:2.5px;width:18px;height:18px;background:#fff;border-radius:50%;transition:.25s}
+  .switch input:checked + .track{background:#7CDCAE}
+  .switch input:checked + .track + .dot{transform:translateX(19px)}
+
+  /* ---------- layout ---------- */
+  .wrap{max-width:1280px;margin:0 auto;padding:26px var(--sp) 60px}
+  .section-title{display:flex;align-items:baseline;gap:12px;margin:6px 0 14px}
+  .section-title h2{font-size:16px;margin:0;color:var(--green-d);font-weight:700}
+  .section-title .sub{font-size:12px;color:var(--grey)}
+
+  /* ---------- KPI hero ---------- */
+  .kpi-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:14px;margin-bottom:26px}
+  .kpi{
+    background:#fff;border-radius:var(--r-card);padding:16px 16px 14px;box-shadow:var(--shadow);
+    border:1px solid var(--line);cursor:pointer;position:relative;overflow:hidden;transition:transform .18s,box-shadow .18s;
+  }
+  .kpi:hover{transform:translateY(-3px);box-shadow:0 12px 26px rgba(27,77,58,.16)}
+  .kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--green-l)}
+  .kpi .ic{font-size:20px}
+  .kpi .v{font-size:26px;font-weight:800;color:var(--green-d);line-height:1.1;margin:6px 0 2px;font-variant-numeric:tabular-nums}
+  .kpi .v .u{font-size:12px;font-weight:600;color:var(--grey);margin-left:3px}
+  .kpi .k{font-size:12px;color:var(--grey)}
+
+  /* ---------- chips ---------- */
+  .chips{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 18px}
+  .chip{
+    padding:7px 16px;border-radius:30px;background:#fff;border:1px solid var(--line);
+    font-size:13px;color:var(--grey);cursor:pointer;transition:.18s;user-select:none;font-weight:600;
+  }
+  .chip:hover{border-color:var(--green-l);color:var(--green-d)}
+  .chip.active{background:var(--green);color:#fff;border-color:var(--green);box-shadow:0 4px 12px rgba(45,106,79,.3)}
+
+  /* ---------- category sections ---------- */
+  .cat-block{margin-bottom:30px}
+  .cat-head{display:flex;align-items:center;gap:12px;margin-bottom:14px;padding-left:2px}
+  .cat-head .badge-ic{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;font-size:19px;color:#fff;flex:none}
+  .cat-head h3{margin:0;font-size:15px;font-weight:700}
+  .cat-head .desc{font-size:12px;color:var(--grey)}
+  .cat-head .cnt{margin-left:auto;font-size:12px;color:var(--grey);background:#fff;border:1px solid var(--line);padding:3px 11px;border-radius:20px}
+
+  .card-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .card{
+    background:#fff;border-radius:var(--r-card);border:1px solid var(--line);box-shadow:var(--shadow);
+    padding:16px;cursor:pointer;position:relative;overflow:hidden;transition:transform .16s,box-shadow .16s,border-color .16s;
+    display:flex;flex-direction:column;gap:8px;min-height:140px;
+  }
+  .card::after{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--accent,var(--green))}
+  .card:hover{transform:translateY(-4px);box-shadow:0 14px 30px rgba(27,77,58,.16);border-color:var(--accent,var(--green-l))}
+  .card:active{transform:translateY(-1px) scale(.99)}
+  .card .row1{display:flex;align-items:center;gap:10px}
+  .card .ic{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;font-size:20px;background:var(--accent-bg,#EAF1EC);flex:none}
+  .card .ttl{font-size:14.5px;font-weight:700;color:var(--ink)}
+  .card .desc{font-size:12px;color:var(--grey);flex:1}
+  .card .foot{display:flex;align-items:center;justify-content:space-between;margin-top:auto}
+  .tag{font-size:11px;padding:2px 9px;border-radius:20px;font-weight:600}
+  .tag.ro{background:#EEF1F4;color:#5B6B7A}
+  .tag.rw{background:#E6F6EC;color:var(--ok)}
+  .card .metric{font-size:11.5px;color:var(--accent,var(--green-d));font-weight:700}
+  .ripple{position:absolute;border-radius:50%;background:rgba(45,106,79,.22);transform:scale(0);animation:rip .55s ease-out;pointer-events:none}
+  @keyframes rip{to{transform:scale(2.4);opacity:0}}
+
+  /* ---------- drawer ---------- */
+  .scrim{position:fixed;inset:0;background:rgba(20,38,30,.42);opacity:0;pointer-events:none;transition:.25s;z-index:40}
+  .scrim.show{opacity:1;pointer-events:auto}
+  .drawer{
+    position:fixed;top:0;right:0;height:100%;width:min(560px,94vw);background:var(--paper);z-index:50;
+    transform:translateX(102%);transition:transform .3s cubic-bezier(.22,.61,.36,1);box-shadow:-12px 0 40px rgba(0,0,0,.22);
+    display:flex;flex-direction:column;
+  }
+  .drawer.show{transform:translateX(0)}
+  .dh{padding:20px 24px 16px;background:linear-gradient(120deg,var(--accent,var(--green)),color-mix(in srgb,var(--accent,var(--green)) 70%,#000));color:#fff;position:relative}
+  .dh .ic{font-size:30px}
+  .dh h2{margin:6px 0 2px;font-size:19px;font-weight:800}
+  .dh .meta{font-size:12px;opacity:.9}
+  .dh .close{position:absolute;top:16px;right:18px;width:32px;height:32px;border:0;border-radius:9px;background:rgba(255,255,255,.18);color:#fff;font-size:18px;cursor:pointer;transition:.15s}
+  .dh .close:hover{background:rgba(255,255,255,.32)}
+  .db{padding:20px 24px 40px;overflow:auto}
+  .blk{margin-bottom:20px}
+  .blk h4{font-size:12.5px;letter-spacing:1px;color:var(--accent,var(--green));margin:0 0 8px;font-weight:800;display:flex;align-items:center;gap:7px}
+  .blk h4::before{content:"";width:14px;height:14px;border-radius:4px;background:var(--accent,var(--green));opacity:.85}
+  .intent{background:#fff;border:1px solid var(--line);border-left:4px solid var(--accent,var(--green));border-radius:10px;padding:12px 14px;font-size:13px;color:#3a3a3a}
+  ul.feat{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:7px}
+  ul.feat li{font-size:13px;padding-left:22px;position:relative;color:#3a3a3a}
+  ul.feat li::before{content:"✦";position:absolute;left:2px;top:0;color:var(--accent,var(--green));font-size:12px}
+  .src-line{font-size:12.5px;color:var(--grey);background:#fff;border:1px solid var(--line);border-radius:9px;padding:10px 12px;display:flex;flex-direction:column;gap:5px}
+  .src-line code{font-family:Consolas,Menlo,monospace;background:#EEF1EC;color:var(--green-d);padding:1px 7px;border-radius:5px;font-size:12px}
+  .method{font-weight:800;font-size:11px;padding:1px 7px;border-radius:5px;color:#fff;margin-right:6px}
+  .method.GET{background:#2E9E5B}.method.POST{background:#1D6FB8}.method.DELETE{background:#E63946}.method.CRUD{background:#7A3FB0}
+
+  table.dt{width:100%;border-collapse:collapse;font-size:12px;background:#fff;border-radius:9px;overflow:hidden;border:1px solid var(--line)}
+  table.dt th{background:var(--green);color:#fff;font-weight:600;text-align:left;padding:7px 9px;font-size:11.5px;white-space:nowrap}
+  table.dt td{padding:6px 9px;border-top:1px solid var(--line);vertical-align:top}
+  table.dt tr:nth-child(even) td{background:#F6F4EE}
+  table.dt td code{font-family:Consolas,monospace;font-size:11px;color:var(--green-d)}
+  .pill{display:inline-block;font-size:10.5px;padding:1px 7px;border-radius:10px;font-weight:600}
+  .pill.g{background:#E6F6EC;color:#1f8a4c}.pill.r{background:#FBE7E9;color:#c32a37}.pill.y{background:#FBEFDD;color:#a9651c}.pill.b{background:#E4EEF8;color:#1a5fa0}.pill.n{background:#EEF0F2;color:#667}
+
+  .btn{border:0;border-radius:var(--r-btn);padding:8px 15px;font-size:12.5px;font-weight:700;cursor:pointer;transition:.15s;font-family:inherit}
+  .btn.primary{background:var(--green);color:#fff}.btn.primary:hover{background:var(--green-d)}
+  .btn.ghost{background:#fff;border:1px solid var(--line);color:var(--green-d)}.btn.ghost:hover{border-color:var(--green)}
+  .btn.mini{padding:4px 10px;font-size:11px}
+  .btn.del{background:#FBE7E9;color:var(--danger)}.btn.del:hover{background:#f7d3d7}
+  .editbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+  .editbar input,.editbar select{padding:6px 9px;border:1px solid var(--line);border-radius:7px;font-size:12px;font-family:inherit;outline:none}
+  .editbar input:focus{border-color:var(--green)}
+  .hint{font-size:11px;color:var(--grey);margin-top:8px}
+
+  /* skeleton */
+  .sk{height:13px;border-radius:5px;background:linear-gradient(90deg,#eee,#f6f6f6,#eee);background-size:200% 100%;animation:sh 1.1s infinite}
+  @keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+  /* toast */
+  #toasts{position:fixed;top:74px;right:22px;z-index:80;display:flex;flex-direction:column;gap:10px}
+  .toast{background:#fff;border-left:4px solid var(--green);box-shadow:0 8px 26px rgba(0,0,0,.16);border-radius:10px;padding:11px 16px;font-size:13px;min-width:210px;
+    transform:translateX(120%);animation:tin .3s forwards;display:flex;gap:9px;align-items:center}
+  .toast.ok{border-color:var(--ok)} .toast.err{border-color:var(--danger)} .toast.info{border-color:#1D6FB8}
+  @keyframes tin{to{transform:translateX(0)}}
+  .toast.out{animation:tout .3s forwards}@keyframes tout{to{transform:translateX(120%);opacity:0}}
+
+  footer{max-width:1280px;margin:0 auto;padding:18px var(--sp) 40px;color:var(--grey);font-size:12px;border-top:1px solid var(--line);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+
+  @media(max-width:1080px){.kpi-grid{grid-template-columns:repeat(3,1fr)}.card-grid{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:640px){.kpi-grid{grid-template-columns:repeat(2,1fr)}.card-grid{grid-template-columns:1fr};:root{--sp:16px}}
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-in">
+      <div class="brand">
+        <div class="logo">🗄️</div>
+        <div>
+          <h1>柜台陈列助手 · 后台管理平台</h1>
+          <p>零售终端智能陈列生成系统 — 数据与运营可视化控制台</p>
+        </div>
+      </div>
+      <div class="spacer"></div>
+      <div class="src-toggle">
+        <span>数据源</span>
+        <label class="switch" title="开启后从实时后端拉取数据（需同源部署或后端开启 CORS）">
+          <input type="checkbox" id="liveToggle" />
+          <span class="track"></span><span class="dot"></span>
+        </label>
+        <span id="srcLabel">演示数据</span>
+        <input type="text" id="apiBase" placeholder="http://47.103.65.4" value="http://47.103.65.4" />
+      </div>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div class="section-title"><h2>运营总览</h2><span class="sub">系统数据资产一览 · 点击卡片可跳转对应模块</span></div>
+    <div class="kpi-grid" id="kpiGrid"></div>
+
+    <div class="section-title"><h2>管理模块</h2><span class="sub">按业务域分类 · 点击任意卡片查看模块的设计初衷、功能介绍与数据预览</span></div>
+    <div class="chips" id="chips"></div>
+    <div id="cats"></div>
+  </div>
+
+  <footer>
+    <span>柜台陈列助手 · 可视化后台管理平台　|　AI 赋能主题技能比武参评材料</span>
+    <span id="footMeta"></span>
+  </footer>
+
+  <div class="scrim" id="scrim"></div>
+  <aside class="drawer" id="drawer" aria-hidden="true"></aside>
+  <div id="toasts"></div>
+
+<script>
+/* =====================================================================
+ *  数据模型：分区 / KPI / 模块（含设计初衷、功能介绍、字段说明、示例数据）
+ *  —— 同一份元数据同时驱动界面渲染与《系统说明手册》对应章节
+ * ===================================================================== */
+const CATEGORIES = [
+  { id:'customer', name:'客户数据中心', icon:'🏪', color:'var(--c-customer)', bg:'#EAF1EC',
+    desc:'门店身份、柜台、库存与主营品规 —— 智能选品与分层的事实来源' },
+  { id:'goods', name:'商品与陈列资源', icon:'📦', color:'var(--c-goods)', bg:'#E4EEF8',
+    desc:'品类目录与陈列位图片素材 —— 定义“可以陈列什么”' },
+  { id:'rule', name:'智能规则中心', icon:'🧠', color:'var(--c-rule)', bg:'#F0E9F8',
+    desc:'话术、节日、关联规则与陈列算法参数 —— 定义“如何陈列、如何推介”' },
+  { id:'market', name:'市场参考数据', icon:'📊', color:'var(--c-market)', bg:'#FBEFDD',
+    desc:'区域均价、脱销、铺市、批发等行业洞察 —— 辅助选品与排序决策' },
+];
+
+const KPIS = [
+  { ic:'🏪', v:128, u:'家', k:'接入门店', jump:'customer' },
+  { ic:'🚬', v:386, u:'种', k:'品类规格', jump:'goods' },
+  { ic:'🧩', v:7,   u:'类', k:'功能专区', jump:'goods' },
+  { ic:'💬', v:86,  u:'条', k:'经营话术', jump:'rule' },
+  { ic:'🗃️', v:14,  u:'张', k:'业务数据表', jump:'market' },
+  { ic:'🕒', v:'2026-05', u:'', k:'最近数据快照', jump:'market' },
+];
+
+const MODULES = [
+  /* ---------------- 客户数据中心 ---------------- */
+  {
+    id:'cust_info', cat:'customer', icon:'🪪', title:'客户档案', access:'只读', metric:'128 家门店',
+    desc:'门店入网时间与 POS 标记，分层判定的依据',
+    intent:'客户分层（新客户 / 常规客户）是整个系统流程分叉的起点：它决定了选品数据来源、功能专区与价签是否可用。后台集中呈现每家门店的分层判定依据，便于核对“某门店为何看不到专区/价签”。',
+    features:[
+      '按客户编号检索门店基础档案；',
+      '展示入网时间，并按“距今 3 个月”实时换算为新客户 / 常规客户；',
+      'POS 标记（has_pos）决定价签白名单走 POS 版还是非 POS 版；',
+      '分层结果直接驱动小程序登录后的流程分叉。',
+    ],
+    source:'表 cust_info', method:'GET', api:'/api/customer-info/:id', needId:true,
+    fields:[
+      ['customer_id','VARCHAR','客户编号（主键）'],
+      ['joined_at','DATE','入网日期 → 据此判定分层'],
+      ['has_pos','TINYINT','是否安装 POS 收银终端（0/1）→ 价签白名单'],
+    ],
+    columns:['客户编号','入网日期','距今','分层','POS'],
+    rows:[
+      ['116314785','2025-11-02','约 7 个月',['常规','pill g'],['是','pill b']],
+      ['208857013','2026-04-18','约 2 个月',['新客户','pill y'],['否','pill n']],
+      ['319920446','2023-06-30','近 3 年',['常规','pill g'],['是','pill b']],
+      ['457782100','2026-03-20','约 3 个月',['新客户','pill y'],['否','pill n']],
+    ],
+  },
+  {
+    id:'cust_counters', cat:'customer', icon:'📐', title:'柜台台账', access:'只读', metric:'按门店',
+    desc:'门店前柜/吊柜/背柜的尺寸与层数台账',
+    intent:'门店真实的柜台长度与层数是容量自适应算法的输入。沉淀台账后，店主登录即可自动回填柜台，免去每次重复录入，也保证历次出图口径一致。',
+    features:[
+      '按门店列出前柜 / 吊柜 / 背柜及各自长度、层数；',
+      'sort_order 控制柜台展示顺序（前柜 → 吊柜 → 背柜）；',
+      '供小程序 counter-config 页登录后自动回填；',
+      '为容量公式“⌊长度÷6⌋×层数”提供原始尺寸。',
+    ],
+    source:'表 cust_counters', method:'GET', api:'/api/customer-counters/:id', needId:true,
+    fields:[
+      ['customer_id','VARCHAR','客户编号'],
+      ['counter_id','VARCHAR','柜台编号'],
+      ['type','ENUM','front 前柜 / hanging 吊柜 / back 背柜'],
+      ['length','INT','柜台长度（cm）'],
+      ['levels','INT','层数'],
+      ['sort_order','INT','展示顺序'],
+    ],
+    columns:['客户编号','柜台编号','类型','长度cm','层数','排序'],
+    rows:[
+      ['116314785','f1',['前柜','pill g'],120,3,1],
+      ['116314785','h1',['吊柜','pill b'],80,4,2],
+      ['116314785','b1',['背柜','pill y'],200,5,3],
+    ],
+  },
+  {
+    id:'cust_inventory', cat:'customer', icon:'📦', title:'进销存快照', access:'只读', metric:'最新快照',
+    desc:'在售 / 脱销 / 滞销库存，常规客户选品来源',
+    intent:'常规客户智能推荐的选品来源即门店在售库存的最新快照；脱销（库存天数=0）与滞销（≥30 天且库存≥3）的判定支撑“脱销平替”“重点推荐”等专区。只取最新 snapshot_date 以保证时效。',
+    features:[
+      '按门店取最新 snapshot_date 的整份库存；',
+      'status 过滤：stockout（脱销）/ slow_moving（滞销）/ all；',
+      '驱动在售选品、脱销平替、滞销集中促销；',
+      '库存天数与数量是状态判定的两个口径。',
+    ],
+    source:'表 cust_inventory', method:'GET', api:'/api/customer-inventory/:id', needId:true,
+    fields:[
+      ['spec_id','VARCHAR','规格编码'],
+      ['stock_qty','INT','库存量'],
+      ['stock_days','INT','库存天数（0=脱销，≥30 且量≥3=滞销）'],
+      ['snapshot_date','DATE','快照日期'],
+    ],
+    columns:['规格编码','品名','库存量','库存天数','状态','快照日'],
+    rows:[
+      ['110101','中华(软)',42,5,['在售','pill g'],'2026-05-31'],
+      ['530115','玉溪(软)',0,0,['脱销','pill r'],'2026-05-31'],
+      ['420108','黄鹤楼(软蓝)',8,46,['滞销','pill y'],'2026-05-31'],
+      ['130301','熊猫(硬)',15,3,['在售','pill g'],'2026-05-31'],
+    ],
+  },
+  {
+    id:'customer_specs', cat:'customer', icon:'⭐', title:'主营品规', access:'可维护', metric:'可增删改',
+    desc:'门店主营品规集合，新客户选品兜底来源',
+    intent:'新客户缺少进销存数据时，主营品规是智能推荐的选品兜底来源。它记录每家门店“主要经营的品规集合”，可由客户经理在后台维护。保存时自动去重，避免重复品规让算法误判进货深度。',
+    features:[
+      '列出全部客户的主营品规（规格数 + 明细 CSV）；',
+      '新增 / 更新（Upsert，按 customer_id 主键合并）；',
+      '删除某客户的主营品规记录；',
+      '保存时自动去重并回算 spec_count。',
+    ],
+    source:'表 customer_specs', method:'CRUD', api:'/api/customer-specs', needId:false,
+    fields:[
+      ['customer_id','VARCHAR','客户编号（主键）'],
+      ['spec_count','INT','规格数量（保存时自动计算）'],
+      ['spec_detail','TEXT','规格 ID 列表（逗号分隔）'],
+      ['updated_at','TIMESTAMP','更新时间'],
+    ],
+    columns:['客户编号','规格数','主营品规明细','更新时间'],
+    rows:[
+      ['208857013',6,'110101,130301,530115,420108,310143,340136','2026-06-08'],
+      ['457782100',4,'110101,110102,530115,610201','2026-06-05'],
+    ],
+    editable:{ idKey:0, addFields:[
+      {key:'customer_id',label:'客户编号',type:'text'},
+      {key:'spec_detail',label:'品规明细(逗号分隔)',type:'text'},
+    ]},
+  },
+
+  /* ---------------- 商品与陈列资源 ---------------- */
+  {
+    id:'categories', cat:'goods', icon:'🗂️', title:'品类目录', access:'只读', metric:'386 种规格',
+    desc:'全系统商品字典：品牌/产地/价位/支型/属性',
+    intent:'品类目录是全系统的“商品字典”。品牌、产地、价位、支型、紧俏、工商共育、退市继任等属性，是排序算法与所有专区分类的根本依据。基础字段来自 categories.json，扩展业务字段来自 dim_category_ext，合并后 5 分钟缓存。',
+    features:[
+      '全量品规及其属性查询；',
+      '基础属性（品牌/产地/价格/类别）+ 扩展属性（支型/口味/档位/上市日/工商共育/退市/继任）；',
+      '供“集团→省外→外烟”排序与七类专区分类共用同一份缓存；',
+      '紧俏烟标记用于智能推荐的资源过滤。',
+    ],
+    source:'文件 categories.json + 表 dim_category_ext', method:'GET', api:'/api/categories', needId:false,
+    fields:[
+      ['id / name','—','规格编码 / 品名'],
+      ['brand / manufacturer','—','品牌 / 生产商'],
+      ['price','DECIMAL','价格（用于同组内降序）'],
+      ['category','ENUM','group 集团 / provincial 省外 / foreign 外烟'],
+      ['province','—','产地省份'],
+      ['is_hot','BOOL','紧俏烟标记'],
+      ['pack_type / flavor / tier','—','支型 / 口味 / 档位（一类/二类）'],
+      ['launch_date','DATE','上市日期（尝鲜专区用）'],
+      ['is_industrial_coop','BOOL','工商共育标记'],
+      ['is_delisted / successor_id','—','退市标记 / 继任规格（升级专区用）'],
+    ],
+    columns:['编码','品名','品牌','产地','价格','类别','紧俏','工商共育'],
+    rows:[
+      ['110101','中华(软)','中华','上海',70,['集团','pill g'],['—','pill n'],['否','pill n']],
+      ['130301','熊猫(硬)','熊猫','上海',100,['集团','pill g'],['紧俏','pill r'],['否','pill n']],
+      ['310143','红双喜(硬)','红双喜','上海',15,['集团','pill g'],['—','pill n'],['是','pill g']],
+      ['340136','黄山(记忆)','黄山','安徽',23,['省外','pill b'],['—','pill n'],['是','pill g']],
+      ['530115','玉溪(软)','玉溪','云南',23,['省外','pill b'],['—','pill n'],['否','pill n']],
+    ],
+  },
+  {
+    id:'back_specs', cat:'goods', icon:'🖼️', title:'背柜可陈列规格', access:'只读', metric:'白名单',
+    desc:'限定背柜主题贴图的可选规格范围',
+    intent:'背柜采用整面主题贴图陈列。该白名单限定背柜“主题图”的可选范围，保证素材合规、风格统一，避免选到没有主题图的规格。',
+    features:[
+      '列出有背柜主题图素材的规格 ID；',
+      '供背柜自选页过滤可选项；',
+      '与品类目录交叉，得到“用户已选 ∩ 可陈列”的最终候选。',
+    ],
+    source:'文件 back-cabinet-specs.json', method:'GET', api:'/api/back-cabinet-specs', needId:false,
+    fields:[ ['specs','string[]','可作背柜主题图的规格 ID 列表'] ],
+    columns:['规格编码','品名','主题图'],
+    rows:[
+      ['110101','中华(软)',['已配图','pill g']],
+      ['130301','熊猫(硬)',['已配图','pill g']],
+      ['530115','玉溪(软)',['已配图','pill g']],
+    ],
+  },
+  {
+    id:'festival_specs', cat:'goods', icon:'🎁', title:'节日礼盒商品', access:'只读', metric:'随素材',
+    desc:'节日专区整面背柜单图的可选商品池',
+    intent:'节日专区将整面背柜替换为节日礼盒单图直出。可选商品池 = 所有具备节日礼盒图（即有商品编码）的商品；支持每个背柜单独指定一款，不指定则由系统智能选图。',
+    features:[
+      '列出所有有 back-festival 图片素材的商品（名称 + 缩略图）；',
+      '供节日专区为每个背柜单选礼盒图；',
+      '跨背柜去重：同图被占用完则回退智能选图。',
+    ],
+    source:'图片索引 /images/back-festival/*', method:'GET', api:'/api/festival-specs', needId:false,
+    fields:[ ['id','—','商品编码'], ['name','—','商品名（缺则用编码）'], ['thumbUrl','—','首个礼盒图变体路径'] ],
+    columns:['商品编码','商品名','礼盒图'],
+    rows:[
+      ['110101','中华(软) 礼盒',['有','pill g']],
+      ['130301','熊猫(硬) 礼盒',['有','pill g']],
+      ['610588','黄鹤楼(1916) 礼盒',['有','pill g']],
+    ],
+  },
+  {
+    id:'zones', cat:'goods', icon:'🧩', title:'功能专区配置', access:'只读', metric:'7 类专区',
+    desc:'七类专区的版本/优先级/展示模式定义',
+    intent:'专区配置是七类功能专区的元数据中枢：图标、版本档（基础/进阶）、优先级、展示模式、目标柜台与标签色，共同决定专区在版本页与专区页如何呈现、在哪类柜台落位。可用性则按客户实时数据动态计算。',
+    features:[
+      '集中查看七类专区的定义与归档；',
+      '版本分组：基础版 3 类（政策刚需）/ 进阶版 4 类（趋势特色）；',
+      '展示模式：固定首行 / 内嵌红绿框 / 分组占行 / 背柜节日单图；',
+      '可用性按客户库存或所选品规实时计算（groupCount）。',
+    ],
+    source:'代码常量 ZONE_META', method:'POST', api:'/api/zones/available', needId:false,
+    fields:[
+      ['id / label / icon','—','专区标识 / 名称 / 图标'],
+      ['tier','ENUM','basic 基础版 / advanced 进阶版'],
+      ['displayMode','—','fixedTop / inlineRegular / zoneRows / backFestival'],
+      ['targetCabinetType','—','落位柜台类型（前柜/背柜等）'],
+      ['priorityRank','INT','专区优先级'],
+    ],
+    columns:['专区','图标','版本','展示模式','目标柜台'],
+    rows:[
+      ['工商共育','🤝',['基础版','pill g'],'固定占首柜前两行','前柜'],
+      ['产品升级','📈',['基础版','pill g'],'常规内嵌红框配对','前柜/吊柜'],
+      ['脱销平替','🔄',['基础版','pill g'],'常规内嵌绿框配对','前柜/吊柜'],
+      ['重点推荐','⭐',['进阶版','pill y'],'分组占行','前柜/吊柜'],
+      ['尝鲜专区','✨',['进阶版','pill y'],'分组占行','前柜/吊柜'],
+      ['节日季节','🎁',['进阶版','pill y'],'整面背柜单图','背柜'],
+      ['爆珠口味','🫐',['进阶版','pill y'],'按口味分块占行','前柜/吊柜'],
+    ],
+  },
+
+  /* ---------------- 智能规则中心 ---------------- */
+  {
+    id:'praise', cat:'rule', icon:'💬', title:'经营话术库', access:'可维护', metric:'86 条',
+    desc:'多维匹配的对客推介话术知识库',
+    intent:'把一线对客推介话术沉淀为可检索的知识库，按场景与目标（规格 / 品牌 / 标签 / 节日）多维匹配，结果页“查看话术”即调用。目的是让推介有据可依、口径统一，而非依赖店员个人经验。',
+    features:[
+      '多维检索：scene 场景 + target_type（spec/brand/tag/festival）；',
+      'spec_ids 联合筛选并回填命中规格（matched_specs）；',
+      '新增 / 编辑 / 删除话术条目；',
+      '按 target_type 优先级（spec > brand > tag > festival）排序返回。',
+    ],
+    source:'表 sys_praise_scripts', method:'CRUD', api:'/api/praise-script', needId:false,
+    fields:[
+      ['id','INT','主键'],
+      ['scene','VARCHAR','场景（滞销夸夸/新品推荐/怀旧专区…）'],
+      ['target_type','ENUM','spec / brand / tag / festival'],
+      ['target_value','VARCHAR','目标值（规格编码/品牌名/标签/节日键）'],
+      ['script_text','TEXT','话术正文'],
+    ],
+    columns:['场景','匹配类型','目标','话术'],
+    rows:[
+      ['滞销夸夸',['tag','pill b'],'经典款','这款已停产，目前是最后一批，喜欢可尽早备货。'],
+      ['新品推荐',['brand','pill y'],'中华','中华细支是店长重点推荐的新品，口感清雅，可以尝一支。'],
+      ['怀旧专区',['spec','pill g'],'110201','这是停产的经典款，老顾客一直惦记，存量有限。'],
+    ],
+    editable:{ idKey:null, addFields:[
+      {key:'scene',label:'场景',type:'text'},
+      {key:'target_type',label:'类型',type:'select',options:['spec','brand','tag','festival']},
+      {key:'target_value',label:'目标值',type:'text'},
+      {key:'script_text',label:'话术正文',type:'text'},
+    ]},
+  },
+  {
+    id:'seasons', cat:'rule', icon:'🗓️', title:'节日 / 季节日历', access:'只读', metric:'时间表',
+    desc:'驱动节日专区与展示顺序规则的时间表',
+    intent:'节日日历驱动节日专区与展示顺序规则：按当前日期命中生效的节日 / 季节，并合并其规则（如高价烟前置、沪产专区前置），影响选图与排面顺序。',
+    features:[
+      '维护节日与季节的生效区间及 rules；',
+      '按日期查询当前生效项（BETWEEN start_date AND end_date）；',
+      '合并去重各项 rules，供前端决策展示顺序；',
+      '节日优先于季节排序。',
+    ],
+    source:'表 sys_season_calendar', method:'GET', api:'/api/active-seasons', needId:false,
+    fields:[
+      ['season_key','VARCHAR','标识键'],
+      ['category','ENUM','季节 / 节日'],
+      ['label','VARCHAR','名称'],
+      ['start_date / end_date','DATE','生效区间'],
+      ['rules','VARCHAR','规则（逗号分隔）'],
+    ],
+    columns:['标识','类别','名称','开始','结束','规则'],
+    rows:[
+      ['springFestival',['节日','pill r'],'春节','2026-01-25','2026-02-20','highPriceFirst, localFirst'],
+      ['midAutumn',['节日','pill r'],'中秋','2026-09-20','2026-10-06','highPriceFirst'],
+      ['summer',['季节','pill b'],'夏季','2026-06-01','2026-08-31','—'],
+    ],
+  },
+  {
+    id:'co_purchase', cat:'rule', icon:'🔗', title:'连带 / 平替规则', access:'只读', metric:'挖掘产出',
+    desc:'关联挖掘得到的替代与连带候选',
+    intent:'基于购物篮关联挖掘（支持度 / 置信度 / 提升度 / 转移人数）给出每个规格的替代与连带候选，支撑脱销平替、退市怀旧替代与滞销横向对比。让“替代推荐”有数据支撑，而非凭经验拍脑袋。',
+    features:[
+      '按目标规格查 Top N 替代候选（rank_in_a 定序）；',
+      'target_type 过滤（如 stockout 脱销场景）；',
+      '展示 final_score 综合得分与各项挖掘指标；',
+      '供 zone-select 与 generate 两端共用。',
+    ],
+    source:'表 ref_co_purchase_rules', method:'GET', api:'/api/substitute-recommend', needId:false, liveQuery:'?spec_id=530115',
+    fields:[
+      ['spec_id_a / spec_id_b','—','源规格 / 替代规格'],
+      ['rule_type / target_type','—','规则类型 / 适用目标场景'],
+      ['support / confidence / lift','DECIMAL','支持度 / 置信度 / 提升度'],
+      ['co_users / switch_users','INT','连带人数 / 转移人数'],
+      ['final_score / rank_in_a','—','综合得分 / 在源规格内排名'],
+    ],
+    columns:['源规格','替代规格','类型','置信度','提升度','得分','排名'],
+    rows:[
+      ['530115','530112','stockout',0.62,2.3,0.81,1],
+      ['530115','610201','stockout',0.48,1.9,0.66,2],
+      ['420108','420105','slow_moving',0.55,2.1,0.72,1],
+    ],
+  },
+  {
+    id:'algo_params', cat:'rule', icon:'⚙️', title:'陈列决策参数', access:'只读', metric:'算法配置',
+    desc:'容量公式、三档阈值、过滤与分层等常量',
+    intent:'把多年陈列“专业经验”固化成的算法常量与阈值集中呈现，使生成逻辑透明、可解释 —— 这是本系统“智能”背后的规则底座。参数内生于生成接口，调整需经评估后由研发更新。',
+    features:[
+      '单包宽度与容量公式；',
+      '三档布局阈值（标准 / 扩大间距 / 双包）；',
+      '均匀分布与交错（砖墙）分布策略；',
+      '紧俏烟过滤触发条件与客户分层阈值。',
+    ],
+    source:'代码常量（imageGen / strategies）', method:null, api:'内生于 /api/generate', needId:false,
+    fields:[ ['参数','取值','作用'] ],
+    columns:['参数','取值','作用'],
+    rows:[
+      ['单包宽度','6 cm','每层包数 = ⌊柜台长度 ÷ 6⌋'],
+      ['三档阈值','N≥C / C/2≤N<C / N<C/2','标准铺满 / 单包扩大间距 / 双包陈列'],
+      ['行分布','均匀 / 交错','余数靠前 / 砖墙错位散布'],
+      ['紧俏烟过滤','smart 且 N>C 触发','过滤部分紧俏烟（高价烟保护）'],
+      ['客户分层线','入网 3 个月','区分新客户 / 常规客户'],
+      ['多柜分配','按容量比例','容量大者多分，误差按容量降序调整'],
+    ],
+  },
+
+  /* ---------------- 市场参考数据 ---------------- */
+  {
+    id:'avg_price', cat:'market', icon:'🏷️', title:'区域均价与价签', access:'只读', metric:'最新月',
+    desc:'杨浦区均价 + POS/非POS 价签白名单',
+    intent:'为常规客户的价签提供“区域均价”参考；并按门店是否安装 POS 走不同白名单（POS 客户 7 个、非 POS 客户前 3 个），保证价签合规并与设备能力适配。新客户不附加价签。',
+    features:[
+      '取最新月份的区域均价；',
+      '价签白名单：show_for_pos / show_for_nopos；',
+      '按 has_pos 过滤返回对应集合；',
+      '按均价降序便于核对高价规格。',
+    ],
+    source:'表 ref_yangpu_avg_price', method:'GET', api:'/api/yangpu-avg-price', needId:false,
+    fields:[
+      ['spec_id / spec_name','—','规格编码 / 品名'],
+      ['avg_price','DECIMAL','区域平均售价'],
+      ['show_for_pos','BOOL','POS 客户是否展示'],
+      ['show_for_nopos','BOOL','非 POS 客户是否展示'],
+      ['snapshot_month','—','数据月份'],
+    ],
+    columns:['编码','品名','均价','POS显示','非POS显示','月份'],
+    rows:[
+      ['130301','熊猫(硬)',100.0,['是','pill g'],['否','pill n'],'2026-05'],
+      ['110101','中华(软)',70.0,['是','pill g'],['是','pill g'],'2026-05'],
+      ['530115','玉溪(软)',23.0,['是','pill g'],['是','pill g'],'2026-05'],
+    ],
+  },
+  {
+    id:'stockout', cat:'market', icon:'🚫', title:'区域脱销名单', access:'只读', metric:'挖掘产出',
+    desc:'区域级脱销规格（卖过且当前盘零占比高）',
+    intent:'区域级脱销洞察：上季度卖过该规格的 POS 商户中，当前盘点为 0 的占比 > 30%（且样本 ≥ 5）。无 POS 客户据此对品类决策进行剔除或降权，避免推荐“全区都缺货”的规格。',
+    features:[
+      '按脱销率降序列出区域脱销规格；',
+      '展示样本商户数与脱销商户数；',
+      'min_rate 可二次收紧阈值；',
+      '服务于无 POS 客户的品类决策。',
+    ],
+    source:'表 ref_yangpu_stockout', method:'GET', api:'/api/yangpu-stockout', needId:false,
+    fields:[
+      ['spec_id / spec_name','—','规格编码 / 品名'],
+      ['sellers_count','INT','卖过该规格的商户数'],
+      ['stockout_count','INT','当前盘零商户数'],
+      ['stockout_rate','DECIMAL','脱销率'],
+      ['snapshot_date','DATE','快照日期'],
+    ],
+    columns:['编码','品名','样本商户','脱销商户','脱销率'],
+    rows:[
+      ['530115','玉溪(软)',42,28,'66.7%'],
+      ['610201','利群(新版)',31,15,'48.4%'],
+      ['420108','黄鹤楼(软蓝)',18,7,'38.9%'],
+    ],
+  },
+  {
+    id:'coverage', cat:'market', icon:'📈', title:'铺市面率', access:'只读', metric:'最新月',
+    desc:'规格铺市广度，爆珠专区排序依据',
+    intent:'规格的铺市广度。爆珠等子专区按“铺市由低到高”排序，把“铺货不广但订得到”的差异化品规前置，帮助门店做出区隔。',
+    features:[
+      '取最新月铺市率；',
+      '支持升 / 降序与 spec_ids 过滤；',
+      '并入品类扩展指标（market_coverage）；',
+      '与订足率配合用于爆珠子专区排序。',
+    ],
+    source:'表 ref_market_coverage', method:'GET', api:'/api/market-coverage', needId:false,
+    fields:[
+      ['spec_id / spec_name','—','规格编码 / 品名'],
+      ['coverage_rate','DECIMAL','铺市面率'],
+      ['snapshot_month','—','数据月份'],
+    ],
+    columns:['编码','品名','铺市率','月份'],
+    rows:[
+      ['110101','中华(软)','92.0%','2026-05'],
+      ['530115','玉溪(软)','78.0%','2026-05'],
+      ['710302','爱喜(蓝莓爆珠)','21.0%','2026-05'],
+    ],
+  },
+  {
+    id:'fill_rate', cat:'market', icon:'✅', title:'订足率', access:'只读', metric:'最新月',
+    desc:'规格订足程度，爆珠专区排序依据',
+    intent:'规格的订足程度。与铺市率配合，用于爆珠子专区“订足由高到低”排序，也并入品类扩展指标，使排面更贴近真实供给。',
+    features:[
+      '取最新月订足率；',
+      '支持升 / 降序与 spec_ids 过滤；',
+      '并入品类扩展指标（order_fill_rate）；',
+      '默认降序（订足高者优先）。',
+    ],
+    source:'表 ref_order_fill_rate', method:'GET', api:'/api/order-fill-rate', needId:false,
+    fields:[
+      ['spec_id / spec_name','—','规格编码 / 品名'],
+      ['fill_rate','DECIMAL','订足率'],
+      ['snapshot_month','—','数据月份'],
+    ],
+    columns:['编码','品名','订足率','月份'],
+    rows:[
+      ['710302','爱喜(蓝莓爆珠)','95.0%','2026-05'],
+      ['110101','中华(软)','88.0%','2026-05'],
+      ['530115','玉溪(软)','73.0%','2026-05'],
+    ],
+  },
+  {
+    id:'wholesale', cat:'market', icon:'🥇', title:'季度批发排名', access:'只读', metric:'按季度',
+    desc:'高价烟季度批发量排名，礼盒选图依据',
+    intent:'高价烟的季度批发量排名。礼盒精品与节日选图按批发量优选，使节日陈列贴近真实市场热度，而非主观挑选。',
+    features:[
+      '按季度（year + quarter）列出批发量排名；',
+      '默认取最新季度，可指定 top N；',
+      'rank_in_quarter 升序；',
+      '服务于节日 / 礼盒选图。',
+    ],
+    source:'表 ref_quarterly_wholesale_rank', method:'GET', api:'/api/wholesale-rank', needId:false,
+    fields:[
+      ['spec_id / spec_name','—','规格编码 / 品名'],
+      ['year / quarter','INT','年 / 季度'],
+      ['wholesale_qty','INT','批发量'],
+      ['rank_in_quarter','INT','季度内排名'],
+    ],
+    columns:['排名','编码','品名','批发量','季度'],
+    rows:[
+      [1,'130301','熊猫(硬)',12800,'2026 Q1'],
+      [2,'110101','中华(软)',11500,'2026 Q1'],
+      [3,'610588','黄鹤楼(1916)',9400,'2026 Q1'],
+    ],
+  },
+  {
+    id:'growth', cat:'market', icon:'🌱', title:'沪产烟增长', access:'只读', metric:'按季度',
+    desc:'沪产烟同比增长率，沪产专区排序依据',
+    intent:'沪产烟的同比增长率，是“沪产专区”第二排的排序依据，用于扶持与突出本地优势品牌。',
+    features:[
+      '按季度列出沪产规格的同比增长率；',
+      '默认取最新季度，可升 / 降序；',
+      '空值排在末尾；',
+      '服务于沪产专区排面顺序。',
+    ],
+    source:'表 ref_local_brand_growth', method:'GET', api:'/api/local-brand-growth', needId:false,
+    fields:[
+      ['spec_id / spec_name','—','规格编码 / 品名'],
+      ['year / quarter','INT','年 / 季度'],
+      ['yoy_rate','DECIMAL','同比增长率（可空）'],
+    ],
+    columns:['编码','品名','同比增长','季度'],
+    rows:[
+      ['130301','熊猫(硬)','+18.0%','2026 Q1'],
+      ['110101','中华(软)','+6.0%','2026 Q1'],
+      ['310143','红双喜(硬)','-2.0%','2026 Q1'],
+    ],
+  },
+];
+
+/* =====================================================================
+ *  渲染
+ * ===================================================================== */
+const $ = (s,el=document)=>el.querySelector(s);
+const catById = id => CATEGORIES.find(c=>c.id===id);
+let liveMode = false;
+
+function ripple(e, el){
+  const r = document.createElement('span'); r.className='ripple';
+  const d = Math.max(el.clientWidth, el.clientHeight);
+  const rect = el.getBoundingClientRect();
+  r.style.width = r.style.height = d+'px';
+  r.style.left = (e.clientX-rect.left-d/2)+'px';
+  r.style.top  = (e.clientY-rect.top-d/2)+'px';
+  el.appendChild(r); setTimeout(()=>r.remove(),560);
+}
+
+function toast(msg,type='info'){
+  const t=document.createElement('div'); t.className='toast '+type;
+  const ic={ok:'✅',err:'⛔',info:'ℹ️'}[type]||'ℹ️';
+  t.innerHTML='<span>'+ic+'</span><span>'+msg+'</span>';
+  $('#toasts').appendChild(t);
+  setTimeout(()=>{t.classList.add('out');setTimeout(()=>t.remove(),300);},2600);
+}
+
+/* KPI with count-up */
+function renderKpis(){
+  const g=$('#kpiGrid'); g.innerHTML='';
+  KPIS.forEach(kpi=>{
+    const el=document.createElement('div'); el.className='kpi';
+    const numeric = typeof kpi.v==='number';
+    el.innerHTML='<div class="ic">'+kpi.ic+'</div>'+
+      '<div class="v"><span class="num">'+(numeric?'0':kpi.v)+'</span>'+(kpi.u?'<span class="u">'+kpi.u+'</span>':'')+'</div>'+
+      '<div class="k">'+kpi.k+'</div>';
+    el.onclick=()=>{ const c=catById(kpi.jump); if(c){ document.getElementById('catblk-'+c.id).scrollIntoView({behavior:'smooth',block:'start'}); flashCat(c.id);} };
+    g.appendChild(el);
+    if(numeric) countUp(el.querySelector('.num'), kpi.v);
+  });
+}
+function countUp(node,target){
+  const dur=900, t0=performance.now();
+  function step(t){ const p=Math.min(1,(t-t0)/dur); node.textContent=Math.round(target*(0.2+0.8*p*p*(3-2*p))); if(p<1)requestAnimationFrame(step); else node.textContent=target; }
+  requestAnimationFrame(step);
+}
+
+function renderChips(){
+  const wrap=$('#chips'); wrap.innerHTML='';
+  const all=document.createElement('div'); all.className='chip active'; all.textContent='全部模块'; all.dataset.cat='all';
+  wrap.appendChild(all);
+  CATEGORIES.forEach(c=>{
+    const ch=document.createElement('div'); ch.className='chip'; ch.dataset.cat=c.id;
+    ch.textContent=c.icon+' '+c.name; wrap.appendChild(ch);
+  });
+  wrap.querySelectorAll('.chip').forEach(ch=>ch.onclick=()=>{
+    wrap.querySelectorAll('.chip').forEach(x=>x.classList.remove('active'));
+    ch.classList.add('active'); filterCat(ch.dataset.cat);
+  });
+}
+function filterCat(cat){
+  CATEGORIES.forEach(c=>{ const blk=document.getElementById('catblk-'+c.id); blk.style.display=(cat==='all'||cat===c.id)?'':'none'; });
+}
+function flashCat(id){ const h=document.querySelector('#catblk-'+id+' .cat-head'); if(!h)return; h.animate([{boxShadow:'0 0 0 0 rgba(45,106,79,.0)'},{boxShadow:'0 0 0 4px rgba(45,106,79,.25)'},{boxShadow:'0 0 0 0 rgba(45,106,79,0)'}],{duration:1100}); }
+
+function renderCats(){
+  const root=$('#cats'); root.innerHTML='';
+  CATEGORIES.forEach(c=>{
+    const mods=MODULES.filter(m=>m.cat===c.id);
+    const blk=document.createElement('div'); blk.className='cat-block'; blk.id='catblk-'+c.id;
+    blk.innerHTML=
+      '<div class="cat-head">'+
+        '<div class="badge-ic" style="background:'+c.color+'">'+c.icon+'</div>'+
+        '<div><h3>'+c.name+'</h3><div class="desc">'+c.desc+'</div></div>'+
+        '<div class="cnt">'+mods.length+' 个模块</div>'+
+      '</div>';
+    const grid=document.createElement('div'); grid.className='card-grid';
+    mods.forEach(m=>{
+      const card=document.createElement('div'); card.className='card';
+      card.style.setProperty('--accent',c.color); card.style.setProperty('--accent-bg',c.bg);
+      card.innerHTML=
+        '<div class="row1"><div class="ic">'+m.icon+'</div><div class="ttl">'+m.title+'</div></div>'+
+        '<div class="desc">'+m.desc+'</div>'+
+        '<div class="foot"><span class="tag '+(m.access==='可维护'?'rw':'ro')+'">'+m.access+'</span>'+
+          '<span class="metric">'+m.metric+' ›</span></div>';
+      card.onclick=(e)=>{ ripple(e,card); openDrawer(m.id); };
+      grid.appendChild(card);
+    });
+    blk.appendChild(grid); root.appendChild(blk);
+  });
+}
+
+/* ---------------- drawer ---------------- */
+function tableHtml(columns,rows){
+  let h='<table class="dt"><thead><tr>'+columns.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>';
+  rows.forEach(r=>{ h+='<tr>'+r.map(cell=>{
+    if(Array.isArray(cell)) return '<td><span class="'+cell[1]+'">'+cell[0]+'</span></td>';
+    return '<td>'+cell+'</td>';
+  }).join('')+'</tr>'; });
+  return h+'</tbody></table>';
+}
+
+function openDrawer(id){
+  const m=MODULES.find(x=>x.id===id); if(!m)return;
+  const c=catById(m.cat);
+  const d=$('#drawer'); d.style.setProperty('--accent',c.color);
+  const methodTag = m.method ? '<span class="method '+m.method+'">'+m.method+'</span>' : '';
+  d.innerHTML=
+    '<div class="dh">'+
+      '<button class="close" onclick="closeDrawer()">✕</button>'+
+      '<div class="ic">'+m.icon+'</div>'+
+      '<h2>'+m.title+'</h2>'+
+      '<div class="meta">'+c.icon+' '+c.name+' · '+m.access+'</div>'+
+    '</div>'+
+    '<div class="db">'+
+      '<div class="blk"><h4>设计初衷</h4><div class="intent">'+m.intent+'</div></div>'+
+      '<div class="blk"><h4>功能介绍</h4><ul class="feat">'+m.features.map(f=>'<li>'+f+'</li>').join('')+'</ul></div>'+
+      '<div class="blk"><h4>数据来源 / 接口</h4><div class="src-line">'+
+        '<span>📁 '+m.source+'</span>'+
+        '<span>'+methodTag+'<code>'+m.api+'</code></span>'+
+      '</div></div>'+
+      '<div class="blk"><h4>字段说明</h4>'+tableHtml(['字段','类型','说明'],m.fields)+'</div>'+
+      '<div class="blk"><h4>数据预览 '+(liveMode?'（实时）':'（演示样例）')+'</h4>'+
+        '<div id="dataZone">'+tableHtml(m.columns,m.rows)+'</div>'+
+        (m.editable?editorHtml(m):'')+
+      '</div>'+
+    '</div>';
+  $('#scrim').classList.add('show'); d.classList.add('show'); d.setAttribute('aria-hidden','false');
+  if(liveMode && m.method && m.method!=='POST' && !String(m.api).startsWith('内生')) fetchLive(m);
+}
+function closeDrawer(){ $('#drawer').classList.remove('show'); $('#scrim').classList.remove('show'); $('#drawer').setAttribute('aria-hidden','true'); }
+
+/* ---------------- 实时后端拉取（演示降级） ---------------- */
+async function fetchLive(m){
+  const base=$('#apiBase').value.trim().replace(/\/$/,'');
+  let url=base+(m.needId?m.api.replace(':id','116314785'):m.api);  // 演示客户编号
+  if(m.liveQuery) url+=m.liveQuery;
+  const zone=$('#dataZone'); if(!zone)return;
+  zone.innerHTML='<div class="sk" style="width:100%;margin:6px 0"></div>'.repeat(4);
+  try{
+    const ctrl=new AbortController(); const tm=setTimeout(()=>ctrl.abort(),6000);
+    const res=await fetch(url,{signal:ctrl.signal}); clearTimeout(tm);
+    const json=await res.json();
+    const arr = json.categories||json.counters||json.inventory||json.prices||json.stockouts||
+                json.coverage||json.fill_rates||json.ranks||json.growth||json.seasons||
+                json.scripts||json.recommendations||json.specs||json.data||[];
+    if(Array.isArray(arr)&&arr.length){
+      if(typeof arr[0]!=='object'){
+        zone.innerHTML=tableHtml(['值'],arr.slice(0,40).map(v=>[String(v)]));
+      } else {
+        const cols=Object.keys(arr[0]).slice(0,6);
+        const rows=arr.slice(0,15).map(o=>cols.map(k=>String(o[k]??'')));
+        zone.innerHTML=tableHtml(cols,rows);
+      }
+      toast(m.title+'：已加载实时数据 '+arr.length+' 行','ok');
+    } else { zone.innerHTML=tableHtml(m.columns,m.rows); toast(m.title+'：实时无数据，显示样例','info'); }
+  }catch(err){
+    zone.innerHTML=tableHtml(m.columns,m.rows);
+    toast(m.title+'：实时拉取失败（'+(location.protocol==='file:'?'file:// 跨域':'网络')+'），已回退演示数据','err');
+  }
+}
+
+/* ---------------- 可维护模块的编辑器（内存演示） ---------------- */
+function editorHtml(m){
+  const fs=m.editable.addFields.map(f=>{
+    if(f.type==='select') return '<select data-k="'+f.key+'">'+f.options.map(o=>'<option>'+o+'</option>').join('')+'</select>';
+    return '<input type="text" data-k="'+f.key+'" placeholder="'+f.label+'" />';
+  }).join('');
+  return '<div style="margin-top:12px">'+
+    '<div class="editbar" id="editbar-'+m.id+'">'+fs+
+      '<button class="btn primary mini" onclick="addRow(\''+m.id+'\')">+ 新增</button></div>'+
+    '<div class="hint">演示模式下，新增 / 删除即时反映在上表（不写入真实数据库）。实时模式将调用 '+m.api+' 完成持久化。</div>'+
+  '</div>';
+}
+function rebuildTable(m){
+  const zone=$('#dataZone'); if(!zone)return;
+  const rows=m.rows.map((r,i)=>{
+    const copy=r.map(c=>Array.isArray(c)?'<span class="'+c[1]+'">'+c[0]+'</span>':c);
+    copy.push('<button class="btn del mini" onclick="delRow(\''+m.id+'\','+i+')">删除</button>');
+    return copy;
+  });
+  zone.innerHTML=tableHtml(m.columns.concat(['操作']),rows.map(r=>r));
+}
+function addRow(id){
+  const m=MODULES.find(x=>x.id===id);
+  const bar=document.getElementById('editbar-'+id);
+  const vals={}; bar.querySelectorAll('[data-k]').forEach(inp=>vals[inp.dataset.k]=inp.value.trim());
+  if(id==='customer_specs'){
+    if(!vals.customer_id){ toast('请填写客户编号','err'); return; }
+    const cnt=(vals.spec_detail?vals.spec_detail.split(',').filter(Boolean).length:0);
+    m.rows.unshift([vals.customer_id,cnt,vals.spec_detail||'—',today()]);
+  } else if(id==='praise'){
+    if(!vals.target_value||!vals.script_text){ toast('请填写目标值与话术','err'); return; }
+    m.rows.unshift([vals.scene||'通用',[vals.target_type,'pill b'],vals.target_value,vals.script_text]);
+  }
+  bar.querySelectorAll('[data-k]').forEach(inp=>{ if(inp.tagName==='INPUT')inp.value=''; });
+  rebuildTable(m); toast('已保存（演示模式）','ok');
+}
+function delRow(id,i){ const m=MODULES.find(x=>x.id===id); m.rows.splice(i,1); rebuildTable(m); toast('已删除（演示模式）','ok'); }
+function today(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+
+/* 编辑模块打开时把表格替换成带“操作列”的版本 */
+const _openDrawer=openDrawer;
+openDrawer=function(id){ _openDrawer(id); const m=MODULES.find(x=>x.id===id); if(m&&m.editable&&!liveMode) rebuildTable(m); };
+
+/* ---------------- 数据源切换 ---------------- */
+$('#liveToggle').onchange=function(){
+  liveMode=this.checked;
+  $('#srcLabel').textContent=liveMode?'实时后端':'演示数据';
+  toast(liveMode?'已切换到实时后端模式（需同源或开启 CORS）':'已切回演示数据模式', liveMode?'info':'ok');
+};
+$('#scrim').onclick=closeDrawer;
+document.addEventListener('keydown',e=>{ if(e.key==='Escape')closeDrawer(); });
+
+/* ---------------- 同源托管自动联通：经 http(s) 访问（如 /admin/）时默认实时后端 ---------------- */
+(function(){
+  const isFile = location.protocol === 'file:';
+  $('#apiBase').value = isFile ? 'http://47.103.65.4' : location.origin;
+  if(!isFile){ liveMode = true; $('#liveToggle').checked = true; $('#srcLabel').textContent = '实时后端'; }
+})();
+
+/* ---------------- init ---------------- */
+renderKpis(); renderChips(); renderCats();
+$('#footMeta').textContent='共 '+CATEGORIES.length+' 大分区 · '+MODULES.length+' 个管理模块 · 覆盖 14 张业务表与图片素材';
+</script>
+</body>
+</html>

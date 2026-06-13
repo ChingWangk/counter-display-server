@@ -1,4 +1,5 @@
 import express from 'express';
+import * as path from 'path';
 import generateRouter from './routes/generate';
 import categoriesRouter from './routes/categories';
 import backCabinetSpecsRouter from './routes/backCabinetSpecs';
@@ -22,6 +23,11 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
+
+// 可视化后台管理平台：同源托管静态页面。
+// 经 Nginx（80）→ Node（8080）转发，浏览器访问 http://47.103.65.4/admin/ 即与 /api 同源，无跨域限制。
+// public/ 不经 tsc 编译，运行时位于 dist/ 的同级目录（../public），git 部署随仓库带上。
+app.use('/admin', express.static(path.join(__dirname, '../public/admin')));
 
 app.use('/api/generate', generateRouter);
 app.use('/api/categories', categoriesRouter);
