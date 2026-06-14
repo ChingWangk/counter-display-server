@@ -143,6 +143,22 @@
   .pill{display:inline-block;font-size:10.5px;padding:1px 7px;border-radius:10px;font-weight:600}
   .pill.g{background:#E6F6EC;color:#1f8a4c}.pill.r{background:#FBE7E9;color:#c32a37}.pill.y{background:#FBEFDD;color:#a9651c}.pill.b{background:#E4EEF8;color:#1a5fa0}.pill.n{background:#EEF0F2;color:#667}
 
+  /* viz: 图库 + 柱状图 */
+  .viz-cap{font-size:11.5px;color:var(--grey);margin:2px 0 8px;font-weight:700}
+  .viz-gallery{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
+  .viz-gallery figure{margin:0;background:#fff;border:1px solid var(--line);border-radius:9px;overflow:hidden;box-shadow:0 2px 8px rgba(27,77,58,.06)}
+  .viz-gallery img{display:block;width:100%;height:76px;object-fit:cover;background:#F0EDE6}
+  .viz-gallery figcaption{font-size:10.5px;color:#444;padding:4px 5px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .viz-gallery figure.broken{display:none}
+  .viz-bars{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+  .viz-row{display:flex;align-items:center;gap:8px;font-size:11.5px}
+  .viz-lab{flex:0 0 120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#444;text-align:right}
+  .viz-track{flex:1;height:15px;background:#EFEBE2;border-radius:8px;overflow:hidden}
+  .viz-fill{display:block;height:100%;border-radius:8px;background:linear-gradient(90deg,var(--accent,var(--green)),var(--green-l));animation:growbar .6s ease}
+  .viz-fill.neg{background:linear-gradient(90deg,#E08A8F,var(--danger))}
+  .viz-val{flex:0 0 60px;font-variant-numeric:tabular-nums;font-weight:700;color:var(--green-d)}
+  @keyframes growbar{from{width:0}}
+
   .btn{border:0;border-radius:var(--r-btn);padding:8px 15px;font-size:12.5px;font-weight:700;cursor:pointer;transition:.15s;font-family:inherit}
   .btn.primary{background:var(--green);color:#fff}.btn.primary:hover{background:var(--green-d)}
   .btn.ghost{background:#fff;border:1px solid var(--line);color:var(--green-d)}.btn.ghost:hover{border-color:var(--green)}
@@ -693,6 +709,77 @@ const MODULES = [
 ];
 
 /* =====================================================================
+ *  可视化预览配置：有图片资产→图库；数值型→柱状图（与明细表并存）
+ * ===================================================================== */
+const VIZ = {
+  categories: { kind:'gallery', liveImgKey:'imageUrl', liveNameKey:'name', demo:[
+    {name:'中南海(金8mg)',url:'/images/categories/110105.jpg'},{name:'中南海(5mg)',url:'/images/categories/110108.jpg'},
+    {name:'中南海(3mg)',url:'/images/categories/110109.jpg'},{name:'中南海(硬酷爽风尚)',url:'/images/categories/110114.jpg'},
+    {name:'中南海(5mg细支)',url:'/images/categories/110118.jpg'},{name:'中南海(典8)',url:'/images/categories/110124.jpg'},
+    {name:'中南海(典5)',url:'/images/categories/110125.jpg'},{name:'中南海(冰耀中支)',url:'/images/categories/110129.jpg'},
+    {name:'钻石(荷花)',url:'/images/categories/130906.jpg'},{name:'钻石(细支荷花)',url:'/images/categories/130907.jpg'},
+    {name:'中华(软)',url:'/images/categories/310101.jpg'},{name:'熊猫',url:'/images/categories/310409.jpg'} ]},
+  festival_specs: { kind:'gallery', liveImgKey:'thumbUrl', liveNameKey:'name', demo:[
+    {name:'白沙(和天下)',url:'/images/back-festival/430117.png'},{name:'冬虫夏草(和润)',url:'/images/back-festival/150103.png'},
+    {name:'好猫(长乐九美)',url:'/images/back-festival/610713.png'},{name:'好猫(招财猫1600)',url:'/images/back-festival/610711.png'},
+    {name:'黄鹤楼(硬1916红爆)',url:'/images/back-festival/423827.png'},{name:'黄鹤楼(硬奇景)',url:'/images/back-festival/423817.png'},
+    {name:'黄金叶(天叶)',url:'/images/back-festival/410609.png'},{name:'黄山(徽商3mg)',url:'/images/back-festival/340141.png'} ]},
+  back_specs: { kind:'gallery', liveImgKey:'thumbnailImageUrl', liveNameKey:'label', demo:[
+    {name:'中华',url:'/images/categories/310140.jpg'},{name:'牡丹(红中支)',url:'/images/categories/310311.jpg'},
+    {name:'牡丹(蓝中支)',url:'/images/categories/310310.jpg'},{name:'熊猫',url:'/images/categories/310409.jpg'},
+    {name:'南京(九五)',url:'/images/categories/320516.jpg'},{name:'利群',url:'/images/categories/330423.jpg'},
+    {name:'黄山(徽商)',url:'/images/categories/340139.jpg'},{name:'黄金叶(天叶)',url:'/images/categories/410626.jpg'} ]},
+  avg_price:{ kind:'bar', liveLabelKey:'spec_name', liveValueKey:'avg_price', unit:'元', demo:[
+    ['熊猫(硬)',100],['黄鹤楼(硬1916)',100],['云烟(软大重九)',100],['中华(软)',61.4],['玉溪(软)',23],['利群(新版)',22]]},
+  coverage:{ kind:'bar', liveLabelKey:'spec_name', liveValueKey:'coverage_rate', unit:'%', liveQuery:'?order=desc&limit=12', demo:[
+    ['中华(软)',92],['玉溪(软)',78],['利群',70],['云烟',64],['南京',55],['爱喜(蓝莓爆珠)',21]]},
+  fill_rate:{ kind:'bar', liveLabelKey:'spec_name', liveValueKey:'fill_rate', unit:'%', liveQuery:'?order=desc&limit=12', demo:[
+    ['爱喜(蓝莓爆珠)',95],['中华(软)',88],['玉溪(软)',73],['黄鹤楼',66],['利群',60]]},
+  wholesale:{ kind:'bar', liveLabelKey:'spec_name', liveValueKey:'wholesale_qty', unit:'', liveQuery:'?top=12', demo:[
+    ['熊猫(硬)',12800],['中华(软)',11500],['黄鹤楼(1916)',9400],['玉溪',7200],['利群',5100]]},
+  growth:{ kind:'bar', liveLabelKey:'spec_name', liveValueKey:'yoy_rate', unit:'%', liveQuery:'?order=desc', demo:[
+    ['熊猫(硬)',18],['中华(软)',6],['牡丹',3],['红双喜',-2],['大前门',-8]]},
+  stockout:{ kind:'bar', liveLabelKey:'spec_name', liveValueKey:'stockout_rate', unit:'%', demo:[
+    ['玉溪(软)',66.7],['利群(新版)',48.4],['黄鹤楼',38.9],['南京',31.2]]},
+  co_purchase:{ kind:'bar', liveLabelKey:'spec_id', liveValueKey:'final_score', unit:'', demo:[
+    ['530112',0.81],['420105',0.72],['610201',0.66],['320516',0.55]]},
+  cust_inventory:{ kind:'bar', liveLabelKey:'spec_id', liveValueKey:'stock_days', unit:'天', demo:[
+    ['420108 黄鹤楼',46],['110101 中华(软)',5],['130301 熊猫(硬)',3],['530115 玉溪(软)',0]]},
+};
+MODULES.forEach(m=>{ if(VIZ[m.id]){ m.viz=VIZ[m.id]; if(m.viz.liveQuery && !m.liveQuery) m.liveQuery=m.viz.liveQuery; } });
+MODULES.find(m=>m.id==='praise').liveQuery='?spec_ids=110105,310101,530115,430117,340141,610713';
+
+const KV_LABEL={customer_id:'客户编号',customer_class:'客户分层',joined_at:'入网日期',has_pos:'POS 终端',spec_count:'规格数',spec_detail:'品规明细',updated_at:'更新时间'};
+function esc(s){ return String(s).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])); }
+function fmtCell(v){ if(v==null)return''; if(typeof v==='object')return Array.isArray(v)?v.length+' 项':'…'; return String(v); }
+function fmtVal(num,unit){ if(unit==='元')return '¥'+num; if(unit==='%')return num+'%'; if(unit)return num+' '+unit; return ''+num; }
+function imgUrl(u){ if(!u)return''; if(/^https?:/i.test(u))return u; const b=$('#apiBase').value.trim().replace(/\/$/,'')||location.origin; return b+u; }
+function pickImg(o,v){ return o[v.liveImgKey]||o.thumbnailImageUrl||(o.images&&o.images[0])||o.imageUrl||o.thumbUrl; }
+function kvVal(k,v){ if(k==='customer_class')return v==='regular'?'常规客户':'新客户'; if(typeof v==='boolean')return v?'是':'否'; return v==null?'—':String(v); }
+function kvTable(o){ return tableHtml(['字段','值'],Object.keys(o).map(k=>[KV_LABEL[k]||k,kvVal(k,o[k])])); }
+function renderViz(m,records,isLive){
+  const vz=$('#vizZone'); if(!vz)return; const v=m.viz; if(!v){vz.innerHTML='';return;}
+  if(v.kind==='gallery'){
+    const list=(isLive&&records?records.slice(0,12).map(o=>({name:o[v.liveNameKey]||o.name||o.label||o.id||'',url:imgUrl(pickImg(o,v))}))
+               :v.demo.map(d=>({name:d.name,url:imgUrl(d.url)}))).filter(x=>x.url);
+    vz.innerHTML='<div class="viz-cap">🖼 图片资产预览（'+(isLive?'实时':'样例')+' · '+list.length+' 项）</div>'+
+      '<div class="viz-gallery">'+list.map(x=>'<figure><img loading="lazy" src="'+x.url+'" onerror="this.closest(\'figure\').classList.add(\'broken\')"/><figcaption>'+esc(x.name)+'</figcaption></figure>').join('')+'</div>';
+  } else {
+    const pairs=(isLive&&records?records.map(o=>[String(o[v.liveLabelKey]??''),Number(o[v.liveValueKey])]).filter(p=>Number.isFinite(p[1]))
+                :v.demo.map(d=>[d[0],Number(d[1])])).slice(0,12);
+    if(!pairs.length){vz.innerHTML='';return;}
+    const maxAbs=Math.max.apply(null,pairs.map(p=>Math.abs(p[1])).concat([1]));
+    vz.innerHTML='<div class="viz-cap">📊 数据可视化（'+(isLive?'实时':'样例')+(v.unit?' · 单位 '+v.unit:'')+'）</div>'+
+      '<div class="viz-bars">'+pairs.map(p=>{
+        const neg=p[1]<0, w=Math.max(2,Math.abs(p[1])/maxAbs*100), num=Math.round(p[1]*10)/10;
+        return '<div class="viz-row"><span class="viz-lab" title="'+esc(p[0])+'">'+esc(p[0])+'</span>'+
+          '<span class="viz-track"><span class="viz-fill'+(neg?' neg':'')+'" style="width:'+w+'%"></span></span>'+
+          '<span class="viz-val">'+fmtVal(num,v.unit)+'</span></div>';
+      }).join('')+'</div>';
+  }
+}
+
+/* =====================================================================
  *  渲染
  * ===================================================================== */
 const $ = (s,el=document)=>el.querySelector(s);
@@ -813,12 +900,15 @@ function openDrawer(id){
       '</div></div>'+
       '<div class="blk"><h4>字段说明</h4>'+tableHtml(['字段','类型','说明'],m.fields)+'</div>'+
       '<div class="blk"><h4>数据预览 '+(liveMode?'（实时）':'（演示样例）')+'</h4>'+
+        (m.viz?'<div id="vizZone"></div>':'')+
         '<div id="dataZone">'+tableHtml(m.columns,m.rows)+'</div>'+
         (m.editable?editorHtml(m):'')+
       '</div>'+
     '</div>';
   $('#scrim').classList.add('show'); d.classList.add('show'); d.setAttribute('aria-hidden','false');
-  if(liveMode && m.method && m.method!=='POST' && !String(m.api).startsWith('内生')) fetchLive(m);
+  const willFetch = liveMode && m.method && m.method!=='POST' && !String(m.api).startsWith('内生');
+  if(willFetch) fetchLive(m);
+  else if(m.viz) renderViz(m,null,false);
 }
 function closeDrawer(){ $('#drawer').classList.remove('show'); $('#scrim').classList.remove('show'); $('#drawer').setAttribute('aria-hidden','true'); }
 
@@ -827,27 +917,32 @@ async function fetchLive(m){
   const base=$('#apiBase').value.trim().replace(/\/$/,'');
   let url=base+(m.needId?m.api.replace(':id','116314785'):m.api);  // 演示客户编号
   if(m.liveQuery) url+=m.liveQuery;
-  const zone=$('#dataZone'); if(!zone)return;
+  const zone=$('#dataZone'); const vz=$('#vizZone'); if(!zone)return;
   zone.innerHTML='<div class="sk" style="width:100%;margin:6px 0"></div>'.repeat(4);
   try{
     const ctrl=new AbortController(); const tm=setTimeout(()=>ctrl.abort(),6000);
     const res=await fetch(url,{signal:ctrl.signal}); clearTimeout(tm);
     const json=await res.json();
+    // 单对象响应（如客户档案）→ 键值预览
+    if(json.data && !Array.isArray(json.data) && typeof json.data==='object'){
+      zone.innerHTML=kvTable(json.data); if(vz) vz.innerHTML='';
+      toast(m.title+'：已加载实时数据','ok'); return;
+    }
     const arr = json.categories||json.counters||json.inventory||json.prices||json.stockouts||
                 json.coverage||json.fill_rates||json.ranks||json.growth||json.seasons||
-                json.scripts||json.recommendations||json.specs||json.data||[];
+                json.scripts||json.recommendations||json.specs||json.themes||json.data||[];
     if(Array.isArray(arr)&&arr.length){
       if(typeof arr[0]!=='object'){
         zone.innerHTML=tableHtml(['值'],arr.slice(0,40).map(v=>[String(v)]));
       } else {
-        const cols=Object.keys(arr[0]).slice(0,6);
-        const rows=arr.slice(0,15).map(o=>cols.map(k=>String(o[k]??'')));
-        zone.innerHTML=tableHtml(cols,rows);
+        const cols=Object.keys(arr[0]).filter(k=>!['images','specIds','matched_specs'].includes(k)).slice(0,6);
+        zone.innerHTML=tableHtml(cols,arr.slice(0,15).map(o=>cols.map(k=>fmtCell(o[k]))));
       }
+      if(vz) renderViz(m,arr,true);
       toast(m.title+'：已加载实时数据 '+arr.length+' 行','ok');
-    } else { zone.innerHTML=tableHtml(m.columns,m.rows); toast(m.title+'：实时无数据，显示样例','info'); }
+    } else { zone.innerHTML=tableHtml(m.columns,m.rows); if(vz) renderViz(m,null,false); toast(m.title+'：实时无数据，显示样例','info'); }
   }catch(err){
-    zone.innerHTML=tableHtml(m.columns,m.rows);
+    zone.innerHTML=tableHtml(m.columns,m.rows); if(vz) renderViz(m,null,false);
     toast(m.title+'：实时拉取失败（'+(location.protocol==='file:'?'file:// 跨域':'网络')+'），已回退演示数据','err');
   }
 }
