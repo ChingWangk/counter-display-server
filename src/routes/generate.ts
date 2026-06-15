@@ -198,6 +198,7 @@ router.post('/', async (req: Request, res: Response) => {
         extendedMap: await getExtendedCategoryMap(),
         onSaleIds,
         inventoryById: inv ?? new Map(),
+        customerId: customer_id,
       });
     }
 

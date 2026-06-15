@@ -247,7 +247,7 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     description: '勾选即在常规陈列中把待升级老品与同品牌升级新品并排,用红框圈出高亮,借常规曝光带动新品(自动嵌入常规行,不单独占行)',
     priorityRank: 1,
     tier: 'basic',
-    barColor: '#00838F',
+    barColor: '#E63946',  // 红:与 imageGen INLINE_BOX_COLOR_UPGRADE 一致(常规行内嵌红框),tag/chip 须同色
     displayMode: 'grouped',
     targetCabinetType: 'displayCabinet',
     layoutKind: 'inlineRegular',
@@ -259,7 +259,7 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     description: '勾选即在常规陈列中把脱销规格与其平替并排,用绿框圈出高亮,提示客人可买的替代款(自动嵌入常规行,不单独占行)',
     priorityRank: 2,
     tier: 'basic',
-    barColor: '#C2185B',
+    barColor: '#2E7D32',  // 绿:与 imageGen INLINE_BOX_COLOR_SUBSTITUTE 一致(常规行内嵌绿框),tag/chip 须同色
     displayMode: 'grouped',
     targetCabinetType: 'displayCabinet',
     layoutKind: 'inlineRegular',

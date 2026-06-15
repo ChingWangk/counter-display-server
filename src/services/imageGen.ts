@@ -135,7 +135,7 @@ interface RenderPack {
   spec: Category;
   boxRole?: 'L' | 'R';
   boxLabel?: string;   // 配对框左上角标签:'产品升级' | '滞销平替'
-  boxColor?: string;   // 配对框颜色(按专区:产品升级=绿、滞销平替=紫);缺省走兜底色
+  boxColor?: string;   // 配对框颜色(按专区:产品升级=红、滞销平替=绿);缺省走兜底色
 }
 
 /**

@@ -39,6 +39,17 @@ const SUBSTITUTE_PAIRS: Record<string, string> = {
 const UPGRADE_LABEL = '产品升级';
 const SUBSTITUTE_LABEL = '滞销平替';
 
+/**
+ * 样例/演示客户的「产品升级」配对组数上限。
+ * 自动派生升级覆盖面很广(同品牌 + 同支型 + 更贵 + 更晚上市即配对),个别客户会被圈出几十组红框,
+ * 演示图显得杂乱。命中此表的客户:写死配对(UPGRADE_PAIRS)无条件全保留,其余自动派生升级
+ * 按常规陈列出现顺序保留到上限为止,超出的还原为普通包(不画框、不额外插入副规格)。
+ * 平替(SUBSTITUTE)不受影响;未列出的客户不设上限,行为与原先完全一致。
+ */
+const UPGRADE_PAIR_CAP_BY_CUSTOMER: Record<string, number> = {
+  '116314785': 6,  // 样例展示客户:固定 3 组写死升级 + 至多 3 组自动派生 = 5~6 组
+};
+
 /** 一对内嵌红框配对:主规格(已在常规) + 紧跟其右侧的副规格。 */
 export interface InlineBoxedPair {
   /** 主规格 id(出现在常规陈列序列中) */
@@ -61,6 +72,8 @@ export interface ComputeInlinePairsArgs {
   onSaleIds: ReadonlySet<string>;
   /** spec_id → 库存快照,平替主规格脱销判定(stock_qty === 0)用 */
   inventoryById: ReadonlyMap<string, SpecInventoryInfo>;
+  /** 客户编号。命中 UPGRADE_PAIR_CAP_BY_CUSTOMER 时,产品升级配对裁到该上限(写死配对必留)。缺省不限。 */
+  customerId?: string;
 }
 
 /**
@@ -68,7 +81,7 @@ export interface ComputeInlinePairsArgs {
  * 两个专区都未启用 → 返回空 Map。
  */
 export function computeInlinePairs(args: ComputeInlinePairsArgs): Map<string, InlineBoxedPair> {
-  const { specs, enableUpgrade, enableSubstitute, extendedMap, onSaleIds, inventoryById } = args;
+  const { specs, enableUpgrade, enableSubstitute, extendedMap, onSaleIds, inventoryById, customerId } = args;
   const pairs = new Map<string, InlineBoxedPair>();
   if (!enableUpgrade && !enableSubstitute) return pairs;
 
@@ -117,7 +130,39 @@ export function computeInlinePairs(args: ComputeInlinePairsArgs): Map<string, In
         trySet(deriveSubstituteSecondary(primary, extendedMap, onSaleIds, isExcluded), 'substitute', SUBSTITUTE_LABEL)) continue;
   }
 
+  // 样例客户:产品升级组数封顶(写死配对必留,自动派生按出现序填到上限),避免演示图红框过多。
+  const cap = customerId ? UPGRADE_PAIR_CAP_BY_CUSTOMER[customerId] : undefined;
+  if (cap !== undefined) capUpgradePairs(pairs, cap);
+
   return pairs;
+}
+
+/**
+ * 把「产品升级」配对就地裁到 cap 组:
+ *  - 写死配对(primary 命中 UPGRADE_PAIRS)无条件全保留;
+ *  - 其余自动派生升级按 Map 插入序(= 常规陈列出现序)保留,直到达到 cap;
+ *  - 超出的自动派生升级从 pairs 删除 —— 其副规格不再被红框圈住,回退为普通包正常陈列。
+ * 平替(substitute)配对不计入、不删除。upgrade 配对本就 ≤ cap 时直接返回。
+ */
+function capUpgradePairs(pairs: Map<string, InlineBoxedPair>, cap: number): void {
+  const upgradeIds = [...pairs.entries()]
+    .filter(([, p]) => p.zoneId === 'productUpgrade')
+    .map(([pid]) => pid);
+  if (upgradeIds.length <= cap) return;
+
+  const isHardcoded = (pid: string): boolean =>
+    Object.prototype.hasOwnProperty.call(UPGRADE_PAIRS, pid);
+
+  // 保留集合:写死配对全保留(可能 >cap,以业务为先),自动派生按序补到 cap
+  const keep = new Set<string>(upgradeIds.filter(isHardcoded));
+  for (const pid of upgradeIds) {
+    if (keep.size >= cap) break;
+    keep.add(pid);  // Set 去重:写死的已在内,这里只新增自动派生
+  }
+
+  for (const pid of upgradeIds) {
+    if (!keep.has(pid)) pairs.delete(pid);
+  }
 }
 
 /**

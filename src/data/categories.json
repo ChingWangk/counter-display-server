@@ -2616,5 +2616,38 @@
     "category": "foreign",
     "province": null,
     "is_hot": false
+  },
+  {
+    "id": "511805",
+    "name": "天子(五粮香30年)",
+    "imageUrl": "/images/categories/511805.jpg",
+    "price": 263,
+    "brand": "天子",
+    "manufacturer": "重庆中烟工业有限责任公司",
+    "category": "provincial",
+    "province": "重庆",
+    "is_hot": false
+  },
+  {
+    "id": "520213",
+    "name": "贵烟(国酒香30)",
+    "imageUrl": "/images/categories/520213.jpg",
+    "price": 678.4,
+    "brand": "贵烟",
+    "manufacturer": "贵州中烟工业有限责任公司",
+    "category": "provincial",
+    "province": "贵州",
+    "is_hot": false
+  },
+  {
+    "id": "520217",
+    "name": "贵烟(小国酒香)",
+    "imageUrl": "/images/categories/520217.jpg",
+    "price": 300,
+    "brand": "贵烟",
+    "manufacturer": "贵州中烟工业有限责任公司",
+    "category": "provincial",
+    "province": "贵州",
+    "is_hot": false
   }
 ]
