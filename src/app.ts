@@ -18,6 +18,7 @@ import wholesaleRankRouter from './routes/wholesaleRank';
 import localBrandGrowthRouter from './routes/localBrandGrowth';
 import zonesAvailableRouter from './routes/zonesAvailable';
 import festivalSpecsRouter from './routes/festivalSpecs';
+import customerAuthRouter from './routes/customerAuth';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -47,6 +48,7 @@ app.use('/api/wholesale-rank', wholesaleRankRouter);
 app.use('/api/local-brand-growth', localBrandGrowthRouter);
 app.use('/api/zones/available', zonesAvailableRouter);
 app.use('/api/festival-specs', festivalSpecsRouter);
+app.use('/api/auth', customerAuthRouter);
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
