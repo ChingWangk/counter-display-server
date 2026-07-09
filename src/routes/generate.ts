@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
-import { GenerateResponse, CounterResult, Category } from '../types';
+import { GenerateResponse, CounterResult, Category, GenerateLayout } from '../types';
 import { generateCounterImage, PACK_WIDTH_CM, RegularFillLayout } from '../services/imageGen';
 import {
   SelectionContext,
@@ -225,6 +225,8 @@ router.post('/', async (req: Request, res: Response) => {
     const allocations: number[] = [];
     const regularRowsByCounter = new Map<string, number>();
     let regularLayout: RegularFillLayout | undefined;
+    // 归档版布局判定结果(仅 noDisplayZones 分支产出),回填响应供前端"陈列说明"叙述
+    let layoutInfo: GenerateLayout | undefined;
 
     // 用户在 zone-select 分配的初始 zone 行数(每柜)。专区模式下常规分配要**先给这些行让位**,
     // 否则常规(0.4 包间隙 → 每行容量降至 ~packsPerRow/1.4,需更多行)会吃掉用户的专区行而触发 400。
@@ -271,6 +273,13 @@ router.post('/', async (req: Request, res: Response) => {
       else if (specCount * 2 >= totalCap) mode = 'expanded';
       else mode = 'double';
       regularLayout = { mode };
+      // 回填布局判定:specCount 与判定同口径;specIds 去重供前端"未经销"排除
+      layoutInfo = {
+        mode,
+        specCount,
+        capacity: totalCap,
+        specIds: [...new Set(specs.map(s => s.id))],
+      };
     } else {
       // 专区模式:常规按"最小间隙容量"比例均衡分到各柜(把所有常规行视为一个空间,各柜密度一致),
       // 余量行留给底部专区。perRowCap 取 GAP_MIN(0.4 包)下每行可放数(≈ packsPerRow/1.4),
@@ -508,6 +517,7 @@ router.post('/', async (req: Request, res: Response) => {
       results,
       ...(filteredHotSpecs.length > 0 ? { filteredHotSpecs } : {}),
       ...(allZonePlacements.length > 0 ? { zonePlacements: allZonePlacements } : {}),
+      ...(layoutInfo ? { layout: layoutInfo } : {}),
     };
     res.json(body);
   } catch (err) {

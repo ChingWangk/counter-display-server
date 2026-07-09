@@ -51,5 +51,19 @@ export interface GenerateResponse {
   results?: CounterResult[];
   filteredHotSpecs?: { id: string; name: string }[];
   zonePlacements?: import('./services/strategies/types').ZonePlacement[];
+  /** 归档版布局判定(仅无展示柜专区路径,即新客户永远命中)。供前端"陈列说明"机器人叙述真实决策。 */
+  layout?: GenerateLayout;
   error?: string;
+}
+
+/** 归档版三档布局判定结果(generate 的 noDisplayZones 分支产出)。 */
+export interface GenerateLayout {
+  /** double=双包(资源充足) / expanded=单包扩大间距(适中) / standard=标准紧凑(偏紧) */
+  mode: 'double' | 'expanded' | 'standard';
+  /** 本次陈列的规格种数(= specs.length,与布局判定同口径) */
+  specCount: number;
+  /** 前柜+吊柜总容量(包) */
+  capacity: number;
+  /** 本次陈列的规格 id(去重),供"未经销规格"排除 */
+  specIds: string[];
 }

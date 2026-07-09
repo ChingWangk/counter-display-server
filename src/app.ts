@@ -19,6 +19,9 @@ import localBrandGrowthRouter from './routes/localBrandGrowth';
 import zonesAvailableRouter from './routes/zonesAvailable';
 import festivalSpecsRouter from './routes/festivalSpecs';
 import customerAuthRouter from './routes/customerAuth';
+import ondemandSpecsRouter from './routes/ondemandSpecs';
+import adminRouter from './routes/admin';
+import { adminAuth } from './middleware/adminAuth';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -49,6 +52,9 @@ app.use('/api/local-brand-growth', localBrandGrowthRouter);
 app.use('/api/zones/available', zonesAvailableRouter);
 app.use('/api/festival-specs', festivalSpecsRouter);
 app.use('/api/auth', customerAuthRouter);
+app.use('/api/ondemand-specs', ondemandSpecsRouter);
+// 后台管理通用数据接口：全程经 adminAuth 令牌校验（读写皆需 X-Admin-Token）
+app.use('/api/admin', adminAuth, adminRouter);
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
