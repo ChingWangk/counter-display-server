@@ -185,6 +185,45 @@
 
   @media(max-width:1080px){.kpi-grid{grid-template-columns:repeat(3,1fr)}.card-grid{grid-template-columns:repeat(2,1fr)}}
   @media(max-width:640px){.kpi-grid{grid-template-columns:repeat(2,1fr)}.card-grid{grid-template-columns:1fr};:root{--sp:16px}}
+
+  /* ---------- 数据库直连：令牌门 / 工具条 / 分页 / 导入 / 维护台 ---------- */
+  .auth-gate{position:fixed;inset:0;background:rgba(20,38,30,.55);backdrop-filter:blur(3px);z-index:90;display:none;align-items:center;justify-content:center}
+  .auth-gate.show{display:flex}
+  .auth-card{background:#fff;border-radius:16px;padding:30px 32px;width:min(400px,92vw);box-shadow:0 20px 60px rgba(0,0,0,.3);text-align:center}
+  .auth-card .auth-ic{font-size:38px}
+  .auth-card h3{margin:8px 0 4px;color:var(--green-d)}
+  .auth-card p{margin:0 0 16px;font-size:13px;color:var(--grey)}
+  .auth-card input{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:9px;font-size:14px;margin-bottom:12px;outline:none}
+  .auth-card input:focus{border-color:var(--green)}
+  .auth-card .btn.primary{width:100%;padding:11px}
+  .auth-card .demo-link{display:inline-block;margin-top:12px;font-size:12px;color:var(--grey);cursor:pointer;text-decoration:underline}
+
+  .admin-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+  .admin-toolbar .spacer{flex:1}
+  .admin-search{padding:6px 10px;border:1px solid var(--line);border-radius:7px;font-size:12px;outline:none;min-width:150px}
+  .admin-search:focus{border-color:var(--green)}
+  .admin-scroll{max-height:52vh;overflow:auto;border-radius:9px;border:1px solid var(--line)}
+  .admin-scroll table.dt{border:0;border-radius:0}
+  .admin-scroll table.dt th{position:sticky;top:0;z-index:1}
+  table.dt th.sortable{cursor:pointer;user-select:none}
+  table.dt th.sortable:hover{background:var(--green-d)}
+  .admin-pager{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:var(--grey)}
+  .admin-pager .spacer{flex:1}
+  .admin-pager .btn[disabled]{opacity:.4;pointer-events:none}
+
+  .imp-modal{position:fixed;inset:0;background:rgba(20,38,30,.5);z-index:95;display:none;align-items:center;justify-content:center}
+  .imp-modal.show{display:flex}
+  .imp-panel{background:#fff;border-radius:14px;width:min(620px,94vw);max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+  .imp-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;background:var(--green);color:#fff}
+  .imp-head .close{border:0;background:rgba(255,255,255,.2);color:#fff;width:28px;height:28px;border-radius:7px;cursor:pointer;font-size:15px}
+  .imp-body{padding:18px 20px;overflow:auto}
+  .imp-body input[type=file]{display:block;margin:10px 0;font-size:13px}
+  .imp-mode{display:flex;gap:16px;flex-wrap:wrap;margin:12px 0;font-size:13px}
+  .imp-mode label{display:flex;align-items:center;gap:5px;cursor:pointer}
+  .imp-foot{display:flex;justify-content:flex-end;gap:10px;padding:14px 20px;border-top:1px solid var(--line)}
+
+  .maint-tbl td{vertical-align:middle}
+  .maint-tbl code{font-size:10.5px;color:var(--grey)}
 </style>
 </head>
 <body>
@@ -206,6 +245,7 @@
         </label>
         <span id="srcLabel">演示数据</span>
         <input type="text" id="apiBase" placeholder="http://47.103.65.4" value="http://47.103.65.4" />
+        <button class="btn ghost mini" id="btnLogout" style="display:none" onclick="adminLogout()">登出</button>
       </div>
     </div>
   </header>
@@ -228,6 +268,20 @@
   <aside class="drawer" id="drawer" aria-hidden="true"></aside>
   <div id="toasts"></div>
 
+  <!-- 数据库直连：令牌门 + 导入弹窗 -->
+  <div class="auth-gate" id="authGate">
+    <div class="auth-card">
+      <div class="auth-ic">🔐</div>
+      <h3>后台管理 · 连接数据库</h3>
+      <p>请输入管理员令牌以查询 / 导入服务器数据库</p>
+      <input type="password" id="authTokenInput" placeholder="ADMIN_TOKEN" onkeydown="if(event.key==='Enter')submitToken()" />
+      <button class="btn primary" onclick="submitToken()">连接</button>
+      <span class="demo-link" onclick="dismissAuthGate()">以演示数据浏览 ›</span>
+      <div class="hint" style="margin-top:14px">令牌由运维在服务器 PM2 环境变量 <code>ADMIN_TOKEN</code> 配置，仅保存在本机浏览器。</div>
+    </div>
+  </div>
+  <div class="imp-modal" id="importModal"></div>
+
 <script>
 /* =====================================================================
  *  数据模型：分区 / KPI / 模块（含设计初衷、功能介绍、字段说明、示例数据）
@@ -245,18 +299,18 @@ const CATEGORIES = [
 ];
 
 const KPIS = [
-  { ic:'🏪', v:128, u:'家', k:'接入门店', jump:'customer' },
+  { ic:'🏪', v:1007, u:'家', k:'接入门店', jump:'customer' },
   { ic:'🚬', v:386, u:'种', k:'品类规格', jump:'goods' },
   { ic:'🧩', v:7,   u:'类', k:'功能专区', jump:'goods' },
   { ic:'💬', v:86,  u:'条', k:'经营话术', jump:'rule' },
   { ic:'🗃️', v:14,  u:'张', k:'业务数据表', jump:'market' },
-  { ic:'🕒', v:'2026-05', u:'', k:'最近数据快照', jump:'market' },
+  { ic:'🕒', v:'2026-06', u:'', k:'最近数据快照', jump:'market' },
 ];
 
 const MODULES = [
   /* ---------------- 客户数据中心 ---------------- */
   {
-    id:'cust_info', cat:'customer', icon:'🪪', title:'客户档案', access:'只读', metric:'128 家门店',
+    id:'cust_info', cat:'customer', icon:'🪪', title:'客户档案', access:'只读', metric:'1007 家门店',
     desc:'门店入网时间与 POS 标记，分层判定的依据',
     intent:'客户分层（新客户 / 常规客户）是整个系统流程分叉的起点：它决定了选品数据来源、功能专区与价签是否可用。后台集中呈现每家门店的分层判定依据，便于核对“某门店为何看不到专区/价签”。',
     features:[
@@ -389,6 +443,32 @@ const MODULES = [
       ['310143','红双喜(硬)','红双喜','上海',15,['集团','pill g'],['—','pill n'],['是','pill g']],
       ['340136','黄山(记忆)','黄山','安徽',23,['省外','pill b'],['—','pill n'],['是','pill g']],
       ['530115','玉溪(软)','玉溪','云南',23,['省外','pill b'],['—','pill n'],['否','pill n']],
+    ],
+  },
+  {
+    id:'dim_category_ext', cat:'goods', icon:'🧬', title:'品规维度扩展', access:'可维护', metric:'季度维护',
+    desc:'品规业务维度（支型/口味/价类/上市/退市/继任）',
+    intent:'在品类目录之外，为每个规格补充业务维度：支型(pack_type)、口味(flavor)、价类(tier)、上市日期(launch_date)、是否退市(is_delisted)、继任规格(successor)、是否工商共育等。这些字段驱动尝鲜/爆珠/怀旧等专区判定，需季度维护。',
+    features:[
+      '与 categories.json 运行时合并成完整品规；',
+      '尝鲜(launch_date)、爆珠(pack_type/flavor)、怀旧(is_delisted/successor) 等专区依赖；',
+      '季度由业务填表 → CSV → 导入。',
+    ],
+    source:'表 dim_category_ext', method:'GET', api:'/api/admin/tables/dim_category_ext/rows', needId:false,
+    fields:[
+      ['spec_id','VARCHAR','规格编码（主键）'],
+      ['pack_type','VARCHAR','支型：常规/中支/细支/短支/爆珠'],
+      ['flavor','VARCHAR','口味'],
+      ['tier','VARCHAR','价类：一~五类'],
+      ['launch_date','DATE','上市日期'],
+      ['is_delisted','BOOL','是否退市'],
+      ['successor_id','VARCHAR','继任规格'],
+    ],
+    columns:['编码','支型','口味','价类','上市','退市'],
+    rows:[
+      ['110101','常规','烤烟','一类','2019-01-01','否'],
+      ['110105','细支','烤烟','一类','2023-06-01','否'],
+      ['530115','常规','烤烟','二类','2018-03-01','否'],
     ],
   },
   {
@@ -559,6 +639,32 @@ const MODULES = [
       ['紧俏烟过滤','smart 且 N>C 触发','过滤部分紧俏烟（高价烟保护）'],
       ['客户分层线','入网 3 个月','区分新客户 / 常规客户'],
       ['多柜分配','按容量比例','容量大者多分，误差按容量降序调整'],
+    ],
+  },
+  {
+    id:'ondemand_specs', cat:'rule', icon:'📦', title:'按需供应规格', access:'只读', metric:'运营维护',
+    desc:'“只要订购即可获得供应”的可扩充经营品规（按档位 / 投放政策组织）',
+    intent:'为客户（尤其新客户）推荐可扩充的经营品规。智能陈列助手的“经营建议”据此，从本表中筛出“客户尚未经销”的按需供应规格逐条推荐，帮助客户提升盈利水平。数据由运营侧维护（Excel→CSV→LOAD DATA 导入，见《按需供应规格-数据落库与维护.md》）。',
+    features:[
+      '按档位（grade）+ 投放政策（policy）组织的可供应规格清单；',
+      '推荐时排除“客户主营品规 ∪ 本次陈列已展示”的规格；',
+      'grade 为空表示不限档位（对所有客户可推荐）；',
+      'sort_order 控制推荐优先级（小在前）。',
+    ],
+    source:'表 ondemand_supply_specs', method:'GET', api:'/api/ondemand-specs', needId:false,
+    fields:[
+      ['spec_id','VARCHAR','规格编码（对应品类目录）'],
+      ['spec_name','—','品名（接口按目录解析）'],
+      ['grade','VARCHAR','适用档位（与 cust_info.grade 对齐；空=不限）'],
+      ['policy','VARCHAR','投放政策标签（可空）'],
+      ['sort_order','INT','推荐排序（小在前）'],
+      ['note','VARCHAR','备注（可空）'],
+    ],
+    columns:['编码','品名','档位','投放政策','排序','备注'],
+    rows:[
+      ['110101','中华(软)','5','按需投放',1,'高端引流'],
+      ['530115','玉溪(软)','5','按需投放',2,'—'],
+      ['130301','熊猫(硬)','','计划投放',3,'不限档位'],
     ],
   },
 
@@ -832,18 +938,22 @@ function renderChips(){
     const ch=document.createElement('div'); ch.className='chip'; ch.dataset.cat=c.id;
     ch.textContent=c.icon+' '+c.name; wrap.appendChild(ch);
   });
+  const maint=document.createElement('div'); maint.className='chip'; maint.dataset.cat='maint';
+  maint.textContent='🔧 维护台'; maint.title='需定期更新的数据表'; wrap.appendChild(maint);
   wrap.querySelectorAll('.chip').forEach(ch=>ch.onclick=()=>{
     wrap.querySelectorAll('.chip').forEach(x=>x.classList.remove('active'));
     ch.classList.add('active'); filterCat(ch.dataset.cat);
   });
 }
 function filterCat(cat){
-  CATEGORIES.forEach(c=>{ const blk=document.getElementById('catblk-'+c.id); blk.style.display=(cat==='all'||cat===c.id)?'':'none'; });
+  if(cat==='maint'){ renderMaintenance(); return; }
+  if($('#cats').dataset.mode==='maint'){ renderCats(); }  // 从维护台切回 → 还原分区
+  CATEGORIES.forEach(c=>{ const blk=document.getElementById('catblk-'+c.id); if(blk) blk.style.display=(cat==='all'||cat===c.id)?'':'none'; });
 }
 function flashCat(id){ const h=document.querySelector('#catblk-'+id+' .cat-head'); if(!h)return; h.animate([{boxShadow:'0 0 0 0 rgba(45,106,79,.0)'},{boxShadow:'0 0 0 4px rgba(45,106,79,.25)'},{boxShadow:'0 0 0 0 rgba(45,106,79,0)'}],{duration:1100}); }
 
 function renderCats(){
-  const root=$('#cats'); root.innerHTML='';
+  const root=$('#cats'); root.innerHTML=''; root.dataset.mode='';
   CATEGORIES.forEach(c=>{
     const mods=MODULES.filter(m=>m.cat===c.id);
     const blk=document.createElement('div'); blk.className='cat-block'; blk.id='catblk-'+c.id;
@@ -857,11 +967,15 @@ function renderCats(){
     mods.forEach(m=>{
       const card=document.createElement('div'); card.className='card';
       card.style.setProperty('--accent',c.color); card.style.setProperty('--accent-bg',c.bg);
+      const tk=TKEY[m.id], tm=tk?ADMIN.meta[tk]:null;
+      const cad=tm&&CADENCE[tm.cadence]?CADENCE[tm.cadence]:null;
+      const cadBadge=cad?'<span class="pill '+cad.pill+'" title="维护节奏" style="margin-left:auto">'+cad.label+(tm.managed?' ★':'')+'</span>':'';
+      const metric=(tm&&tm.exists)?(tm.rowCount+' 行'):m.metric;
       card.innerHTML=
-        '<div class="row1"><div class="ic">'+m.icon+'</div><div class="ttl">'+m.title+'</div></div>'+
+        '<div class="row1"><div class="ic">'+m.icon+'</div><div class="ttl">'+m.title+'</div>'+cadBadge+'</div>'+
         '<div class="desc">'+m.desc+'</div>'+
         '<div class="foot"><span class="tag '+(m.access==='可维护'?'rw':'ro')+'">'+m.access+'</span>'+
-          '<span class="metric">'+m.metric+' ›</span></div>';
+          '<span class="metric">'+metric+' ›</span></div>';
       card.onclick=(e)=>{ ripple(e,card); openDrawer(m.id); };
       grid.appendChild(card);
     });
@@ -906,7 +1020,7 @@ function openDrawer(id){
       '</div>'+
     '</div>';
   $('#scrim').classList.add('show'); d.classList.add('show'); d.setAttribute('aria-hidden','false');
-  const willFetch = liveMode && m.method && m.method!=='POST' && !String(m.api).startsWith('内生');
+  const willFetch = liveMode && m.method && m.method!=='POST' && !String(m.api).startsWith('内生') && !(TKEY[m.id] && ADMIN.token);
   if(willFetch) fetchLive(m);
   else if(m.viz) renderViz(m,null,false);
 }
@@ -990,6 +1104,246 @@ function today(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMon
 const _openDrawer=openDrawer;
 openDrawer=function(id){ _openDrawer(id); const m=MODULES.find(x=>x.id===id); if(m&&m.editable&&!liveMode) rebuildTable(m); };
 
+/* ================================================================
+ *  数据库直连层（后台管理 API /api/admin/*，需管理员令牌）
+ * ================================================================ */
+/* 模块 id → 真实表名（admin API 的 key）。未在此的模块走旧的产品接口/演示预览。 */
+const TKEY = {
+  cust_info:'cust_info', cust_counters:'cust_counters', cust_inventory:'cust_inventory',
+  customer_specs:'customer_specs', dim_category_ext:'dim_category_ext',
+  ondemand_specs:'ondemand_supply_specs', praise:'sys_praise_scripts',
+  seasons:'sys_season_calendar', co_purchase:'ref_co_purchase_rules',
+  avg_price:'ref_yangpu_avg_price', stockout:'ref_yangpu_stockout',
+  coverage:'ref_market_coverage', fill_rate:'ref_order_fill_rate',
+  wholesale:'ref_quarterly_wholesale_rank', growth:'ref_local_brand_growth',
+};
+const CADENCE = {
+  monthly:{label:'每月',pill:'y'}, quarterly:{label:'每季',pill:'b'}, yearly:{label:'年度',pill:'b'},
+  manual:{label:'手动',pill:'g'}, mined:{label:'挖掘',pill:'n'}, api:{label:'接口',pill:'n'},
+};
+const ADMIN = { token: localStorage.getItem('adminToken')||'', meta:{}, state:{} };
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function adminBase(){ return $('#apiBase').value.trim().replace(/\/$/,''); }
+function moduleIdForTable(tkey){ return Object.keys(TKEY).find(id=>TKEY[id]===tkey)||''; }
+function updateLogoutBtn(){ const b=$('#btnLogout'); if(b) b.style.display=ADMIN.token?'':'none'; }
+
+async function adminFetch(path, opts){
+  opts = opts||{}; opts.headers = Object.assign({'X-Admin-Token':ADMIN.token}, opts.headers||{});
+  const res = await fetch(adminBase()+path, opts);
+  if(res.status===401){ toast('令牌无效，请重新登录','err'); openAuthGate(); throw new Error('401'); }
+  if(res.status===503){ toast('后台未配置 ADMIN_TOKEN，管理接口不可用','err'); throw new Error('503'); }
+  return res;
+}
+
+/* ---- 令牌门 ---- */
+function openAuthGate(){ $('#authGate').classList.add('show'); setTimeout(()=>{const i=$('#authTokenInput'); if(i)i.focus();},60); }
+function closeAuthGate(){ $('#authGate').classList.remove('show'); }
+function dismissAuthGate(){ closeAuthGate(); liveMode=false; $('#liveToggle').checked=false; $('#srcLabel').textContent='演示数据'; renderCats(); toast('已切换到演示数据浏览','info'); }
+async function submitToken(){
+  const v=$('#authTokenInput').value.trim(); if(!v){ toast('请输入令牌','err'); return; }
+  ADMIN.token=v; localStorage.setItem('adminToken',v); updateLogoutBtn();
+  try{ await loadTablesMeta(); closeAuthGate(); toast('已连接数据库','ok'); }
+  catch(e){ /* 401/503 已提示 */ }
+}
+function adminLogout(){ ADMIN.token=''; localStorage.removeItem('adminToken'); ADMIN.meta={}; updateLogoutBtn(); renderCats(); openAuthGate(); }
+
+/* ---- 表清单元数据（行数 / 节奏 / 新鲜度）---- */
+async function loadTablesMeta(){
+  const res=await adminFetch('/api/admin/tables'); const j=await res.json();
+  if(!j.success) throw new Error('meta');
+  ADMIN.meta={}; (j.tables||[]).forEach(t=>ADMIN.meta[t.key]=t);
+  const managed=(j.tables||[]).filter(t=>t.managed).length;
+  $('#footMeta').textContent='共 '+(j.tables||[]).length+' 张业务表 · '+managed+' 张需定期维护 · 数据库直连';
+  renderCats();
+}
+
+/* 新鲜度徽章：latest 与当前月/季/日粗比较 */
+function freshnessBadge(t){
+  if(!t||!t.freshnessUnit||!t.latest) return '';
+  const now=new Date(); let cur='';
+  if(t.freshnessUnit==='月') cur=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+  else if(t.freshnessUnit==='季') cur=now.getFullYear()+'/Q'+(Math.floor(now.getMonth()/3)+1);
+  else if(t.freshnessUnit==='日') cur=now.toISOString().slice(0,10);
+  const latest=String(t.latest).slice(0,cur.length);
+  const ok=latest>=cur;
+  return '<span class="pill '+(ok?'g':'r')+'">'+(ok?'最新':'待更新')+'</span>';
+}
+
+/* ---- 抽屉内：全量分页表 ---- */
+function openTableData(m, tkey){
+  const zone=$('#dataZone'); if(!zone)return;
+  const meta=ADMIN.meta[tkey]||{};
+  ADMIN.state[tkey]=ADMIN.state[tkey]||{page:1,pageSize:20,search:'',orderBy:'',dir:'asc'};
+  const st=ADMIN.state[tkey];
+  zone.innerHTML=
+    '<div class="admin-toolbar">'+
+      '<input class="admin-search" id="admSearch" placeholder="搜索…" value="'+esc(st.search)+'"/>'+
+      '<button class="btn ghost mini" id="admSearchBtn">搜索</button>'+
+      '<span class="spacer"></span>'+
+      '<button class="btn ghost mini" id="admExport">⬇ 导出CSV</button>'+
+      (meta.importable?'<button class="btn primary mini" id="admImport">⬆ 导入Excel</button>':'<span class="pill n">挖掘/只读</span>')+
+    '</div>'+
+    '<div id="admTableWrap"></div>'+
+    '<div class="admin-pager" id="admPager"></div>';
+  const doSearch=()=>{ st.search=$('#admSearch').value.trim(); st.page=1; loadAdminRows(tkey); };
+  $('#admSearchBtn').onclick=doSearch;
+  $('#admSearch').addEventListener('keydown',e=>{ if(e.key==='Enter')doSearch(); });
+  $('#admExport').onclick=()=>exportTable(tkey);
+  const imp=$('#admImport'); if(imp) imp.onclick=()=>openImport(tkey,m);
+  loadAdminRows(tkey);
+}
+
+async function loadAdminRows(tkey){
+  const st=ADMIN.state[tkey]; const wrap=$('#admTableWrap'); if(!wrap)return;
+  wrap.innerHTML='<div class="sk" style="width:100%;margin:6px 0"></div>'.repeat(4);
+  try{
+    let qs='?page='+st.page+'&pageSize='+st.pageSize+'&search='+encodeURIComponent(st.search);
+    if(st.orderBy) qs+='&orderBy='+encodeURIComponent(st.orderBy)+'&dir='+st.dir;
+    const res=await adminFetch('/api/admin/tables/'+tkey+'/rows'+qs); const j=await res.json();
+    if(!j.success){ wrap.innerHTML='<div class="hint">查询失败</div>'; return; }
+    if(j.tableMissing){ wrap.innerHTML='<div class="hint">该表尚未建立（导入后可见）</div>'; $('#admPager').innerHTML=''; return; }
+    st.orderBy=j.orderBy; st.dir=j.dir;
+    let h='<div class="admin-scroll"><table class="dt"><thead><tr>'+j.columns.map(c=>{
+      const ar=(st.orderBy===c.name)?(st.dir==='asc'?' ▲':' ▼'):'';
+      return '<th class="sortable" data-col="'+esc(c.name)+'">'+esc(c.name)+ar+'</th>';
+    }).join('')+'</tr></thead><tbody>';
+    if(!j.rows.length) h+='<tr><td colspan="'+j.columns.length+'" style="text-align:center;color:#999">无数据</td></tr>';
+    j.rows.forEach(r=>{ h+='<tr>'+j.columns.map(c=>'<td>'+esc(fmtCell(r[c.name]))+'</td>').join('')+'</tr>'; });
+    wrap.innerHTML=h+'</tbody></table></div>';
+    wrap.querySelectorAll('th.sortable').forEach(th=>th.onclick=()=>{
+      const col=th.dataset.col;
+      if(st.orderBy===col) st.dir=(st.dir==='asc'?'desc':'asc'); else { st.orderBy=col; st.dir='asc'; }
+      st.page=1; loadAdminRows(tkey);
+    });
+    renderPager(tkey, j.total, j.page, j.pageSize);
+  }catch(e){ if(String(e.message)!=='401'&&String(e.message)!=='503') wrap.innerHTML='<div class="hint">加载失败</div>'; }
+}
+
+function renderPager(tkey,total,page,pageSize){
+  const p=$('#admPager'); if(!p)return; const st=ADMIN.state[tkey];
+  const pages=Math.max(1,Math.ceil(total/pageSize));
+  p.innerHTML='<span>共 '+total+' 行 · 第 '+page+'/'+pages+' 页</span><span class="spacer"></span>'+
+    '<button class="btn ghost mini" id="pgPrev"'+(page<=1?' disabled':'')+'>‹ 上一页</button>'+
+    '<button class="btn ghost mini" id="pgNext"'+(page>=pages?' disabled':'')+'>下一页 ›</button>';
+  const prev=$('#pgPrev'),next=$('#pgNext');
+  if(prev)prev.onclick=()=>{ if(st.page>1){st.page--;loadAdminRows(tkey);} };
+  if(next)next.onclick=()=>{ if(st.page<pages){st.page++;loadAdminRows(tkey);} };
+}
+
+function exportTable(tkey){
+  toast('正在导出…','info');
+  adminFetch('/api/admin/tables/'+tkey+'/export').then(r=>r.blob()).then(b=>{
+    const url=URL.createObjectURL(b); const a=document.createElement('a');
+    a.href=url; a.download=tkey+'.csv'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    toast('已导出 '+tkey+'.csv','ok');
+  }).catch(()=>{});
+}
+
+/* ---- 导入向导 ---- */
+function impModeLabel(mode){ return mode==='replace'?'整表替换（先自动备份）':mode==='append'?'追加':'增量合并'; }
+function curImpMode(){ const r=document.querySelector('input[name=impMode]:checked'); return r?r.value:'upsert'; }
+function openImport(tkey, m){
+  const meta=ADMIN.meta[tkey]||{}; const title=m&&m.title?m.title:(meta.label||tkey);
+  const mm=meta.importMode||'upsert';
+  $('#importModal').innerHTML=
+    '<div class="imp-panel">'+
+      '<div class="imp-head"><b>⬆ 导入 · '+esc(title)+'</b><button class="close" onclick="closeImport()">✕</button></div>'+
+      '<div class="imp-body">'+
+        '<div class="hint">选择 .xlsx / .csv；<b>表头需与列名一致</b>。默认策略：<b>'+impModeLabel(mm)+'</b>。可先「预览」核对再提交。</div>'+
+        '<input type="file" id="impFile" accept=".xlsx,.xls,.csv"/>'+
+        '<div class="imp-mode">写入方式：'+
+          '<label><input type="radio" name="impMode" value="upsert"'+(mm==='upsert'?' checked':'')+'/> 增量合并</label>'+
+          '<label><input type="radio" name="impMode" value="append"'+(mm==='append'?' checked':'')+'/> 追加</label>'+
+          '<label><input type="radio" name="impMode" value="replace"'+(mm==='replace'?' checked':'')+'/> 整表替换</label>'+
+        '</div>'+
+        '<div id="impPreview"></div>'+
+      '</div>'+
+      '<div class="imp-foot">'+
+        '<button class="btn ghost" onclick="closeImport()">取消</button>'+
+        '<button class="btn ghost" id="impDry">预览</button>'+
+        '<button class="btn primary" id="impGo" disabled>提交导入</button>'+
+      '</div>'+
+    '</div>';
+  $('#importModal').classList.add('show');
+  $('#impDry').onclick=()=>runImport(tkey,true);
+  $('#impGo').onclick=()=>runImport(tkey,false);
+  $('#impFile').onchange=()=>{ $('#impGo').disabled=true; $('#impPreview').innerHTML='<div class="hint">已选择文件，点「预览」核对。</div>'; };
+}
+function closeImport(){ $('#importModal').classList.remove('show'); }
+
+async function runImport(tkey, dry){
+  const fi=$('#impFile'); const f=fi&&fi.files[0]; if(!f){ toast('请先选择文件','err'); return; }
+  const mode=curImpMode();
+  if(!dry && mode==='replace' && !confirm('整表替换会先备份当前表、再清空重灌，确定继续？')) return;
+  const url='/api/admin/tables/'+tkey+'/import?mode='+mode+(dry?'&dryRun=1':'&confirm=1');
+  const prev=$('#impPreview'); prev.innerHTML='<div class="sk" style="width:100%;margin:6px 0"></div>'.repeat(3);
+  try{
+    const res=await adminFetch(url,{method:'POST', body:f});
+    const j=await res.json();
+    if(!j.success){ prev.innerHTML='<div class="hint" style="color:#c32a37">'+esc(j.error||'失败')+'</div>'+(j.preview?impPreviewHtml(j.preview):''); return; }
+    if(j.dryRun){
+      prev.innerHTML=impPreviewHtml(j.preview);
+      $('#impGo').disabled=(j.preview.validRows===0);
+      toast('预览：有效 '+j.preview.validRows+' 行，错误 '+j.preview.errorCount,'info');
+    }else{
+      prev.innerHTML='<div class="hint">✅ 完成：写入 '+j.written+' 行'+(j.backupFile?'，已备份 '+esc(j.backupFile):'')+'。</div>';
+      toast('导入完成：'+j.written+' 行','ok');
+      $('#impGo').disabled=true;
+      await loadTablesMeta(); if(ADMIN.state[tkey]) loadAdminRows(tkey);
+    }
+  }catch(e){ if(String(e.message)!=='401'&&String(e.message)!=='503') prev.innerHTML='<div class="hint" style="color:#c32a37">请求失败</div>'; }
+}
+function impPreviewHtml(p){
+  let h='<div class="hint">映射列：'+esc(p.mappedColumns.join(', '))+'　|　共 '+p.totalRows+' 行，有效 '+p.validRows+'，错误 '+p.errorCount+'</div>';
+  if(p.sample&&p.sample.length){
+    const cols=p.mappedColumns;
+    h+='<div class="admin-scroll"><table class="dt"><thead><tr>'+cols.map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr></thead><tbody>'+
+      p.sample.map(r=>'<tr>'+cols.map(c=>'<td>'+esc(fmtCell(r[c]))+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>';
+  }
+  if(p.errors&&p.errors.length){ h+='<div class="hint" style="color:#c32a37">错误示例：'+esc(p.errors.slice(0,5).map(e=>'第'+e.row+'行 '+e.msg).join('；'))+'</div>'; }
+  return h;
+}
+function quickImport(tkey){ openImport(tkey, {title:(ADMIN.meta[tkey]||{}).label||tkey}); }
+
+/* ---- 维护台 ---- */
+function renderMaintenance(){
+  const root=$('#cats'); root.dataset.mode='maint';
+  if(!ADMIN.token || !Object.keys(ADMIN.meta).length){
+    root.innerHTML='<div class="cat-block"><div class="hint">请先在右上角「连接数据库」后查看维护台。</div></div>'; return;
+  }
+  const managed=Object.values(ADMIN.meta).filter(t=>t.managed);
+  const order={monthly:0,quarterly:1,yearly:2,manual:3};
+  managed.sort((a,b)=>((order[a.cadence]==null?9:order[a.cadence])-(order[b.cadence]==null?9:order[b.cadence])));
+  let h='<div class="cat-block"><div class="cat-head"><div class="badge-ic" style="background:var(--warn)">🔧</div>'+
+    '<div><h3>维护台 · 需定期更新的数据表</h3><div class="desc">按节奏排序 · 显示行数与最新数据 · 一键导入/导出</div></div>'+
+    '<div class="cnt">'+managed.length+' 张</div></div>';
+  h+='<table class="dt maint-tbl"><thead><tr><th>数据表</th><th>节奏</th><th>行数</th><th>最新</th><th>状态</th><th>操作</th></tr></thead><tbody>';
+  managed.forEach(t=>{
+    const cad=CADENCE[t.cadence]||{label:t.cadence,pill:'n'};
+    const status=t.exists?(freshnessBadge(t)||'<span class="pill n">—</span>'):'<span class="pill r">未建表</span>';
+    const mid=moduleIdForTable(t.key);
+    h+='<tr>'+
+      '<td><b>'+esc(t.label)+'</b><br><code>'+esc(t.table)+'</code></td>'+
+      '<td><span class="pill '+cad.pill+'">'+cad.label+'</span></td>'+
+      '<td>'+(t.exists?t.rowCount:'—')+'</td>'+
+      '<td>'+esc(t.latest||'—')+'</td>'+
+      '<td>'+status+'</td>'+
+      '<td>'+(mid?'<button class="btn ghost mini" onclick="openDrawer(\''+mid+'\')">查看</button> ':'')+
+        (t.importable?'<button class="btn primary mini" onclick="quickImport(\''+t.key+'\')">导入</button>':'')+'</td>'+
+    '</tr>';
+  });
+  root.innerHTML=h+'</tbody></table></div>';
+}
+
+/* 抽屉打开时：tkey 模块（且已连库）→ 用 admin API 渲染全量分页表 */
+const _openDrawerBase=openDrawer;
+openDrawer=function(id){
+  _openDrawerBase(id);
+  const m=MODULES.find(x=>x.id===id);
+  if(m && TKEY[m.id] && liveMode && ADMIN.token){ openTableData(m, TKEY[m.id]); }
+};
+
 /* ---------------- 数据源切换 ---------------- */
 $('#liveToggle').onchange=function(){
   liveMode=this.checked;
@@ -1008,7 +1362,14 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape')closeDrawer(); });
 
 /* ---------------- init ---------------- */
 renderKpis(); renderChips(); renderCats();
-$('#footMeta').textContent='共 '+CATEGORIES.length+' 大分区 · '+MODULES.length+' 个管理模块 · 覆盖 14 张业务表与图片素材';
+$('#footMeta').textContent='共 '+CATEGORIES.length+' 大分区 · '+MODULES.length+' 个管理模块 · 覆盖业务表与图片素材';
+
+/* 数据库直连引导：实时模式下有令牌→载入元数据；无令牌→弹登录门 */
+updateLogoutBtn();
+if(liveMode){
+  if(ADMIN.token) loadTablesMeta().catch(()=>{});
+  else openAuthGate();
+}
 </script>
 </body>
 </html>

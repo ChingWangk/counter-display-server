@@ -4,8 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "ts-node-dev --respawn src/app.ts",
-    "sync-admin": "cp \"../后台管理系统/index.html\" public/admin/index.html",
-    "build": "tsc && cp -r src/data dist/ && (npm run sync-admin || echo 'sync-admin skipped (source html not found)')",
+    "build": "tsc && cp -r src/data dist/",
     "start": "node dist/app.js",
     "migrate": "ts-node src/migrate.ts",
     "import-customers": "ts-node src/importCustomers.ts",
