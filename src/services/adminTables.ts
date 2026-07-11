@@ -86,6 +86,14 @@ export const ADMIN_TABLES: AdminTable[] = [
     searchable: ['customer_id'],
     note: 'spec_detail 为逗号分隔品规串；一般由 POST /api/customer-specs upsert。',
   },
+  {
+    key: 'cust_spec_price', table: 'cust_spec_price', label: '客户售价明细', category: 'customer',
+    keyColumns: ['customer_id', 'spec_id', 'snapshot_month'], cadence: 'monthly', managed: true,
+    importMode: 'upsert', importable: true,
+    searchable: ['customer_id', 'spec_id'],
+    freshness: { unit: '月', select: 'snapshot_month', order: 'snapshot_month' },
+    note: '价签助手对照表的"您的当前售价"列；由 build_cust_spec_price.py 从价库/零售明细生成，与 ref_yangpu_avg_price 对照。',
+  },
 
   // ---------------- 商品与陈列资源 ----------------
   {
