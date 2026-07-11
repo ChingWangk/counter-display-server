@@ -252,7 +252,7 @@ router.post('/tables/:key/import', express.raw({ type: () => true, limit: '25mb'
     const cols = await getColumns(def.table);
     const sensitive = new Set(def.sensitiveColumns || []);
     const targetCols = cols.filter(c => !c.isAuto && !sensitive.has(c.name));
-    const norm = (s: string) => s.trim().toLowerCase();
+    const norm = (s: string) => s.replace(/^﻿/, '').trim().toLowerCase();  // 去掉 CSV BOM，保证首列表头可匹配
     const headerKeys = raw.length ? Object.keys(raw[0]) : [];
     const headerMap = new Map<string, string>();  // realCol -> headerKey
     for (const c of targetCols) {

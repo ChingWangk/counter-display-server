@@ -58,17 +58,19 @@ router.get('/', async (_req: Request, res: Response) => {
 });
 
 /**
- * GET /api/ondemand-specs/recommend?customer_id=&exclude_ids=a,b&limit=8
+ * GET /api/ondemand-specs/recommend?customer_id=&exclude_ids=a,b[&limit=]
  * 推荐“客户未经销”的按需供应规格：
  *   1. 客户档位 = cust_info.grade（表/字段未就绪 → 视为未知）
  *   2. 排除集 = 客户主营品规(customer_specs.spec_detail) ∪ exclude_ids(本次陈列已展示)
  *   3. 候选 = ondemand_supply_specs 中 (grade = 客户档位 OR grade IS NULL)；档位未知则取全部
- *   4. 去掉排除集，按 sort_order 取前 limit 个；规格名由品类目录解析
+ *   4. 去掉排除集，按 sort_order 排序全部返回（有多少推多少）；传正整数 limit 才截断；规格名由品类目录解析
  */
 router.get('/recommend', async (req: Request, res: Response) => {
   const customerId = String(req.query.customer_id || '').trim();
   const excludeParam = String(req.query.exclude_ids || '').trim();
-  const limit = Math.min(Math.max(parseInt(String(req.query.limit || '8'), 10) || 8, 1), 30);
+  // 默认不限量（有多少推多少）；仅当显式传正整数 limit 时才截断。
+  const rawLimit = parseInt(String(req.query.limit || ''), 10);
+  const limit = rawLimit > 0 ? rawLimit : Infinity;
 
   try {
     // 1) 客户档位

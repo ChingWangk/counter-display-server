@@ -119,6 +119,14 @@ export const ADMIN_TABLES: AdminTable[] = [
     note: '次年前整表更新。',
   },
   {
+    key: 'agent_feedback', table: 'agent_feedback', label: '助手回答反馈', category: 'rule',
+    keyColumns: ['id'], cadence: 'api', managed: false,
+    importMode: 'readonly', importable: false,
+    searchable: ['agent_id', 'customer_id', 'question', 'feedback'],
+    defaultOrderBy: 'created_at',
+    note: '小程序对话里用户对回答的点赞/点踩，只读回收，用于修正话术；由前端事件写入。',
+  },
+  {
     key: 'ref_co_purchase_rules', table: 'ref_co_purchase_rules', label: '连带/平替规则', category: 'rule',
     keyColumns: ['id'], cadence: 'mined', managed: false,
     importMode: 'readonly', importable: false,

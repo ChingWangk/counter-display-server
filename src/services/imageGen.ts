@@ -136,6 +136,29 @@ interface RenderPack {
   boxRole?: 'L' | 'R';
   boxLabel?: string;   // 配对框左上角标签:'产品升级' | '滞销平替'
   boxColor?: string;   // 配对框颜色(按专区:产品升级=红、滞销平替=绿);缺省走兜底色
+  boxZoneId?: string;  // 配对所属专区('productUpgrade' | 'substitute'),置于 'L' 包,供裁"局部特写"归类
+}
+
+/**
+ * 专区「局部特写」裁图:从整张陈列图裁出的一小块 PNG,供助手气泡"陈列说明"配图讲解。
+ *  - 占行专区(工商共育/重点推荐/尝鲜/爆珠):一张 = 该专区整段行的局部图,只带 zoneId。
+ *  - 内嵌红/绿框配对(产品升级/平替):每对一张,带 primaryId(老品/脱销)+ secondaryId(升级款/平替)。
+ */
+export interface ZoneCrop {
+  zoneId: string;
+  imageUrl: string;
+  primaryId?: string;
+  secondaryId?: string;
+}
+
+/** 本行画出的内嵌配对框像素区域(drawFlatRow 回收,供整图完成后裁"局部特写")。 */
+interface BoxRegion {
+  xLeft: number;
+  xRight: number;
+  baseY: number;
+  zoneId?: string;
+  primaryId: string;
+  secondaryId: string;
 }
 
 /**
@@ -451,7 +474,7 @@ function buildRegularRenderPacks(
     if (pair && !pairedDone.has(s.id)) {
       pairedDone.add(s.id);
       const boxColor = inlineBoxColor(pair.zoneId);
-      out.push({ spec: s, boxRole: 'L', boxLabel: pair.boxLabel, boxColor });
+      out.push({ spec: s, boxRole: 'L', boxLabel: pair.boxLabel, boxColor, boxZoneId: pair.zoneId });
       out.push({ spec: pair.secondary, boxRole: 'R', boxLabel: pair.boxLabel, boxColor });
       continue;
     }
@@ -546,9 +569,15 @@ export async function generateCounterImage(
   priceTagMap?: ReadonlyMap<string, number>,
   regularLayout?: RegularFillLayout,
   inlinePairs?: ReadonlyMap<string, InlineBoxedPair>,
-): Promise<{ imageUrl: string; usedCount: number }> {
+): Promise<{ imageUrl: string; usedCount: number; crops: ZoneCrop[] }> {
   const displayAreaW = Math.round(counter.length * PX_PER_CM);
   const levels = counter.levels;
+
+  // 局部特写裁图的收集容器:
+  //  - boxRegions:内嵌红/绿框配对的像素区域(drawFlatRow 回收),整图画完后每对裁一张。
+  //  - zoneBands:占行专区(工商共育/重点推荐/尝鲜/爆珠)各自占用的行区间,整图画完后每段裁一张。
+  const boxRegions: BoxRegion[] = [];
+  const zoneBands: { zoneId: string; startRow: number; rows: number }[] = [];
 
   if (displayAreaW <= 0 || levels <= 0) {
     throw new Error(`柜台 ${counter.id} 参数无效: length=${counter.length}, levels=${counter.levels}`);
@@ -603,15 +632,21 @@ export async function generateCounterImage(
   for (const zone of topZonePlacements) {
     const units = zone.groups.map(g => g.primary);
     const rows = Math.max(0, Math.min(zone.rowCount, levels));
+    const bandStart = topRowSlots.length;  // 顶部条行从 row 0 起连续填充,已填数即本段绝对起始行
     for (let r = 0; r < rows; r++) {
       topRowSlots.push({ type: 'zone-carton', units: units.slice(r * 2, r * 2 + 2) });
     }
-    if (rows > 0) topLabelInfo.push({ rows, label: zone.label, barColor: zone.barColor });
+    if (rows > 0) {
+      topLabelInfo.push({ rows, label: zone.label, barColor: zone.barColor });
+      zoneBands.push({ zoneId: zone.zoneId, startRow: bandStart, rows });
+    }
   }
 
   // 2b. 底部专区行:单品 staggered / 分组 bin-packing(逻辑同归档)
   const bottomRowSlots: (ZoneSingleRowSlot | ZoneGroupRowSlot | ZoneNewProductRowSlot)[] = [];
   const bottomLabelInfo: BottomLabelInfo[] = [];
+  // 底部专区各自占用的行区间(相对 bottomStartRow),整图画完后每段裁一张"局部特写"。
+  const bottomBands: { zoneId: string; relStart: number; rows: number }[] = [];
   for (const zone of bottomZonePlacements) {
     const before = bottomRowSlots.length;
     // 爆珠:按子专区(subZones)分段渲染,每段一条左侧标签(分段竖标 + 段图标)。自带标签,处理完即跳过末尾通用 push。
@@ -619,6 +654,7 @@ export async function generateCounterImage(
       const plan = planBeadSubzoneRows(zone, displayAreaW);
       for (const s of plan.slots) bottomRowSlots.push(s);
       for (const l of plan.labels) bottomLabelInfo.push(l);
+      bottomBands.push({ zoneId: zone.zoneId, relStart: before, rows: bottomRowSlots.length - before });
       continue;
     }
     if (zone.zoneId === 'newProduct') {
@@ -654,6 +690,7 @@ export async function generateCounterImage(
       }
     }
     bottomLabelInfo.push({ rows: bottomRowSlots.length - before, label: zone.label, barColor: zone.barColor });
+    bottomBands.push({ zoneId: zone.zoneId, relStart: before, rows: bottomRowSlots.length - before });
   }
 
   // ---- 3. 行槽装配:顶部条行 → 常规 → 底部专区 → 空闲(slot 为 undefined) ----
@@ -663,6 +700,10 @@ export async function generateCounterImage(
   for (let i = 0; i < regularRowLayouts.length && fillRow < levels; i++) rowSlots[fillRow++] = regularRowLayouts[i];
   const bottomStartRow = fillRow;
   for (let i = 0; i < bottomRowSlots.length && fillRow < levels; i++) rowSlots[fillRow++] = bottomRowSlots[i];
+  // 底部专区行段转绝对行号(用于裁"局部特写")
+  for (const b of bottomBands) {
+    zoneBands.push({ zoneId: b.zoneId, startRow: bottomStartRow + b.relStart, rows: b.rows });
+  }
 
   // 标签块(绝对起始行):顶部从 0 累加,底部从 bottomStartRow 累加
   const zoneLabelBlocks: ZoneLabelBlock[] = [];
@@ -750,7 +791,7 @@ export async function generateCounterImage(
     }
     if (rowPacks.length === 0) continue;
 
-    await drawFlatRow(ctx, rowPacks, labelW, displayAreaW, baseY, priceTagMap, capGap);
+    await drawFlatRow(ctx, rowPacks, labelW, displayAreaW, baseY, priceTagMap, capGap, boxRegions);
   }
 
   // ---- 绘制层板(横贯整个画布,后续 zone label 会覆盖其在 label 栏内的部分) ----
@@ -783,7 +824,62 @@ export async function generateCounterImage(
   const buffer = canvas.toBuffer('image/png');
   fs.writeFileSync(outputPath, buffer);
 
-  return { imageUrl: `/images/generated/${filename}`, usedCount };
+  // ---- 裁「局部特写」小图:占行专区各一张(整段行,含左侧专区标签) + 内嵌红/绿框每对一张 ----
+  // 从已合成的整图 canvas 上裁,保证局部与整图完全一致(含红/绿框、★、店长推荐金底等标记)。
+  const crops: ZoneCrop[] = [];
+  let cropSeq = 0;
+  const CROP_PAD = 12;                 // 配对裁图四周留白(像素)
+  const MAX_PAIR_CROPS_PER_ZONE = 6;   // 每个 inline 专区最多裁几对(与前端讲解条数上限一致,避免小图过多)
+
+  for (const b of zoneBands) {
+    if (b.rows <= 0 || b.startRow >= levels) continue;
+    const topR = b.startRow;
+    const botR = Math.min(topR + b.rows - 1, levels - 1);
+    const sy = PADDING_TOP + topR * (CELL_H + SHELF_BOARD_H);
+    const ey = PADDING_TOP + botR * (CELL_H + SHELF_BOARD_H) + CELL_H;
+    crops.push(writeZoneCrop(canvas, 0, sy, canvasW, ey - sy, counter.id, b.zoneId, cropSeq++));
+  }
+
+  const pairCountByZone = new Map<string, number>();
+  for (const r of boxRegions) {
+    const zkey = r.zoneId || 'inline';
+    const n = pairCountByZone.get(zkey) || 0;
+    if (n >= MAX_PAIR_CROPS_PER_ZONE) continue;
+    pairCountByZone.set(zkey, n + 1);
+    const sx = Math.max(0, r.xLeft - CROP_PAD);
+    const cy = Math.max(0, r.baseY - CROP_PAD);
+    const ex = Math.min(canvasW, r.xRight + CROP_PAD);
+    const ey = Math.min(canvasH, r.baseY + CELL_H + CROP_PAD);
+    crops.push(writeZoneCrop(canvas, sx, cy, ex - sx, ey - cy, counter.id, zkey, cropSeq++, r.primaryId, r.secondaryId));
+  }
+
+  return { imageUrl: `/images/generated/${filename}`, usedCount, crops };
+}
+
+/**
+ * 从整图 src 裁出 [sx,sy,sw,sh] 区域,写为独立 PNG 到 OUTPUT_DIR,返回 ZoneCrop。
+ * 供生成专区/配对的「局部特写」小图(助手气泡"陈列说明"配图)。
+ */
+function writeZoneCrop(
+  src: ReturnType<typeof createCanvas>,
+  sx: number,
+  sy: number,
+  sw: number,
+  sh: number,
+  counterId: string,
+  zoneId: string,
+  seq: number,
+  primaryId?: string,
+  secondaryId?: string,
+): ZoneCrop {
+  const w = Math.max(1, Math.round(sw));
+  const h = Math.max(1, Math.round(sh));
+  const crop = createCanvas(w, h);
+  const cctx = crop.getContext('2d');
+  cctx.drawImage(src, Math.round(sx), Math.round(sy), w, h, 0, 0, w, h);
+  const filename = `crop_${counterId}_${zoneId}_${seq}_${Date.now()}.png`;
+  fs.writeFileSync(path.join(OUTPUT_DIR, filename), crop.toBuffer('image/png'));
+  return { zoneId, imageUrl: `/images/generated/${filename}`, primaryId, secondaryId };
 }
 
 /**
@@ -806,6 +902,7 @@ async function drawFlatRow(
   baseY: number,
   priceTagMap?: ReadonlyMap<string, number>,
   capGap: boolean = true,
+  boxSink?: BoxRegion[],
 ): Promise<void> {
   const packs = rowPacks;
   if (packs.length === 0) return;
@@ -855,11 +952,22 @@ async function drawFlatRow(
   // 配对框 + 标签叠加在烟包之上;框线落配对自身 2 格 footprint 内侧,绝不覆盖相邻规格。
   for (let col = 0; col + 1 < packs.length; col++) {
     if (packs[col].boxRole === 'L' && packs[col + 1].boxRole === 'R') {
+      const xLeft = xs[col];
+      const xRight = xs[col + 1] + CELL_W;
       drawInlineBox(
-        ctx, xs[col], xs[col + 1] + CELL_W, baseY,
+        ctx, xLeft, xRight, baseY,
         packs[col].boxLabel || '',
         packs[col].boxColor || INLINE_BOX_COLOR_DEFAULT,
       );
+      // 回收该对的像素区域,供整图完成后裁出"局部特写"(每对一张)
+      if (boxSink) {
+        boxSink.push({
+          xLeft, xRight, baseY,
+          zoneId: packs[col].boxZoneId,
+          primaryId: packs[col].spec.id,
+          secondaryId: packs[col + 1].spec.id,
+        });
+      }
     }
   }
 }

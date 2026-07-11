@@ -376,11 +376,34 @@ router.post('/', async (req: Request, res: Response) => {
           for (const a of g.alternatives) usedSpecIds.add(a.id);
         }
       }
-      // 内嵌红框配对:统计本柜命中的主规格(在 cabinetSpecs 内),按 zoneId 汇总为 chip 占位 placement。
+      // ---- 先生成本柜陈列图,同时拿到「专区局部特写」裁图(crops) ----
+      const regRows = regularRowsByCounter.get(cabinet.id) || 0;
+      const { imageUrl, crops } = await generateCounterImage(cabinet, cabinetSpecs, regRows, cabinetZones, priceTagMap, regularLayout, inlinePairs);
+      results.push({
+        counterId: cabinet.id,
+        counterType: cabinet.type,
+        imageUrl,
+      });
+
+      // 裁图归类:占行专区按 zoneId(整段行一张)、内嵌配对按主规格 id(每对一张)。
+      const bandCropByZone = new Map<string, string>();
+      const pairCropByPrimary = new Map<string, string>();
+      for (const cr of crops) {
+        if (cr.primaryId) pairCropByPrimary.set(cr.primaryId, cr.imageUrl);
+        else bandCropByZone.set(cr.zoneId, cr.imageUrl);
+      }
+      // 占行专区的局部特写回填到落位(cabinetZones 元素即 zonePlacements 里的同一对象,随响应下发)。
+      for (const p of cabinetZones) {
+        const url = bandCropByZone.get(p.zoneId);
+        if (url) p.cropImageUrl = url;
+      }
+
+      // 内嵌红框配对:统计本柜命中的主规格(在 cabinetSpecs 内),按 zoneId 汇总为 chip 占位 placement,
+      // 每组带上该对的局部特写裁图(pairCropByPrimary),供 result → 助手气泡按组展示。
       // 主规格首次出现即记一对;副规格随主规格内嵌渲染,两者都并入 usedSpecIds。
       if (inlinePairs.size > 0) {
         const seenPid = new Set<string>();
-        const groupsByZone = new Map<'productUpgrade' | 'substitute', { primary: Category; alternatives: Category[] }[]>();
+        const groupsByZone = new Map<'productUpgrade' | 'substitute', { primary: Category; alternatives: Category[]; cropImageUrl?: string }[]>();
         for (const s of cabinetSpecs) {
           const pair = inlinePairs.get(s.id);
           if (!pair || seenPid.has(s.id)) continue;
@@ -388,7 +411,7 @@ router.post('/', async (req: Request, res: Response) => {
           usedSpecIds.add(s.id);
           usedSpecIds.add(pair.secondary.id);
           const arr = groupsByZone.get(pair.zoneId) || [];
-          arr.push({ primary: s, alternatives: [pair.secondary] });
+          arr.push({ primary: s, alternatives: [pair.secondary], cropImageUrl: pairCropByPrimary.get(s.id) });
           groupsByZone.set(pair.zoneId, arr);
         }
         for (const [zoneId, groups] of groupsByZone) {
@@ -407,13 +430,6 @@ router.post('/', async (req: Request, res: Response) => {
           });
         }
       }
-      const regRows = regularRowsByCounter.get(cabinet.id) || 0;
-      const { imageUrl } = await generateCounterImage(cabinet, cabinetSpecs, regRows, cabinetZones, priceTagMap, regularLayout, inlinePairs);
-      results.push({
-        counterId: cabinet.id,
-        counterType: cabinet.type,
-        imageUrl,
-      });
       offset += allocations[i];
     }
 

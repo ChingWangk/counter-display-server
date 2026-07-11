@@ -158,12 +158,19 @@ export interface ZonePlacement {
   /** beadFlavor(爆珠)专用:左侧分段竖标的分段元信息,顺序与 groups 中子专区出现顺序一致。
    *  imageGen 据每段 count 切分扁平 groups、按段分配行,并在左栏逐段画 label + iconImage。 */
   subZones?: { id: string; label: string; iconImage: string; barColor: string; count: number }[];
+  /** 本专区在其所在柜台陈列图上的「局部特写」裁图 URL(占行专区 = 整段行的局部图)。
+   *  由 imageGen 生成整图后裁出、generate.ts 回填;供 result → 助手气泡"陈列说明"配图讲解。
+   *  inlineRegular(产品升级/平替)不占行,不填此字段——它的裁图落在各 group.cropImageUrl(每对一张)。 */
+  cropImageUrl?: string;
 }
 
 /** Category 形态的单组陈列单元(供 imageGen 绘制)。 */
 export interface ZonePlacementGroup {
   primary: Category;
   alternatives: Category[];
+  /** 该组在陈列图上的「局部特写」裁图 URL。目前用于 inlineRegular(产品升级/平替)——
+   *  每个红/绿框配对裁成一张小图,供助手气泡按组展示"这一对长这样"。 */
+  cropImageUrl?: string;
 }
 
 /** 专区单条规格的展示数据；不同专区按需填充扩展字段。 */
