@@ -22,7 +22,7 @@ import { newCustomerStrategy } from '../services/strategies/newCustomerStrategy'
 import { regularCustomerStrategy } from '../services/strategies/regularCustomerStrategy';
 import { getCustomerClass } from '../services/customerClass';
 import { getCustomerHasPos } from '../services/strategies/substitute';
-import { getPriceTagMap } from '../services/priceTag';
+import { getCustomerPriceComparison } from '../services/priceTag';
 
 // 加载背柜主题组数据
 interface ThemeGroup { id: string; label: string; specIds: string[]; images: string[]; }
@@ -352,12 +352,17 @@ router.post('/', async (req: Request, res: Response) => {
       }
     }
 
-    // ---- 拉价签白名单:根据 cust_info.has_pos 决定 ref_yangpu_avg_price 子集 ----
-    // 价签是常规客户专属功能(基于客户库存与杨浦区均价对比),新客户走归档版不渲染。
-    let priceTagMap = new Map<string, number>();
+    // ---- 拉价签:仅"客户售价 < 区域常卖价"的待升价规格才贴价签 ----
+    // 价签是常规客户专属功能(基于客户成交价与区域常卖价对比),新客户走归档版不渲染。
+    // 全部规格都卖到位(无偏低) → priceTagMap 为空 → 陈列图不贴价签、response 里 showPriceTag=false,
+    // 前端据此隐藏价签助手悬浮入口(见 result 页)。价签上印的是"区域常卖价"=建议上调到的目标价。
+    const priceTagMap = new Map<string, number>();
+    let showPriceTag = false;
     if (customer_id && !isNewCustomer) {
       const hasPos = await getCustomerHasPos(customer_id);
-      priceTagMap = await getPriceTagMap(hasPos);
+      const priceCmp = await getCustomerPriceComparison(customer_id, hasPos);
+      for (const r of priceCmp.rows) priceTagMap.set(r.spec_id, r.region_price);
+      showPriceTag = priceCmp.belowCount > 0;
     }
 
     // ---- 逐柜台生成图片 ----
@@ -534,6 +539,7 @@ router.post('/', async (req: Request, res: Response) => {
       ...(filteredHotSpecs.length > 0 ? { filteredHotSpecs } : {}),
       ...(allZonePlacements.length > 0 ? { zonePlacements: allZonePlacements } : {}),
       ...(layoutInfo ? { layout: layoutInfo } : {}),
+      ...(showPriceTag ? { showPriceTag: true } : {}),
     };
     res.json(body);
   } catch (err) {

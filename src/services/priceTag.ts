@@ -1,64 +1,26 @@
 import pool from '../db';
 import { RowDataPacket } from 'mysql2';
 
-/**
- * 价签白名单数据访问：根据客户的 has_pos 标记，从 ref_yangpu_avg_price 取该客户应显示价签的规格。
- *
- * 业务口径：
- *  - has_pos=true（安装 POS 的客户）→ show_for_pos = 1 的规格（约 7 个高价规格）
- *  - has_pos=false（未安装 POS）   → show_for_nopos = 1 的规格（约 3 个）
- *
- * 取最新 snapshot_month。返回 Map<spec_id, avg_price>。
- *
- * 表/数据缺失时返回空 Map，使价签静默退场，不影响出图。
+/*
+ * 价签口径（负责人拍板）：价签只贴在"客户售价 < 区域常卖价"的待升价规格上，印的是区域常卖价=建议上调到的目标价。
+ * 白名单按 has_pos 取 ref_yangpu_avg_price 的 show_for_pos(≈7) / show_for_nopos(≈3) 子集，再逐客户过滤偏低规格。
+ * 判定与取数统一走下方 getCustomerPriceComparison —— 出图贴签用它、价签助手对照表也用它，保证图/话术同源。
  */
-export async function getPriceTagMap(hasPos: boolean): Promise<Map<string, number>> {
-  const flagColumn = hasPos ? 'show_for_pos' : 'show_for_nopos';
-  try {
-    const [rows] = await pool.execute<PriceTagRow[]>(
-      `
-      SELECT spec_id, avg_price
-        FROM ref_yangpu_avg_price
-       WHERE snapshot_month = (SELECT MAX(snapshot_month) FROM ref_yangpu_avg_price)
-         AND ${flagColumn} = 1
-      `,
-    );
-    const map = new Map<string, number>();
-    for (const r of rows) {
-      const price = Number(r.avg_price);
-      if (Number.isFinite(price)) map.set(r.spec_id, price);
-    }
-    return map;
-  } catch (err: unknown) {
-    const code = (err as { code?: string }).code;
-    if (code === 'ER_NO_SUCH_TABLE') {
-      console.warn('[priceTag] ref_yangpu_avg_price table not ready, returning empty map');
-      return new Map();
-    }
-    console.error('[priceTag] getPriceTagMap error:', err);
-    return new Map();
-  }
-}
 
-interface PriceTagRow extends RowDataPacket {
-  spec_id: string;
-  avg_price: string;  // DECIMAL → string in mysql2
-}
+// ---- 价签助手「待升价对照表」：区域常卖价 × 客户当前售价（仅偏低规格） ----
 
-// ---- 价签助手「价格对照表」：区域常卖价 × 客户当前售价 ----
-
-/** 对照表一行：某白名单规格的区域常卖价 vs 该客户当前售价。 */
+/** 对照表一行：某待升价规格的区域常卖价 vs 该客户当前售价（仅收录售价 < 区域价的规格）。 */
 export interface PriceCompareRow {
   spec_id: string;
   spec_name: string;
-  region_price: number;       // 区域常卖价（ref_yangpu_avg_price.avg_price）
-  my_price: number | null;    // 客户当前售价（cust_spec_price；查不到 = null = "暂无记录"）
-  below: boolean;             // my_price 有值且 < region_price（售价偏低、可上调）
+  region_price: number;       // 区域常卖价（ref_yangpu_avg_price.avg_price；建议上调到的目标价）
+  my_price: number;           // 客户当前售价（cust_spec_price；一定 < region_price）
+  below: true;                // 恒为 true（对照表只列偏低规格，保留字段供前端标红/兼容）
 }
 
 export interface PriceComparison {
-  rows: PriceCompareRow[];    // 该客户 has_pos 白名单下的全部规格（缺售价的也在列，my_price=null）
-  belowCount: number;         // 售价偏低（可上调）的规格数
+  rows: PriceCompareRow[];    // 只含"卖得比区域常卖价低"的待升价规格；无则为空数组
+  belowCount: number;         // = rows.length，售价偏低（可上调）的规格数
   snapshotMonth: string | null;
 }
 
@@ -75,10 +37,11 @@ interface CustPriceRow extends RowDataPacket {
 }
 
 /**
- * 取某客户的价格对照表：ref_yangpu_avg_price（区域价，按 has_pos 白名单）左连 cust_spec_price（客户售价）。
- * 白名单规格全列出；查不到客户售价的 my_price=null（前端标"暂无记录"）。
+ * 取某客户的"待升价对照表"：ref_yangpu_avg_price（区域价，按 has_pos 白名单）连 cust_spec_price（客户售价），
+ * 只保留客户售价 < 区域常卖价的规格（核心是提醒老板把这几款调高，卖价已达标/查不到售价的一律不列）。
  *
- * 任一表缺失时降级：区域表缺 → 返回空表；客户售价表缺 → 全部 my_price=null（只显示区域价）。
+ * 任一表缺失时降级：区域表缺 → 空表；客户售价表缺 → 无从判定偏低 → 空表（绝不臆造"卖低了"）。
+ * rows 为空即代表"该客户没有需要升价的规格"，调用方据此决定不出价签、不弹价签助手。
  */
 export async function getCustomerPriceComparison(
   customerId: string,
@@ -97,7 +60,7 @@ export async function getCustomerPriceComparison(
     );
     if (regionRows.length === 0) return { rows: [], belowCount: 0, snapshotMonth: null };
 
-    // 客户售价（最新月）——表未建时视为"全部暂无记录"，不报错
+    // 客户售价（最新月）——表未建时 myPriceById 为空 → 无从判定偏低 → 最终空表，不报错
     const myPriceById = new Map<string, number>();
     let snapshotMonth: string | null = null;
     try {
@@ -118,17 +81,18 @@ export async function getCustomerPriceComparison(
     } catch (err: unknown) {
       const code = (err as { code?: string }).code;
       if (code !== 'ER_NO_SUCH_TABLE') throw err;
-      console.warn('[priceTag] cust_spec_price table not ready, all my_price = null');
+      console.warn('[priceTag] cust_spec_price table not ready, comparison degrades to empty');
     }
 
-    const rows: PriceCompareRow[] = regionRows.map(r => {
+    // 只保留"客户售价 < 区域常卖价"的待升价规格；卖价达标或查不到售价的直接丢弃。
+    const rows: PriceCompareRow[] = [];
+    for (const r of regionRows) {
       const region = Number(r.avg_price);
-      const mine = myPriceById.has(r.spec_id) ? myPriceById.get(r.spec_id)! : null;
-      const below = mine !== null && mine < region;
-      return { spec_id: r.spec_id, spec_name: r.spec_name, region_price: region, my_price: mine, below };
-    });
-    const belowCount = rows.filter(r => r.below).length;
-    return { rows, belowCount, snapshotMonth };
+      const mine = myPriceById.get(r.spec_id);
+      if (mine === undefined || !(mine < region)) continue;
+      rows.push({ spec_id: r.spec_id, spec_name: r.spec_name, region_price: region, my_price: mine, below: true });
+    }
+    return { rows, belowCount: rows.length, snapshotMonth };
   } catch (err: unknown) {
     const code = (err as { code?: string }).code;
     if (code === 'ER_NO_SUCH_TABLE') {

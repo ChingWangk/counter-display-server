@@ -53,6 +53,8 @@ export interface GenerateResponse {
   zonePlacements?: import('./services/strategies/types').ZonePlacement[];
   /** 归档版布局判定(仅无展示柜专区路径,即新客户永远命中)。供前端"陈列说明"机器人叙述真实决策。 */
   layout?: GenerateLayout;
+  /** 该客户存在"售价低于区域常卖价"的待升价规格 → 出图已贴价签、前端应显示价签助手悬浮入口。缺省视为 false。 */
+  showPriceTag?: boolean;
   error?: string;
 }
 

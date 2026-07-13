@@ -24,6 +24,7 @@ interface AuthRow extends RowDataPacket {
   joined_at: string | Date | null;
   has_pos: number | null;
   login_password: string | null;
+  customer_name: string | null;
 }
 
 /** 距今 N 个月之前的日期（按自然月），与 customerInfo/customerClass 保持一致口径。 */
@@ -64,7 +65,7 @@ router.post('/login', async (req: Request, res: Response) => {
 
   try {
     const [rows] = await pool.execute<AuthRow[]>(
-      'SELECT joined_at, has_pos, login_password FROM cust_info WHERE customer_id = ?',
+      'SELECT joined_at, has_pos, login_password, customer_name FROM cust_info WHERE customer_id = ?',
       [customerId],
     );
 
@@ -88,6 +89,7 @@ router.post('/login', async (req: Request, res: Response) => {
         customer_class: c.customer_class,
         joined_at: c.joined_at,
         has_pos: Boolean(rows[0].has_pos),
+        customer_name: rows[0].customer_name ?? null,  // 店名（用作机器人称呼 / 配置页展示）；无则 null
         must_change_password: expected === DEFAULT_PASSWORD,
       },
     });
@@ -99,7 +101,7 @@ router.post('/login', async (req: Request, res: Response) => {
       if (password === DEFAULT_PASSWORD) {
         res.json({
           success: true,
-          data: { customer_id: customerId, customer_class: 'new', joined_at: null, has_pos: false, must_change_password: true },
+          data: { customer_id: customerId, customer_class: 'new', joined_at: null, has_pos: false, customer_name: null, must_change_password: true },
         });
       } else {
         res.json({ success: false, error: '密码错误' });

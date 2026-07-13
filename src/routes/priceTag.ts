@@ -6,9 +6,9 @@ const router = Router();
 
 /**
  * GET /api/price-tag/comparison?customer_id=xxx
- * 价签助手「价格对照表」：按客户 has_pos 白名单，返回区域常卖价 × 客户当前售价。
- * 白名单规格全列出；查不到客户售价的 my_price=null（前端标"暂无记录"）。
- * 任一数据表缺失时降级为空/仅区域价，不报错。
+ * 价签助手「待升价对照表」：按客户 has_pos 白名单，只返回"客户售价 < 区域常卖价"的规格
+ * （核心是提醒老板把这几款调高；卖到位/查不到售价的一律不列）。
+ * rows 为空即"无需升价"，前端据此不弹价签助手入口。任一数据表缺失时降级为空表，不报错。
  */
 router.get('/comparison', async (req: Request, res: Response) => {
   const customerId = String(req.query.customer_id || '').trim();
