@@ -100,8 +100,8 @@ export const ADMIN_TABLES: AdminTable[] = [
     key: 'dim_category_ext', table: 'dim_category_ext', label: '品规维度扩展', category: 'goods',
     keyColumns: ['spec_id'], cadence: 'quarterly', managed: true,
     importMode: 'upsert', importable: true,
-    searchable: ['spec_id', 'pack_type', 'flavor', 'tier'],
-    note: 'pack_type/flavor/tier/launch_date/is_delisted/successor 等业务维度，季度维护。',
+    searchable: ['spec_id', 'pack_type', 'flavor', 'tier', 'audience'],
+    note: 'pack_type/flavor/tier/launch_date/is_delisted/successor 等业务维度，季度维护。price(共育展示价)/audience(适销人群)供共育政策官产品详情表。',
   },
 
   // ---------------- 智能规则中心 ----------------

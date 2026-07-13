@@ -22,6 +22,7 @@ import customerAuthRouter from './routes/customerAuth';
 import ondemandSpecsRouter from './routes/ondemandSpecs';
 import agentFeedbackRouter from './routes/agentFeedback';
 import priceTagRouter from './routes/priceTag';
+import specPromoDetailRouter from './routes/specPromoDetail';
 import adminRouter from './routes/admin';
 import { adminAuth } from './middleware/adminAuth';
 
@@ -57,6 +58,7 @@ app.use('/api/auth', customerAuthRouter);
 app.use('/api/ondemand-specs', ondemandSpecsRouter);
 app.use('/api/agent-feedback', agentFeedbackRouter);
 app.use('/api/price-tag', priceTagRouter);
+app.use('/api/spec-promo-detail', specPromoDetailRouter);
 // 后台管理通用数据接口：全程经 adminAuth 令牌校验（读写皆需 X-Admin-Token）
 app.use('/api/admin', adminAuth, adminRouter);
 

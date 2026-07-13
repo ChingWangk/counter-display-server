@@ -938,6 +938,8 @@ function renderChips(){
     const ch=document.createElement('div'); ch.className='chip'; ch.dataset.cat=c.id;
     ch.textContent=c.icon+' '+c.name; wrap.appendChild(ch);
   });
+  const allt=document.createElement('div'); allt.className='chip'; allt.dataset.cat='alltables';
+  allt.textContent='🗃️ 全部数据表'; allt.title='任意数据表按关键字检索（含客户代码）'; wrap.appendChild(allt);
   const maint=document.createElement('div'); maint.className='chip'; maint.dataset.cat='maint';
   maint.textContent='🔧 维护台'; maint.title='需定期更新的数据表'; wrap.appendChild(maint);
   wrap.querySelectorAll('.chip').forEach(ch=>ch.onclick=()=>{
@@ -947,7 +949,8 @@ function renderChips(){
 }
 function filterCat(cat){
   if(cat==='maint'){ renderMaintenance(); return; }
-  if($('#cats').dataset.mode==='maint'){ renderCats(); }  // 从维护台切回 → 还原分区
+  if(cat==='alltables'){ renderAllTables(); return; }
+  if($('#cats').dataset.mode){ renderCats(); }  // 从维护台 / 全部数据表切回 → 还原分区
   CATEGORIES.forEach(c=>{ const blk=document.getElementById('catblk-'+c.id); if(blk) blk.style.display=(cat==='all'||cat===c.id)?'':'none'; });
 }
 function flashCat(id){ const h=document.querySelector('#catblk-'+id+' .cat-head'); if(!h)return; h.animate([{boxShadow:'0 0 0 0 rgba(45,106,79,.0)'},{boxShadow:'0 0 0 4px rgba(45,106,79,.25)'},{boxShadow:'0 0 0 0 rgba(45,106,79,0)'}],{duration:1100}); }
@@ -1047,10 +1050,9 @@ async function fetchLive(m){
                 json.scripts||json.recommendations||json.specs||json.themes||json.data||[];
     if(Array.isArray(arr)&&arr.length){
       if(typeof arr[0]!=='object'){
-        zone.innerHTML=tableHtml(['值'],arr.slice(0,40).map(v=>[String(v)]));
+        renderFilterablePreview(zone, arr.map(v=>({ 值:String(v) })));
       } else {
-        const cols=Object.keys(arr[0]).filter(k=>!['images','specIds','matched_specs'].includes(k)).slice(0,6);
-        zone.innerHTML=tableHtml(cols,arr.slice(0,15).map(o=>cols.map(k=>fmtCell(o[k]))));
+        renderFilterablePreview(zone, arr);
       }
       if(vz) renderViz(m,arr,true);
       toast(m.title+'：已加载实时数据 '+arr.length+' 行','ok');
@@ -1059,6 +1061,28 @@ async function fetchLive(m){
     zone.innerHTML=tableHtml(m.columns,m.rows); if(vz) renderViz(m,null,false);
     toast(m.title+'：实时拉取失败（'+(location.protocol==='file:'?'file:// 跨域':'网络')+'），已回退演示数据','err');
   }
+}
+
+/* 抽屉内数组预览：带客户端检索框，跨全部字段模糊过滤（覆盖没有专属数据库检索的模块，如品类目录）。
+ * 仅过滤本次已加载的数组（产品接口一般整表返回）；DB 表的服务端全表检索走 openTableData。 */
+function renderFilterablePreview(zone, arr){
+  if(!zone||!arr||!arr.length){ if(zone) zone.innerHTML='<div class="hint">无数据</div>'; return; }
+  const cols=Object.keys(arr[0]).filter(k=>!['images','specIds','matched_specs'].includes(k)).slice(0,8);
+  const CAP=300;
+  zone.innerHTML=
+    '<div class="admin-toolbar"><input class="admin-search fp-input" placeholder="检索本表…"/>'+
+      '<span class="spacer"></span><span class="hint fp-cnt"></span></div>'+
+    '<div class="admin-scroll fp-wrap"></div>';
+  const wrap=zone.querySelector('.fp-wrap'), cnt=zone.querySelector('.fp-cnt'), inp=zone.querySelector('.fp-input');
+  function draw(list){
+    wrap.innerHTML=tableHtml(cols, list.slice(0,CAP).map(o=>cols.map(k=>esc(fmtCell(o[k])))));
+    cnt.textContent='显示 '+Math.min(list.length,CAP)+' / '+arr.length+' 行';
+  }
+  inp.addEventListener('input',()=>{
+    const kw=inp.value.trim().toLowerCase();
+    draw(!kw?arr:arr.filter(o=>cols.some(k=>String(o[k]==null?'':o[k]).toLowerCase().includes(kw))));
+  });
+  draw(arr);
 }
 
 /* ---------------- 可维护模块的编辑器（内存演示） ---------------- */
@@ -1329,11 +1353,66 @@ function renderMaintenance(){
       '<td>'+(t.exists?t.rowCount:'—')+'</td>'+
       '<td>'+esc(t.latest||'—')+'</td>'+
       '<td>'+status+'</td>'+
-      '<td>'+(mid?'<button class="btn ghost mini" onclick="openDrawer(\''+mid+'\')">查看</button> ':'')+
+      '<td>'+(t.exists?'<button class="btn ghost mini" onclick="openTableDrawer(\''+t.key+'\')">查看</button> ':'')+
         (t.importable?'<button class="btn primary mini" onclick="quickImport(\''+t.key+'\')">导入</button>':'')+'</td>'+
     '</tr>';
   });
   root.innerHTML=h+'</tbody></table></div>';
+}
+
+/* ---- 全部数据表 · 通用检索 ----
+ * 任意已登记的数据表（含没有专属卡片的表，如 cust_spec_price）都能在此打开带搜索/排序/分页的表格视图。
+ * 有专属模块卡片的表委托给富抽屉（openDrawer），其余用通用抽屉外壳 + openTableData（服务端按 searchable 列检索）。 */
+function openTableDrawer(tkey){
+  if(!ADMIN.token){ toast('请先在右上角连接数据库','info'); openAuthGate(); return; }
+  if(!liveMode){ liveMode=true; $('#liveToggle').checked=true; $('#srcLabel').textContent='实时后端'; }
+  const mid=moduleIdForTable(tkey);
+  if(mid){ openDrawer(mid); return; }   // 有卡片 → 复用富抽屉（其内部会自动 openTableData）
+  const meta=ADMIN.meta[tkey]||{};
+  const d=$('#drawer'); d.style.setProperty('--accent','var(--c-customer)');
+  d.innerHTML=
+    '<div class="dh"><button class="close" onclick="closeDrawer()">✕</button>'+
+      '<div class="ic">🗃️</div><h2>'+esc(meta.label||tkey)+'</h2>'+
+      '<div class="meta"><code>'+esc(meta.table||tkey)+'</code>'+(meta.exists?' · '+meta.rowCount+' 行':'')+'</div></div>'+
+    '<div class="db"><div class="blk"><h4>数据检索</h4><div id="dataZone"></div></div></div>';
+  $('#scrim').classList.add('show'); d.classList.add('show'); d.setAttribute('aria-hidden','false');
+  openTableData({title:meta.label||tkey}, tkey);
+}
+
+/* 「全部数据表」视图：列出每一张已登记表，点「检索」进入带搜索的表格（客户相关表可直接搜客户代码）。 */
+const ALLTBL_CATLABEL={customer:'客户数据',goods:'商品/陈列',rule:'智能规则',market:'市场参考'};
+function renderAllTables(){
+  const root=$('#cats'); root.dataset.mode='alltables';
+  if(!ADMIN.token || !Object.keys(ADMIN.meta).length){
+    root.innerHTML='<div class="cat-block"><div class="hint">请先在右上角「连接数据库」后检索数据表。</div></div>'; return;
+  }
+  const tables=Object.values(ADMIN.meta).slice()
+    .sort((a,b)=>String(a.category).localeCompare(String(b.category))||String(a.label).localeCompare(String(b.label)));
+  let h='<div class="cat-block"><div class="cat-head"><div class="badge-ic" style="background:var(--c-customer)">🗃️</div>'+
+    '<div><h3>全部数据表 · 检索</h3><div class="desc">任意数据表点「检索」按关键字过滤；客户相关表可直接搜「客户代码」。</div></div>'+
+    '<div class="cnt">'+tables.length+' 张</div></div>'+
+    '<div class="admin-toolbar"><input class="admin-search" id="tblFilter" placeholder="筛选数据表名…"/><span class="spacer"></span></div>'+
+    '<div class="admin-scroll"><table class="dt maint-tbl"><thead><tr><th>数据表</th><th>分区</th><th>行数</th><th>节奏</th><th>操作</th></tr></thead>'+
+    '<tbody id="allTblBody">'+tables.map(rowForTable).join('')+'</tbody></table></div></div>';
+  root.innerHTML=h;
+  const f=$('#tblFilter');
+  if(f) f.addEventListener('input',()=>{
+    const kw=f.value.trim().toLowerCase();
+    $('#allTblBody').querySelectorAll('tr').forEach(tr=>{ tr.style.display=(!kw||(tr.dataset.txt||'').includes(kw))?'':'none'; });
+  });
+}
+function rowForTable(t){
+  const cad=CADENCE[t.cadence]||{label:t.cadence,pill:'n'};
+  const txt=(String(t.label)+' '+String(t.table)+' '+String(t.key)).toLowerCase();
+  const op=t.exists
+    ? '<button class="btn primary mini" onclick="openTableDrawer(\''+t.key+'\')">🔎 检索</button>'
+    : '<span class="pill r">未建表</span>';
+  return '<tr data-txt="'+esc(txt)+'">'+
+    '<td><b>'+esc(t.label)+'</b><br><code>'+esc(t.table)+'</code></td>'+
+    '<td>'+esc(ALLTBL_CATLABEL[t.category]||t.category||'—')+'</td>'+
+    '<td>'+(t.exists?t.rowCount:'—')+'</td>'+
+    '<td><span class="pill '+cad.pill+'">'+cad.label+'</span></td>'+
+    '<td>'+op+'</td></tr>';
 }
 
 /* 抽屉打开时：tkey 模块（且已连库）→ 用 admin API 渲染全量分页表 */
