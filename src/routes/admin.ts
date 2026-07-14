@@ -41,11 +41,30 @@ interface ColMeta {
   dataType: string;
   isString: boolean;
   isNumeric: boolean;
+  isDate: boolean;
   isAuto: boolean;
   nullable: boolean;
 }
 const STR_TYPES = new Set(['char', 'varchar', 'text', 'tinytext', 'mediumtext', 'longtext', 'enum', 'set']);
 const NUM_TYPES = new Set(['int', 'tinyint', 'smallint', 'mediumint', 'bigint', 'decimal', 'float', 'double', 'year']);
+const DATE_TYPES = new Set(['date']);  // 仅纯 DATE 列做 yyyy-mm-dd 归一（datetime/timestamp 不动，避免误删时分秒）
+
+/** 归一各种来源的日期文本为 MySQL 可接受的 'YYYY-MM-DD'。
+ *  处理：yyyy-mm-dd / yyyy/m/d、以及 SheetJS 读 CSV 默认吐出的 m/d/yy(yy)（如 '1/14/26'）。无法识别返回 null。 */
+function normalizeDateStr(s: string): string | null {
+  const t = s.trim();
+  if (!t) return null;
+  const p2 = (x: string) => x.padStart(2, '0');
+  let m = t.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);        // 2026-01-14 / 2026/1/14
+  if (m) return `${m[1]}-${p2(m[2])}-${p2(m[3])}`;
+  m = t.match(/^(\d{1,2})[/](\d{1,2})[/](\d{2,4})$/);            // 1/14/26 / 1/14/2026（SheetJS 默认，月/日/年）
+  if (m) {
+    let y = Number(m[3]);
+    if (y < 100) y += 2000;
+    return `${y}-${p2(m[1])}-${p2(m[2])}`;
+  }
+  return null;
+}
 const colCache = new Map<string, { at: number; cols: ColMeta[] }>();
 const COL_TTL_MS = 5 * 60 * 1000;
 
@@ -67,6 +86,7 @@ async function getColumns(table: string): Promise<ColMeta[]> {
       dataType: dt,
       isString: STR_TYPES.has(dt),
       isNumeric: NUM_TYPES.has(dt),
+      isDate: DATE_TYPES.has(dt),
       isAuto: String(rec.extra || '').toLowerCase().includes('auto_increment'),
       nullable: String(rec.nullable).toUpperCase() === 'YES',
     };
@@ -246,7 +266,9 @@ router.post('/tables/:key/import', express.raw({ type: () => true, limit: '25mb'
     const wb = XLSX.read(buf, { type: 'buffer' });
     const ws = wb.Sheets[wb.SheetNames[0]];
     if (!ws) { res.status(400).json({ success: false, error: '空文件或无工作表' }); return; }
-    const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: null, raw: false });
+    // dateNF：CSV 里 '2026-01-14' 会被 SheetJS 识别成日期单元格，默认按 m/d/yy 格式化成 '1/14/26'（MySQL DATE 拒收）。
+    // 指定 dateNF 让日期单元格统一格式化为 yyyy-mm-dd；再叠加下方 normalizeDateStr 兜底。
+    const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: null, raw: false, dateNF: 'yyyy-mm-dd' });
 
     // ---- 列映射（表头 → 真实列，忽略大小写/空白；剔除自增 + 敏感列）----
     const cols = await getColumns(def.table);
@@ -287,6 +309,10 @@ router.post('/tables/:key/import', express.raw({ type: () => true, limit: '25mb'
           const n = Number(String(v).replace(/,/g, ''));
           if (!Number.isFinite(n)) { errors.push({ row: i + 2, msg: `列 ${c} 非数值：${v}` }); bad = true; break; }
           rowVals.push(n);
+        } else if (meta.isDate) {
+          const nd = normalizeDateStr(String(v));
+          if (nd === null) { errors.push({ row: i + 2, msg: `列 ${c} 非法日期：${v}` }); bad = true; break; }
+          rowVals.push(nd);
         } else {
           rowVals.push(String(v).trim());
         }
