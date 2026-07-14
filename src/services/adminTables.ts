@@ -62,7 +62,7 @@ export const ADMIN_TABLES: AdminTable[] = [
     importMode: 'upsert', importable: true,
     sensitiveColumns: ['login_password'],  // 明文密码：永不返回/导出/导入
     searchable: ['customer_id', 'customer_name', 'district'],
-    note: '客户基本信息 + grade 档位。导入按 customer_id 增量合并，不删旧客户；密码列全链路剔除。',
+    note: '客户基本信息 + grade 档位 + is_franchise(是否加盟终端，1=是；点表头按其排序即可聚出加盟终端)。导入按 customer_id 增量合并，不删旧客户；密码列全链路剔除。',
   },
   {
     key: 'cust_counters', table: 'cust_counters', label: '柜台台账', category: 'customer',
@@ -85,6 +85,15 @@ export const ADMIN_TABLES: AdminTable[] = [
     importMode: 'upsert', importable: true,
     searchable: ['customer_id'],
     note: 'spec_detail 为逗号分隔品规串；一般由 POST /api/customer-specs upsert。',
+  },
+  {
+    key: 'cust_stockout', table: 'cust_stockout', label: '当前脱销明细', category: 'customer',
+    keyColumns: ['customer_id', 'spec_id'], cadence: 'manual', managed: true,
+    importMode: 'replace', importable: true,
+    searchable: ['customer_id', 'spec_id'],
+    defaultOrderBy: 'stockout_days',
+    freshness: { unit: '日', select: 'as_of_date', order: 'as_of_date' },
+    note: 'POS日结算出的当前脱销(客户×规格)+脱销天数，供平替管家陈列说明。由 compute_stockout_days.py 读日结全部周文件生成 CSV，整表替换导入（新周到货后重跑重导，先自动备份）。',
   },
   {
     key: 'cust_spec_price', table: 'cust_spec_price', label: '客户售价明细', category: 'customer',
