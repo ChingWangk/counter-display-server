@@ -19,10 +19,6 @@ import { RowDataPacket } from 'mysql2';
  */
 const CANDIDATE_POOL_SIZE = 20;
 
-interface InventoryStockoutRow extends RowDataPacket {
-  spec_id: string;
-}
-
 interface YangpuStockoutRow extends RowDataPacket {
   spec_id: string;
 }
@@ -62,7 +58,7 @@ export async function getCustomerHasPos(customerId: string): Promise<boolean> {
  * 为客户挖掘脱销规格 → 候选平替池(每个 spec_id_a 最多 CANDIDATE_POOL_SIZE 个候选)。
  *
  * 数据来源:
- *  - hasPos=true:  cust_inventory 中 stock_qty=0 的规格作为脱销源 spec_id_a
+ *  - hasPos=true:  cust_stockout 表(POS 日结算出的当前脱销)作为脱销源 spec_id_a(唯一源,见 fetchPosStockoutIds)
  *  - hasPos=false: ref_yangpu_stockout 全表作为脱销源 spec_id_a
  *
  * 对每个 spec_id_a,从 ref_co_purchase_rules 取 target_type 含 'stockout' 的 Top N 候选(rank_in_a ASC)。
@@ -80,9 +76,14 @@ interface StockoutIdRow extends RowDataPacket {
 }
 
 /**
- * POS 客户当前脱销 spec_ids：优先读 cust_stockout（精确、带天数，与陈列说明《脱销明细表》同源）；
- * 仅当该表尚未建（ER_NO_SUCH_TABLE）时，回退到 cust_inventory 最新快照 stock_qty=0（旧口径，无天数）。
- * cust_stockout 存在但该客户 0 行 = 该客户确实无脱销（返回空，不回退，避免拿回月度旧脱销）。
+ * POS 客户当前脱销 spec_ids：**唯一数据源 = cust_stockout**（POS 日结算出，精确、带天数，
+ * 与陈列说明《脱销明细表》同源）。表未就绪（ER_NO_SUCH_TABLE）或该客户 0 行 → 返回空，
+ * 平替专区据此静默退场。
+ *
+ * ⚠️ 不再回退 cust_inventory 月度快照 stock_qty=0：那会把「未被 POS 判定为当前脱销」的规格
+ * 混进专区（这些规格在 cust_stockout 里查无记录 → 前端脱销天数取不到显示 '—'，且与《脱销明细表》
+ * 不一致）。单一数据源保证：专区绿框组合 = 陈列图裁图 = 《脱销明细表》三者恒一致，
+ * 绝不出现「cust_stockout 未记录却被判为脱销」的规格。
  */
 async function fetchPosStockoutIds(customerId: string): Promise<string[]> {
   try {
@@ -93,25 +94,12 @@ async function fetchPosStockoutIds(customerId: string): Promise<string[]> {
     return rows.map(r => r.spec_id);
   } catch (err: unknown) {
     const code = (err as { code?: string }).code;
-    if (code !== 'ER_NO_SUCH_TABLE') throw err;  // 非"表不存在"的错误上抛给外层统一处理
-    console.warn('[substitute] cust_stockout 表未就绪，回退 cust_inventory 判脱销（无脱销天数）');
+    if (code === 'ER_NO_SUCH_TABLE') {
+      console.warn('[substitute] cust_stockout 表未就绪 → 平替专区本轮静默退场（不回退月度库存，避免混入未记录脱销规格）');
+      return [];
+    }
+    throw err;  // 其它错误上抛给 fetchSubstituteRules 外层统一降级
   }
-  // 回退：cust_inventory 最新快照 stock_qty=0
-  const [rows] = await pool.execute<InventoryStockoutRow[]>(
-    `
-    SELECT t.spec_id
-    FROM cust_inventory t
-    INNER JOIN (
-      SELECT spec_id, MAX(snapshot_date) AS max_date
-      FROM cust_inventory
-      WHERE customer_id = ?
-      GROUP BY spec_id
-    ) m ON t.spec_id = m.spec_id AND t.snapshot_date = m.max_date
-    WHERE t.customer_id = ? AND t.stock_qty = 0
-    `,
-    [customerId, customerId],
-  );
-  return rows.map(r => r.spec_id);
 }
 
 export async function fetchSubstituteRules(
