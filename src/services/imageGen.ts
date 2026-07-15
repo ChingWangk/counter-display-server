@@ -829,7 +829,9 @@ export async function generateCounterImage(
   const crops: ZoneCrop[] = [];
   let cropSeq = 0;
   const CROP_PAD = 12;                 // 配对裁图四周留白(像素)
-  const MAX_PAIR_CROPS_PER_ZONE = 6;   // 每个 inline 专区最多裁几对(与前端讲解条数上限一致,避免小图过多)
+  // 每个 inline 专区最多裁几对:配图已并入组合表(每行一图、横向可滚),不再是气泡里堆小图,
+  // 故放宽到覆盖整柜实际组数(24 足够容纳一柜的红/绿框对),让组合表每行都有图。
+  const MAX_PAIR_CROPS_PER_ZONE = 24;
 
   for (const b of zoneBands) {
     if (b.rows <= 0 || b.startRow >= levels) continue;

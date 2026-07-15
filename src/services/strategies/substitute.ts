@@ -75,6 +75,45 @@ export async function getCustomerHasPos(customerId: string): Promise<boolean> {
  *
  * 任一阶段表缺失/数据为空时返回 Empty Map,不抛错,使专区静默退场。
  */
+interface StockoutIdRow extends RowDataPacket {
+  spec_id: string;
+}
+
+/**
+ * POS 客户当前脱销 spec_ids：优先读 cust_stockout（精确、带天数，与陈列说明《脱销明细表》同源）；
+ * 仅当该表尚未建（ER_NO_SUCH_TABLE）时，回退到 cust_inventory 最新快照 stock_qty=0（旧口径，无天数）。
+ * cust_stockout 存在但该客户 0 行 = 该客户确实无脱销（返回空，不回退，避免拿回月度旧脱销）。
+ */
+async function fetchPosStockoutIds(customerId: string): Promise<string[]> {
+  try {
+    const [rows] = await pool.execute<StockoutIdRow[]>(
+      'SELECT spec_id FROM cust_stockout WHERE customer_id = ?',
+      [customerId],
+    );
+    return rows.map(r => r.spec_id);
+  } catch (err: unknown) {
+    const code = (err as { code?: string }).code;
+    if (code !== 'ER_NO_SUCH_TABLE') throw err;  // 非"表不存在"的错误上抛给外层统一处理
+    console.warn('[substitute] cust_stockout 表未就绪，回退 cust_inventory 判脱销（无脱销天数）');
+  }
+  // 回退：cust_inventory 最新快照 stock_qty=0
+  const [rows] = await pool.execute<InventoryStockoutRow[]>(
+    `
+    SELECT t.spec_id
+    FROM cust_inventory t
+    INNER JOIN (
+      SELECT spec_id, MAX(snapshot_date) AS max_date
+      FROM cust_inventory
+      WHERE customer_id = ?
+      GROUP BY spec_id
+    ) m ON t.spec_id = m.spec_id AND t.snapshot_date = m.max_date
+    WHERE t.customer_id = ? AND t.stock_qty = 0
+    `,
+    [customerId, customerId],
+  );
+  return rows.map(r => r.spec_id);
+}
+
 export async function fetchSubstituteRules(
   customerId: string,
   hasPos: boolean,
@@ -84,21 +123,9 @@ export async function fetchSubstituteRules(
   try {
     if (hasPos) {
       if (!customerId) return new Map();
-      const [rows] = await pool.execute<InventoryStockoutRow[]>(
-        `
-        SELECT t.spec_id
-        FROM cust_inventory t
-        INNER JOIN (
-          SELECT spec_id, MAX(snapshot_date) AS max_date
-          FROM cust_inventory
-          WHERE customer_id = ?
-          GROUP BY spec_id
-        ) m ON t.spec_id = m.spec_id AND t.snapshot_date = m.max_date
-        WHERE t.customer_id = ? AND t.stock_qty = 0
-        `,
-        [customerId, customerId],
-      );
-      stockoutIds = rows.map(r => r.spec_id);
+      // POS 客户的"当前脱销"以 cust_stockout 为准（POS 日结算出，已剔除从未经销/退市/非当前0，且带脱销天数），
+      // 保证专区选出的脱销规格与陈列说明《脱销明细表》的脱销天数完全一致（不会出现"脱销但天数取不到"）。
+      stockoutIds = await fetchPosStockoutIds(customerId);
     } else {
       const [rows] = await pool.execute<YangpuStockoutRow[]>(
         'SELECT spec_id FROM ref_yangpu_stockout',
