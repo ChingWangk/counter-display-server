@@ -65,9 +65,16 @@ router.post('/', async (req: Request, res: Response) => {
     const allAssignments: ZoneAssignment[] = Array.isArray(zone_assignments) ? zone_assignments : [];
     const displayCabinetAssignments: ZoneAssignment[] = [];
     const backCabinetAssignments: ZoneAssignment[] = [];
+    // 价签体检(priceTag)是纯功能开关:不占柜台、不落陈列图,这里剥离出来只记"是否勾选",
+    // 绝不放进 display/back assignments,以免进入落位/imageGen 绘制流程。见 ZONE_META.priceTag 注释。
+    let priceTagEnabled = false;
     for (const a of allAssignments) {
       const meta = ZONE_META[a.zone_id];
       if (!meta) continue;  // 未知 zone_id 静默忽略(前后端版本不一致时容忍)
+      if (a.zone_id === 'priceTag') {
+        priceTagEnabled = true;
+        continue;
+      }
       if (meta.targetCabinetType === 'backCabinet') {
         backCabinetAssignments.push(a);
       } else {
@@ -355,11 +362,12 @@ router.post('/', async (req: Request, res: Response) => {
 
     // ---- 拉价签:仅"客户售价 < 区域常卖价"的待升价规格才贴价签 ----
     // 价签是常规客户专属功能(基于客户成交价与区域常卖价对比),新客户走归档版不渲染。
-    // 全部规格都卖到位(无偏低) → priceTagMap 为空 → 陈列图不贴价签、response 里 showPriceTag=false,
-    // 前端据此隐藏价签助手悬浮入口(见 result 页)。价签上印的是"区域常卖价"=建议上调到的目标价。
+    // 现在还要求用户在专区页勾选了「价签体检」开关(priceTagEnabled)才生效 —— 不勾则不查、不贴、不出入口。
+    // 勾了但全部规格都卖到位(无偏低) → priceTagMap 为空 → 不贴价签、showPriceTag=false,前端也不显示价签助手入口。
+    // 价签上印的是"区域常卖价"=建议上调到的目标价。
     const priceTagMap = new Map<string, number>();
     let showPriceTag = false;
-    if (customer_id && !isNewCustomer) {
+    if (customer_id && !isNewCustomer && priceTagEnabled) {
       const hasPos = await getCustomerHasPos(customer_id);
       const priceCmp = await getCustomerPriceComparison(customer_id, hasPos);
       for (const r of priceCmp.rows) priceTagMap.set(r.spec_id, r.region_price);

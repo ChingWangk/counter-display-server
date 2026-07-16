@@ -26,7 +26,9 @@ export interface SpecInventoryInfo {
 /** 专区 id 枚举（与前端 ZoneId 对齐）。
  *  keyRecommend = 重点推荐区(由原 slowMoving 滞销夸夸角 + nostalgia 怀旧专区合并而来)。
  *  原 localShanghai / shortSlimBead 已下线。 */
-export type ZoneId = 'industrialCoop' | 'productUpgrade' | 'substitute' | 'keyRecommend' | 'newProduct' | 'festivalSeason' | 'beadFlavor';
+// priceTag(价签体检)是「纯功能开关」型专区:不占柜台、不落陈列图,勾选后才对"售价低于区域常卖价"的
+// 规格贴价签 + 开放价签管家入口。它不进 ZONE_PRIORITY_ORDER 落位循环,其 assignment 在 generate 入口即被剥离。
+export type ZoneId = 'industrialCoop' | 'productUpgrade' | 'substitute' | 'keyRecommend' | 'newProduct' | 'festivalSeason' | 'beadFlavor' | 'priceTag';
 
 /** 专区版本档位:basic=基础版(政策/经营刚需), advanced=进阶版(趋势/特色)。
  *  edition-select 页面据此把专区分两组,用户结合柜台资源勾选要启用的版本。 */
@@ -232,8 +234,9 @@ export class ValidationError extends Error {
   }
 }
 
-/** 7 个专区的元信息。供 /api/zones/available 返回 + 策略层落位查表 + imageGen 取色/取展示模式。
- *  tier: basic=基础版(industrialCoop/productUpgrade/substitute), advanced=进阶版(keyRecommend/newProduct/festivalSeason/beadFlavor)。 */
+/** 8 个专区的元信息。供 /api/zones/available 返回 + 策略层落位查表 + imageGen 取色/取展示模式。
+ *  tier: basic=基础版(industrialCoop/productUpgrade/substitute/priceTag), advanced=进阶版(keyRecommend/newProduct/festivalSeason/beadFlavor)。
+ *  priceTag 为纯开关型专区(不落图,不进 ZONE_PRIORITY_ORDER),见 ZoneId 注释。 */
 export const ZONE_META: Record<ZoneId, ZoneMeta> = {
   industrialCoop: {
     id: 'industrialCoop',
@@ -268,6 +271,21 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
     tier: 'basic',
     barColor: '#2E7D32',  // 绿:与 imageGen INLINE_BOX_COLOR_SUBSTITUTE 一致(常规行内嵌绿框),tag/chip 须同色
     displayMode: 'grouped',
+    targetCabinetType: 'displayCabinet',
+    layoutKind: 'inlineRegular',
+  },
+  priceTag: {
+    id: 'priceTag',
+    label: '价签体检',
+    icon: '🏷️',
+    description: '勾选后,系统会给"售价低于区域常卖价"的规格贴出价签提醒该上调多少,并开放『价签管家』帮您逐个体检(若您售价全部到位,则无贴签、也不产生入口)',
+    priorityRank: 1,
+    tier: 'basic',
+    barColor: '#C77D2E',  // 琥珀金,与 result openPriceAgent / 价签管家 accentColor 一致
+    // 下面三项对 priceTag 无实际绘制意义(纯开关不落图):displayMode/targetCabinetType 仅占位;
+    // layoutKind 借用 'inlineRegular' 让前端 zone-select 据此判为 isBasicToggle(纯开关卡片、不显示柜台/行数表单)。
+    // priceTag 的 assignment 在 generate 入口即被剥离,不会进入 inlineRegular 的配对/绘制逻辑。
+    displayMode: 'single',
     targetCabinetType: 'displayCabinet',
     layoutKind: 'inlineRegular',
   },

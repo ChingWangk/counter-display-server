@@ -5,6 +5,7 @@ import { Category } from '../types';
 import { getExtendedCategoryMap } from '../services/categoryCatalog';
 import { classifyZones } from '../services/strategies/zones';
 import { fetchSubstituteRules, getCustomerHasPos } from '../services/strategies/substitute';
+import { getCustomerClass } from '../services/customerClass';
 import { computeInlinePairs } from '../services/strategies/inlinePairs';
 import { hasFestivalCandidates } from '../services/strategies/festivalSeason';
 import {
@@ -191,6 +192,16 @@ router.post('/', async (req: Request, res: Response) => {
           specs: groups.map(g => g.primary),  // 卡片预览用 primary 列表
           groups,
         });
+      }
+    }
+
+    // ---- 5. 价签体检(priceTag):纯开关型专区,不进上面的落位循环,这里单独追加 ----
+    // 口径:常规客户(非新客户)总是显示该开关(不预判有无偏低规格);勾选后由 /api/generate 决定
+    // 真正贴不贴价签(有偏低才贴)。价签基于客户成交价对比,新客户/无 customer_id 不适用。
+    if (customer_id) {
+      const cls = await getCustomerClass(customer_id);
+      if (cls === 'regular') {
+        result.push({ ...ZONE_META.priceTag, groupCount: 1, specs: [] });
       }
     }
 
