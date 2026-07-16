@@ -142,6 +142,8 @@ router.post('/', async (req: Request, res: Response) => {
     // 产品升级 / 平替为 inlineRegular(纯开关)专区:可用性按「内嵌红框配对数」判定,
     // 而非 classifyZones 的旧 grouped 结果(两者口径不同)。computeInlinePairs 与 /api/generate 同源,
     // 保证 zone-select 列出开关 ⇔ 生成时确有红框可画。
+    // 注:此处不传 customerId → 不套用 UPGRADE_PAIR_CAP_BY_CUSTOMER 封顶(仅 116314785),
+    // 生成时才封顶。封顶下限 ≥ 1,裁后仍 >0,不影响"开关是否出现"的判定,故无碍。
     const upgradePairCount = computeInlinePairs({
       specs: sourceSpecs, enableUpgrade: true, enableSubstitute: false,
       extendedMap, onSaleIds: customerOnSaleIds, inventoryById,
@@ -172,9 +174,10 @@ router.post('/', async (req: Request, res: Response) => {
         });
         continue;
       }
-      // 走 classification 表查询:此分支下 zoneId 必属于 ZoneClassification 单品/分组字段
-      // priceTag 不在 ZONE_PRIORITY_ORDER(不走此循环),且不属 ZoneClassification,排除以对齐键集。
-      const clsKey = zoneId as Exclude<ZoneId, 'festivalSeason' | 'priceTag'>;
+      // 走 classification 表查询:此分支下 zoneId 必属于 ZoneClassification 单品/分组字段。
+      // productUpgrade(inlineRegular,上方已 continue)与 priceTag(纯开关,不在 ZONE_PRIORITY_ORDER)
+      // 均不属 ZoneClassification,排除以对齐键集。
+      const clsKey = zoneId as Exclude<ZoneId, 'festivalSeason' | 'priceTag' | 'productUpgrade'>;
       if (meta.displayMode === 'single') {
         const specs = zoneCls[clsKey] as ZoneSpec[];
         if (specs.length === 0) continue;

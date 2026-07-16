@@ -12,9 +12,12 @@ import { SpecInventoryInfo } from './types';
  *  - 产品升级 primary = 待升级老品;substitute primary = 脱销规格(stock_qty=0)。
  *
  * 副规格选取(每个主规格只配一个最高优先级副规格):
- *  - 写死配对:无条件命中(忽略副规格库存),见 UPGRADE_PAIRS / SUBSTITUTE_PAIRS。
+ *  - 写死配对:见 UPGRADE_PAIRS / SUBSTITUTE_PAIRS。升级款强制客户在售(不在售则跳过、留给派生);平替维持无条件。
  *  - 自动派生(写死未命中时):
- *    · 升级:同品牌 + 同支型(pack_type) + 副规格更贵(有价差) + 上市更晚;取上市最新(tie 价差最小)。忽略库存。
+ *    · 升级(高置信):同品牌 + 同支型(pack_type) + 同价类(tier) + 副规格**零售价**更高且价差 ≤30 元 + 上市更晚;
+ *           取上市最新(tie 价差最小)。比价用零售价(dim_category_ext.price,与升级明细「每包多赚」同口径),
+ *           主/副任一零售价缺失或主规格无价类则不派生;升级款强制客户在售(只在 onSaleIds 里找,不推客户还没进的货)。
+ *           所有客户统一封顶 10 组(写死配对优先保留),避免红框糊满整柜。
  *    · 平替:主规格须脱销(stock_qty=0);副规格按 同品牌 → 同价位段(tier) → 同支型 取最优,且强制客户在售。
  *
  * 优先级:**写死配对(升级/平替)> 自动派生**;同档内升级 > 平替。
@@ -40,15 +43,18 @@ const UPGRADE_LABEL = '产品升级';
 const SUBSTITUTE_LABEL = '滞销平替';
 
 /**
- * 样例/演示客户的「产品升级」配对组数上限。
- * 自动派生升级覆盖面很广(同品牌 + 同支型 + 更贵 + 更晚上市即配对),个别客户会被圈出几十组红框,
- * 演示图显得杂乱。命中此表的客户:写死配对(UPGRADE_PAIRS)无条件全保留,其余自动派生升级
- * 按常规陈列出现顺序保留到上限为止,超出的还原为普通包(不画框、不额外插入副规格)。
- * 平替(SUBSTITUTE)不受影响;未列出的客户不设上限,行为与原先完全一致。
+ * 「产品升级」配对组数上限(所有客户统一封顶)。
+ * 升级红框意在"精选引导",数量过多会糊满整柜、失去重点。故:写死配对(UPGRADE_PAIRS)优先全保留,
+ * 其余自动派生升级按常规陈列出现顺序保留到上限为止,超出的还原为普通包(不画框、不额外插入副规格)。
+ * 平替(SUBSTITUTE)不计入、不受影响。个别客户可在 UPGRADE_PAIR_CAP_BY_CUSTOMER 覆盖默认值。
  */
+const DEFAULT_UPGRADE_PAIR_CAP = 10;
 const UPGRADE_PAIR_CAP_BY_CUSTOMER: Record<string, number> = {
-  '116314785': 6,  // 样例展示客户:固定 3 组写死升级 + 至多 3 组自动派生 = 5~6 组
+  // 如需为个别客户单独调整上限,在此覆盖,例如 '116314785': 6;缺省一律用 DEFAULT_UPGRADE_PAIR_CAP。
 };
+
+/** 派生升级的每包价差护栏(元):升级款零售价 − 老品零售价 须在 (0, 此值] 内,超出视为跨消费层级、非升级。 */
+const MAX_UPGRADE_PRICE_DIFF = 30;
 
 /** 一对内嵌红框配对:主规格(已在常规) + 紧跟其右侧的副规格。 */
 export interface InlineBoxedPair {
@@ -118,21 +124,25 @@ export function computeInlinePairs(args: ComputeInlinePairsArgs): Map<string, In
       return true;
     };
 
-    // ---- 1) 写死配对优先(升级 / 平替,无条件,先于一切派生)----
+    // ---- 1) 写死配对优先(先于一切派生)----
     // 否则"写死平替主规格恰好也能派生升级"会被升级抢走(如 320512:写死平替→360122,
     // 同时可派生升级→320517);写死优先保证它出平替框。
-    if (enableUpgrade && UPGRADE_PAIRS[pid] && trySet(resolveCat(UPGRADE_PAIRS[pid]), 'productUpgrade', UPGRADE_LABEL)) continue;
+    // 写死升级:升级款须客户在售,否则不出框、落到下方派生(不推客户没进的货);写死平替维持无条件。
+    if (enableUpgrade && UPGRADE_PAIRS[pid]) {
+      const sec = resolveCat(UPGRADE_PAIRS[pid]);
+      if (sec && onSaleIds.has(sec.id) && trySet(sec, 'productUpgrade', UPGRADE_LABEL)) continue;
+    }
     if (enableSubstitute && SUBSTITUTE_PAIRS[pid] && trySet(resolveCat(SUBSTITUTE_PAIRS[pid]), 'substitute', SUBSTITUTE_LABEL)) continue;
 
     // ---- 2) 自动派生(写死未命中时;升级优先于平替)----
-    if (enableUpgrade && trySet(deriveUpgradeSecondary(primary, extendedMap, isExcluded), 'productUpgrade', UPGRADE_LABEL)) continue;
+    if (enableUpgrade && trySet(deriveUpgradeSecondary(primary, extendedMap, onSaleIds, isExcluded), 'productUpgrade', UPGRADE_LABEL)) continue;
     if (enableSubstitute && inventoryById.get(pid)?.stock_qty === 0 &&
         trySet(deriveSubstituteSecondary(primary, extendedMap, onSaleIds, isExcluded), 'substitute', SUBSTITUTE_LABEL)) continue;
   }
 
-  // 样例客户:产品升级组数封顶(写死配对必留,自动派生按出现序填到上限),避免演示图红框过多。
-  const cap = customerId ? UPGRADE_PAIR_CAP_BY_CUSTOMER[customerId] : undefined;
-  if (cap !== undefined) capUpgradePairs(pairs, cap);
+  // 产品升级组数封顶(所有客户;写死配对必留,自动派生按出现序填到上限),避免红框糊满整柜。
+  const cap = (customerId ? UPGRADE_PAIR_CAP_BY_CUSTOMER[customerId] : undefined) ?? DEFAULT_UPGRADE_PAIR_CAP;
+  capUpgradePairs(pairs, cap);
 
   return pairs;
 }
@@ -166,30 +176,45 @@ function capUpgradePairs(pairs: Map<string, InlineBoxedPair>, cap: number): void
 }
 
 /**
- * 派生升级副规格:同品牌 + 同支型(pack_type) + 更贵(有价差) + 上市更晚;
- * 取上市最新者(tie 价差最小)。主规格无上市日期 → 无法判定"更晚",不派生。
+ * 派生升级副规格(高置信口径):同品牌 + 同支型(pack_type) + **同价类(tier)** +
+ * **零售价**更贵且价差 ≤ MAX_UPGRADE_PRICE_DIFF(元) + 上市更晚;取上市最新者(tie 价差最小)。
+ *  - 比价用零售价(retail_price = dim_category_ext.price/包),与升级明细「每包多赚」同口径;
+ *    主规格或候选缺零售价 → 无法比价,跳过(主规格缺价则整体不派生)。
+ *  - 同价类 + 价差护栏:确保是同一消费层级内的"贵一点点的新款",挡掉如 南京(红)¥13→南京(软九五)¥100
+ *    这类跨档误配;主规格无价类(tier) → 无法确认高置信,不派生。
+ *  - 候选仅取客户在售(onSaleIds):升级款必须是客户已进的货,不推没进的货。
+ *  - 主规格无上市日期 → 无法判定"更晚",不派生。
  */
 function deriveUpgradeSecondary(
   primary: Category,
   extendedMap: ReadonlyMap<string, Category>,
+  onSaleIds: ReadonlySet<string>,
   isExcluded: (id: string) => boolean,
 ): Category | undefined {
   if (!primary.brand) return undefined;
   const pLaunch = primary.launch_date ? Date.parse(primary.launch_date) : NaN;
   if (isNaN(pLaunch)) return undefined;
+  const pRetail = primary.retail_price;
+  if (pRetail == null) return undefined; // 老品无零售价 → 无法比价,不派生
+  const pTier = primary.tier;
+  if (!pTier) return undefined; // 老品无价类 → 无法确认同档高置信,不派生
   const pPack = primary.pack_type ?? '';
 
   let best: Category | undefined;
   let bestLaunch = -Infinity;
   let bestPriceDiff = Infinity;
-  for (const c of extendedMap.values()) {
-    if (isExcluded(c.id)) continue;
+  for (const id of onSaleIds) {
+    const c = extendedMap.get(id);
+    if (!c || isExcluded(c.id)) continue;
     if (c.brand !== primary.brand) continue;
     if ((c.pack_type ?? '') !== pPack) continue;
-    if (!(c.price > primary.price)) continue; // 升级款更贵
+    if (c.tier !== pTier) continue; // 同价类(高置信)
+    const cRetail = c.retail_price;
+    if (cRetail == null) continue;
+    const priceDiff = cRetail - pRetail;
+    if (priceDiff <= 0 || priceDiff > MAX_UPGRADE_PRICE_DIFF) continue; // 更贵、且价差在护栏内
     const cLaunch = c.launch_date ? Date.parse(c.launch_date) : NaN;
     if (isNaN(cLaunch) || cLaunch <= pLaunch) continue; // 上市更晚
-    const priceDiff = Math.abs(c.price - primary.price);
     if (cLaunch > bestLaunch || (cLaunch === bestLaunch && priceDiff < bestPriceDiff)) {
       best = c;
       bestLaunch = cLaunch;

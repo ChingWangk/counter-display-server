@@ -46,6 +46,28 @@ function toNum(v: number | string | null | undefined): number | null {
 }
 
 /**
+ * 读 dim_category_ext.price(零售指导价/包)→ spec_id → 价格 Map。
+ * price 列由增量维护 SQL 补建,可能尚未就绪 → 独立 try/catch 吞掉 ER_NO_SUCH_TABLE / ER_BAD_FIELD_ERROR,
+ * 使"零售价缺列"不牵连主查询的其它 ext 字段(pack_type/tier/... 照常返回)。
+ */
+async function fetchRetailPriceMap(): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  try {
+    const [rows] = await pool.execute<MetricRow[]>(
+      `SELECT spec_id, price AS val FROM dim_category_ext WHERE price IS NOT NULL`
+    );
+    for (const r of rows) {
+      const n = toNum(r.val);
+      if (n != null) map.set(r.spec_id, n);
+    }
+  } catch (err: unknown) {
+    const code = (err as { code?: string }).code;
+    if (code !== 'ER_NO_SUCH_TABLE' && code !== 'ER_BAD_FIELD_ERROR') throw err;
+  }
+  return map;
+}
+
+/**
  * 取某月度快照 ref 表"最新 snapshot_month"的 spec_id → 数值 Map(用于铺市面/订足率)。
  * 表/列名为本模块写死常量(非用户输入,无注入风险)。表未就绪(ER_NO_SUCH_TABLE)→ 空 Map。
  */
@@ -95,10 +117,11 @@ export async function getExtendedCategoryMap(): Promise<Map<string, Category>> {
     }
   }
 
-  // 铺市面/订足率来自独立 ref 表(与 dim_category_ext 解耦),各取最新月快照。
-  const [coverageMap, fillMap] = await Promise.all([
+  // 铺市面/订足率来自独立 ref 表(与 dim_category_ext 解耦),各取最新月快照;零售价来自 dim_category_ext.price。
+  const [coverageMap, fillMap, retailPriceMap] = await Promise.all([
     fetchLatestMetricMap('ref_market_coverage', 'coverage_rate'),
     fetchLatestMetricMap('ref_order_fill_rate', 'fill_rate'),
+    fetchRetailPriceMap(),
   ]);
 
   const merged = new Map<string, Category>();
@@ -116,8 +139,10 @@ export async function getExtendedCategoryMap(): Promise<Map<string, Category>> {
     } : { ...c };
     const mc = coverageMap.get(c.id);
     const fr = fillMap.get(c.id);
+    const rp = retailPriceMap.get(c.id);
     if (mc != null) base.market_coverage = mc;
     if (fr != null) base.order_fill_rate = fr;
+    if (rp != null) base.retail_price = rp;
     merged.set(c.id, base);
   }
   extendedMap = merged;

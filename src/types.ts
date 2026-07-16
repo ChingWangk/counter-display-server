@@ -26,6 +26,7 @@ export interface Category {
   is_industrial_coop?: boolean;   // 是否工商共育
   is_delisted?: boolean;          // 是否已退市（用于怀旧专区）
   successor_id?: string | null;   // 退市后的继任规格 id
+  retail_price?: number;          // 零售指导价（元/包）← dim_category_ext.price；缺录/列未就绪为 undefined（区别于批发价 price）
   // 以下两项来自独立 ref 表(getExtendedCategoryMap 叠加,各取最新 snapshot_month),非 dim_category_ext:
   market_coverage?: number | null; // 铺市面 ← ref_market_coverage.coverage_rate（爆珠子专区内升序——低的排前）
   order_fill_rate?: number | null; // 订足率 ← ref_order_fill_rate.fill_rate（爆珠子专区内降序——高的排前）

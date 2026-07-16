@@ -194,10 +194,10 @@ export interface ZoneSpec {
 
 /** 常规客户专区分类结果。任一专区为空数组表示当前数据下无匹配规格。
  *  各专区独立计算,同一品规可在不同专区重复出现。
- *  分组专区(substitute / nostalgia / productUpgrade)的 alternatives 不参与去重(允许跨专区出现)。 */
+ *  分组专区(substitute / nostalgia)的 alternatives 不参与去重(允许跨专区出现)。
+ *  注:产品升级(productUpgrade)已改为 inlineRegular 红框对(inlinePairs.computeInlinePairs),不在此分类结果内。 */
 export interface ZoneClassification {
   industrialCoop: ZoneSpec[];  // 工商共育：is_industrial_coop = true
-  productUpgrade: ZoneGroup[]; // 产品升级：上海集团新品(launch_date 在窗口期) + 同产地/同品牌的集团紧俏组合 Top 2
   substitute: ZoneGroup[];     // 平替专区：{primary: 脱销规格, alternatives: 业务排序后 Top 2 在售平替}
   /** 重点推荐区(原滞销夸夸角 + 怀旧专区合并):全为单品。
    *  退市星标品{primary: 退市规格, alternatives: []}(前,imageGen 叠星标) 与 滞销品{primary: 滞销规格, alternatives: []}(后) 混排。
