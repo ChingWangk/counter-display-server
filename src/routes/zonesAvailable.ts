@@ -196,13 +196,17 @@ router.post('/', async (req: Request, res: Response) => {
       }
     }
 
-    // ---- 5. 价签体检(priceTag):纯开关型专区,不进上面的落位循环,这里单独追加 ----
+    // ---- 5. 价签体检(priceTag):纯开关型专区,不进上面的落位循环,这里单独插入 ----
     // 口径:常规客户(非新客户)总是显示该开关(不预判有无偏低规格);勾选后由 /api/generate 决定
     // 真正贴不贴价签(有偏低才贴)。价签基于客户成交价对比,新客户/无 customer_id 不适用。
+    // 位置:排在所有基础版专区之后、第一个进阶版专区(如重点推荐区)之前,让基础版专区聚在一起。
     if (customer_id) {
       const cls = await getCustomerClass(customer_id);
       if (cls === 'regular') {
-        result.push({ ...ZONE_META.priceTag, groupCount: 1, specs: [] });
+        const priceTagZone: AvailableZone = { ...ZONE_META.priceTag, groupCount: 1, specs: [] };
+        const firstAdvancedIdx = result.findIndex(z => z.tier === 'advanced');
+        if (firstAdvancedIdx === -1) result.push(priceTagZone);
+        else result.splice(firstAdvancedIdx, 0, priceTagZone);
       }
     }
 
