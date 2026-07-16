@@ -469,7 +469,8 @@ function resolveGroupsForZone(
   const meta = ZONE_META[zoneId];
   // festivalSeason 数据流隔离,不进 classification;buildZonePlacements 调用方已过滤,此处仅防御
   if (meta.displayMode === 'backFestival') return [];
-  const clsKey = zoneId as Exclude<ZoneId, 'festivalSeason'>;
+  // priceTag 是纯开关型专区,不进 ZoneClassification(也不会走到这里落位),一并排除以对齐分类表的键集。
+  const clsKey = zoneId as Exclude<ZoneId, 'festivalSeason' | 'priceTag'>;
   // 爆珠:保留 classifyBeadFlavor 的「子专区序 + 段内业务排序」,不经 sortedSourceSpecs 重排
   // (下方 generic single 分支会用常规排序覆盖顺序,故爆珠在此单独处理)。
   if (zoneId === 'beadFlavor') {

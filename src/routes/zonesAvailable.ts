@@ -173,7 +173,8 @@ router.post('/', async (req: Request, res: Response) => {
         continue;
       }
       // 走 classification 表查询:此分支下 zoneId 必属于 ZoneClassification 单品/分组字段
-      const clsKey = zoneId as Exclude<ZoneId, 'festivalSeason'>;
+      // priceTag 不在 ZONE_PRIORITY_ORDER(不走此循环),且不属 ZoneClassification,排除以对齐键集。
+      const clsKey = zoneId as Exclude<ZoneId, 'festivalSeason' | 'priceTag'>;
       if (meta.displayMode === 'single') {
         const specs = zoneCls[clsKey] as ZoneSpec[];
         if (specs.length === 0) continue;
