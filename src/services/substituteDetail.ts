@@ -18,6 +18,14 @@ export interface SubstitutePair {
   subId: string;
 }
 
+/** 门店「全部脱销规格」明细的一行（供《脱销明细表》，来自 cust_stockout 全量，不限于有平替的组）。 */
+export interface StockoutListItem {
+  specId: string;
+  /** 规格名（catalog 有则用名，缺失极少数用 spec_id 兜底，保证脱销总数不被漏计）。 */
+  name: string;
+  stockoutDays: number;
+}
+
 /** 单组明细（渲染就绪的数值层，字符串化在前端做）。 */
 export interface SubstituteDetail {
   primaryId: string;
@@ -136,6 +144,46 @@ async function fetchStockoutDays(
     }
   }
   return map;
+}
+
+/**
+ * 取该门店「全部当前脱销规格」明细（cust_stockout 全量），供《脱销明细表》。
+ *
+ * 关键：这张表反映的是**门店真实脱销面**（"近一个月脱销 N 个规格"），与"有没有配到平替"无关——
+ * 所以它 **不** 走 zoneGroups（那只是能配平替的子集），而是直接读 cust_stockout 全量。
+ * 规格名从 catalog 取；极少数 catalog 查无名的用 spec_id 兜底，避免脱销总数被漏计。
+ * 表未就绪（ER_NO_SUCH_TABLE）或无该客户数据 → 空数组（前端整表折叠，只出正文）。
+ * 按脱销天数降序（脱得越久越靠前，越该提醒）。
+ */
+export async function getCustomerStockoutList(customerId: string): Promise<StockoutListItem[]> {
+  if (!customerId) return [];
+  let rows: StockoutDaysRow[] = [];
+  try {
+    const [r] = await pool.execute<StockoutDaysRow[]>(
+      `SELECT spec_id, stockout_days FROM ${STOCKOUT_TABLE} WHERE customer_id = ?`,
+      [customerId],
+    );
+    rows = r;
+  } catch (err: unknown) {
+    const code = (err as { code?: string }).code;
+    if (code !== 'ER_NO_SUCH_TABLE') {
+      console.error('[substituteDetail] fetch stockout list error:', err);
+    }
+    return [];
+  }
+  const catMap = await getExtendedCategoryMap();
+  const list: StockoutListItem[] = [];
+  for (const r of rows) {
+    if (r.stockout_days == null) continue;
+    const cat = catMap.get(r.spec_id);
+    list.push({
+      specId: r.spec_id,
+      name: cat ? cat.name : r.spec_id,
+      stockoutDays: Number(r.stockout_days),
+    });
+  }
+  list.sort((a, b) => b.stockoutDays - a.stockoutDays);
+  return list;
 }
 
 /**

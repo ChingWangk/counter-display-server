@@ -279,6 +279,7 @@ router.post('/', async (req: Request, res: Response) => {
         specCount,
         capacity: totalCap,
         specIds: [...new Set(specs.map(s => s.id))],
+        filteredHotCount: filteredHotSpecs.length,  // >0 → 原始规格数超容量,已暂缓这些紧俏烟(specCount 为过滤后口径)
       };
     } else {
       // 专区模式:常规按"最小间隙容量"比例均衡分到各柜(把所有常规行视为一个空间,各柜密度一致),

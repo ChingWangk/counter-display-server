@@ -68,4 +68,7 @@ export interface GenerateLayout {
   capacity: number;
   /** 本次陈列的规格 id(去重),供"未经销规格"排除 */
   specIds: string[];
+  /** 因陈列资源不足被暂缓上样的紧俏烟数量(=filteredHotSpecs.length)。>0 表示原始规格数已超容量、
+   *  specCount 是过滤后的口径 —— 供前端"陈列说明"如实说明"原有超容量→暂缓紧俏→其余铺开",避免与结果页紧俏剔除提示矛盾。 */
+  filteredHotCount?: number;
 }
