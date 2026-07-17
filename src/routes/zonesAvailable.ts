@@ -4,7 +4,7 @@ import pool from '../db';
 import { Category } from '../types';
 import { getExtendedCategoryMap } from '../services/categoryCatalog';
 import { classifyZones } from '../services/strategies/zones';
-import { fetchSubstituteRules, getCustomerHasPos, fetchRecentStockoutIds } from '../services/strategies/substitute';
+import { fetchSubstituteRules, getCustomerHasPos, fetchRecentStockoutFreq } from '../services/strategies/substitute';
 import { getCustomerClass } from '../services/customerClass';
 import { computeInlinePairs } from '../services/strategies/inlinePairs';
 import { hasFestivalCandidates } from '../services/strategies/festivalSeason';
@@ -113,12 +113,12 @@ router.post('/', async (req: Request, res: Response) => {
 
     // ---- 2. 拉平替候选 spec_id_a→spec_id_b[] 映射（仅 smart + 有 customer_id 时生效）----
     let substituteRules = new Map<string, string[]>();
-    // 平替脱销判定:POS 客户用近一周脱销集,与 /api/generate 同源;非 POS/表未就绪 → undefined 回退 stock_qty==0。
-    let recentStockoutIds: Set<string> | null | undefined;
+    // 平替脱销判定:POS 客户用近一周脱销集+季度频次,与 /api/generate 同源;非 POS/表未就绪 → undefined 回退 stock_qty==0。
+    let recentStockoutFreq: Map<string, number> | null | undefined;
     if (mode === 'smart' && customer_id) {
       const hasPos = await getCustomerHasPos(customer_id);
       substituteRules = await fetchSubstituteRules(customer_id, hasPos);
-      if (hasPos) recentStockoutIds = await fetchRecentStockoutIds(customer_id);
+      if (hasPos) recentStockoutFreq = await fetchRecentStockoutFreq(customer_id);
     }
 
     // ---- 3. 分类 ----
@@ -153,7 +153,7 @@ router.post('/', async (req: Request, res: Response) => {
     }).size;
     const substitutePairCount = computeInlinePairs({
       specs: sourceSpecs, enableUpgrade: false, enableSubstitute: true,
-      extendedMap, onSaleIds: customerOnSaleIds, inventoryById, recentStockoutIds,
+      extendedMap, onSaleIds: customerOnSaleIds, inventoryById, recentStockoutFreq,
     }).size;
 
     // ---- 4. 转换为 AvailableZone[],只保留 groupCount > 0 ----

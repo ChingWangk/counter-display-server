@@ -18,7 +18,8 @@ import { SpecInventoryInfo } from './types';
  *           取上市最新(tie 价差最小)。比价用零售价(dim_category_ext.price,与升级明细「每包多赚」同口径),
  *           主/副任一零售价缺失或主规格无价类则不派生;升级款强制客户在售(只在 onSaleIds 里找,不推客户还没进的货)。
  *           所有客户统一封顶 10 组(写死配对优先保留),避免红框糊满整柜。
- *    · 平替:主规格须脱销(近一周脱销集 recentStockoutIds,缺省回退 stock_qty=0);副规格按 同品牌 → 同价位段(tier) → 同支型 取最优,且强制客户在售。
+ *    · 平替:主规格须脱销(近一周脱销集 recentStockoutFreq,缺省回退 stock_qty=0);副规格按 同品牌 → 同价位段(tier) → 同支型 取最优,且强制客户在售。
+ *      所有客户统一封顶 10 组(写死平替优先保留,派生按季度脱销频次降序取前 N)。
  *
  * 优先级:**写死配对(升级/平替)> 自动派生**;同档内升级 > 平替。
  *   —— 写死优先于派生,避免"写死平替主规格恰好也能派生升级"被升级抢走(如 320512)。
@@ -53,6 +54,9 @@ const UPGRADE_PAIR_CAP_BY_CUSTOMER: Record<string, number> = {
   // 如需为个别客户单独调整上限,在此覆盖,例如 '116314785': 6;缺省一律用 DEFAULT_UPGRADE_PAIR_CAP。
 };
 
+/** 「滞销平替」配对组数上限(所有客户统一封顶)。写死平替优先保留,其余派生按**季度脱销频次降序**补到上限。 */
+const DEFAULT_SUBSTITUTE_PAIR_CAP = 10;
+
 /** 派生升级的每包价差护栏(元):升级款零售价 − 老品零售价 须在 (0, 此值] 内,超出视为跨消费层级、非升级。 */
 const MAX_UPGRADE_PRICE_DIFF = 30;
 
@@ -79,10 +83,11 @@ export interface ComputeInlinePairsArgs {
   /** spec_id → 库存快照,平替主规格脱销判定的**回退**口径(stock_qty === 0)用 */
   inventoryById: ReadonlyMap<string, SpecInventoryInfo>;
   /**
-   * 近一周脱销规格集(cust_recent_stockout,POS 日结窗口 [L-6,L] 内出现过脱销,含已回补)。
-   * 提供时,平替派生的"主规格脱销"以此为准;为 null/undefined 时回退 inventoryById.stock_qty===0(旧月度口径)。
+   * 近一周脱销规格 → 季度脱销频次(cust_recent_stockout,POS 日结窗口 [L-6,L] 内出现过脱销,含已回补;
+   * 值 = 最近 13 周脱销天数)。键的存在=可作平替主规格;值供平替封顶按频次降序取前 N。
+   * 为 null/undefined 时回退 inventoryById.stock_qty===0(旧月度口径)且封顶按出现序。
    */
-  recentStockoutIds?: ReadonlySet<string> | null;
+  recentStockoutFreq?: ReadonlyMap<string, number> | null;
   /** 客户编号。命中 UPGRADE_PAIR_CAP_BY_CUSTOMER 时,产品升级配对裁到该上限(写死配对必留)。缺省不限。 */
   customerId?: string;
 }
@@ -92,13 +97,13 @@ export interface ComputeInlinePairsArgs {
  * 两个专区都未启用 → 返回空 Map。
  */
 export function computeInlinePairs(args: ComputeInlinePairsArgs): Map<string, InlineBoxedPair> {
-  const { specs, enableUpgrade, enableSubstitute, extendedMap, onSaleIds, inventoryById, recentStockoutIds, customerId } = args;
+  const { specs, enableUpgrade, enableSubstitute, extendedMap, onSaleIds, inventoryById, recentStockoutFreq, customerId } = args;
   const pairs = new Map<string, InlineBoxedPair>();
   if (!enableUpgrade && !enableSubstitute) return pairs;
 
   // 平替主规格「脱销」判定:优先用近一周脱销集(cust_recent_stockout);未提供则回退月度库存 stock_qty===0。
   const isStockout = (id: string): boolean =>
-    recentStockoutIds ? recentStockoutIds.has(id) : (inventoryById.get(id)?.stock_qty === 0);
+    recentStockoutFreq ? recentStockoutFreq.has(id) : (inventoryById.get(id)?.stock_qty === 0);
 
   // 写死副规格 id → catalog 解析(6 组配对的主/副规格现已全部录入 categories.json)
   const resolveCat = (id: string): Category | undefined => extendedMap.get(id);
@@ -149,9 +154,12 @@ export function computeInlinePairs(args: ComputeInlinePairsArgs): Map<string, In
         trySet(deriveSubstituteSecondary(primary, extendedMap, onSaleIds, isExcluded), 'substitute', SUBSTITUTE_LABEL)) continue;
   }
 
-  // 产品升级组数封顶(所有客户;写死配对必留,自动派生按出现序填到上限),避免红框糊满整柜。
-  const cap = (customerId ? UPGRADE_PAIR_CAP_BY_CUSTOMER[customerId] : undefined) ?? DEFAULT_UPGRADE_PAIR_CAP;
-  capUpgradePairs(pairs, cap);
+  // 产品升级组数封顶(所有客户;写死配对必留,自动派生按**出现序**填到上限)。
+  // 出现序 = specs 的排列序 = sortCategories 的推荐排序,即"按推荐排序决定先放哪些组"。
+  const upCap = (customerId ? UPGRADE_PAIR_CAP_BY_CUSTOMER[customerId] : undefined) ?? DEFAULT_UPGRADE_PAIR_CAP;
+  capUpgradePairs(pairs, upCap);
+  // 滞销平替组数封顶(写死平替必留,派生按**季度脱销频次降序**填到上限)。
+  capSubstitutePairs(pairs, DEFAULT_SUBSTITUTE_PAIR_CAP, recentStockoutFreq);
 
   return pairs;
 }
@@ -180,6 +188,42 @@ function capUpgradePairs(pairs: Map<string, InlineBoxedPair>, cap: number): void
   }
 
   for (const pid of upgradeIds) {
+    if (!keep.has(pid)) pairs.delete(pid);
+  }
+}
+
+/**
+ * 把「滞销平替」配对就地裁到 cap 组:
+ *  - 写死平替(primary 命中 SUBSTITUTE_PAIRS)无条件全保留(curated,业务为先);
+ *  - 其余自动派生平替按**季度脱销频次(freqById)降序**保留,直到达到 cap —— 频次越高=越常脱销、越该上样平替;
+ *    freqById 缺省(回退旧口径)时退化为按 Map 插入序。
+ *  - 超出的从 pairs 删除。产品升级(productUpgrade)配对不计入、不删除。
+ */
+function capSubstitutePairs(
+  pairs: Map<string, InlineBoxedPair>,
+  cap: number,
+  freqById: ReadonlyMap<string, number> | null | undefined,
+): void {
+  const subIds = [...pairs.entries()]
+    .filter(([, p]) => p.zoneId === 'substitute')
+    .map(([pid]) => pid);
+  if (subIds.length <= cap) return;
+
+  const isHardcoded = (pid: string): boolean =>
+    Object.prototype.hasOwnProperty.call(SUBSTITUTE_PAIRS, pid);
+
+  const keep = new Set<string>(subIds.filter(isHardcoded));  // 写死平替全保留
+  // 派生平替按季度脱销频次降序(缺频次视为 0);freqById 为空则保持出现序(sort 稳定)
+  const derived = subIds.filter(pid => !isHardcoded(pid));
+  if (freqById) {
+    derived.sort((a, b) => (freqById.get(b) ?? 0) - (freqById.get(a) ?? 0));
+  }
+  for (const pid of derived) {
+    if (keep.size >= cap) break;
+    keep.add(pid);
+  }
+
+  for (const pid of subIds) {
     if (!keep.has(pid)) pairs.delete(pid);
   }
 }

@@ -102,26 +102,39 @@ async function fetchPosStockoutIds(customerId: string): Promise<string[]> {
   }
 }
 
+interface RecentStockoutRow extends RowDataPacket {
+  spec_id: string;
+  quarter_stockout_days: number | string | null;
+}
+
 /**
- * 近一周脱销规格集（供平替专区派生的"脱销主规格"判定）：读 cust_recent_stockout 表
- * （POS 日结算出，窗口 [L-6, L] 内出现过 <=0，含已回补，见 cust_recent_stockout_table.sql）。
+ * 近一周脱销规格 → 季度脱销频次 映射（供平替专区：派生的"脱销主规格"判定 + 按频次排序封顶）。
+ * 读 cust_recent_stockout 表（POS 日结算出，窗口 [L-6, L] 内出现过 <=0，含已回补；
+ * quarter_stockout_days = 最近 13 周脱销天数，见 cust_recent_stockout_table.sql）。
  *
- * 返回 Set<spec_id>；表未就绪（ER_NO_SUCH_TABLE）返回 **null** —— 调用方据此回退旧口径
- * （cust_inventory 月度快照 stock_qty==0），保证新表导入前行为不回归。该客户 0 行则返回空 Set
- * （POS 客户确实近一周无脱销，不应回退）。
+ * 返回 Map<spec_id, 季度脱销频次>：**键的存在**=该规格近一周脱销(可作平替主规格)，值=频次(排序用)。
+ * 表/列未就绪（ER_NO_SUCH_TABLE / ER_BAD_FIELD_ERROR）返回 **null** —— 调用方据此回退旧口径
+ * （cust_inventory 月度快照 stock_qty==0），保证新表导入前行为不回归。该客户 0 行则返回空 Map。
  */
-export async function fetchRecentStockoutIds(customerId: string): Promise<Set<string> | null> {
+export async function fetchRecentStockoutFreq(customerId: string): Promise<Map<string, number> | null> {
   if (!customerId) return null;
   try {
-    const [rows] = await pool.execute<StockoutIdRow[]>(
-      'SELECT spec_id FROM cust_recent_stockout WHERE customer_id = ?',
+    const [rows] = await pool.execute<RecentStockoutRow[]>(
+      'SELECT spec_id, quarter_stockout_days FROM cust_recent_stockout WHERE customer_id = ?',
       [customerId],
     );
-    return new Set(rows.map(r => r.spec_id));
+    const m = new Map<string, number>();
+    for (const r of rows) {
+      const n = typeof r.quarter_stockout_days === 'number'
+        ? r.quarter_stockout_days
+        : parseInt(String(r.quarter_stockout_days ?? '0'), 10);
+      m.set(r.spec_id, Number.isFinite(n) ? n : 0);
+    }
+    return m;
   } catch (err: unknown) {
     const code = (err as { code?: string }).code;
-    if (code === 'ER_NO_SUCH_TABLE') {
-      console.warn('[substitute] cust_recent_stockout 表未就绪 → 平替脱销判定回退月度库存 stock_qty==0');
+    if (code === 'ER_NO_SUCH_TABLE' || code === 'ER_BAD_FIELD_ERROR') {
+      console.warn('[substitute] cust_recent_stockout 表/列未就绪 → 平替脱销判定回退月度库存 stock_qty==0');
       return null;
     }
     throw err;
