@@ -12,7 +12,8 @@ import { SpecInventoryInfo } from './types';
  *  - 产品升级 primary = 待升级老品;substitute primary = 脱销规格(stock_qty=0)。
  *
  * 副规格选取(每个主规格只配一个最高优先级副规格):
- *  - 写死配对:见 UPGRADE_PAIRS / SUBSTITUTE_PAIRS。升级款强制客户在售(不在售则跳过、留给派生);平替维持无条件。
+ *  - 写死配对:见 UPGRADE_PAIRS / SUBSTITUTE_PAIRS。升级款强制客户在售(不在售则该主规格不出升级框,
+ *    且**不回落派生** —— 写死即业务已裁决升级路径);平替维持无条件。
  *  - 自动派生(写死未命中时):
  *    · 升级(高置信):同品牌 + 同支型(pack_type) + 同价类(tier) + 副规格**零售价**更高且价差 ≤30 元 + 上市更晚;
  *           取上市最新(tie 价差最小)。比价用零售价(dim_category_ext.price,与升级明细「每包多赚」同口径),
@@ -31,6 +32,10 @@ const UPGRADE_PAIRS: Record<string, string> = {
   '310133': '310142', // 中华(双中支)¥424 → 中华(金双中)¥510
   '310310': '310317', // 牡丹(蓝中支)¥263 → 牡丹(玄华双中)¥339
   '340135': '340142', // 黄山(红方印细支)¥175 → 黄山(红方印金细支)¥263
+  // 牡丹(软)零售¥14 → 牡丹(红中支)零售¥20:业务判断的跨支型/跨价类升级(常规二类 → 中支一类),
+  // 派生规则(同支型+同价类)永远够不着,只能写死;否则会派生成牡丹(飞马)¥15(同为常规二类、仅+1元),
+  // 那是平价换代而非消费升级。
+  '310301': '310311',
 };
 
 /** 脱销平替写死配对(脱销主规格编码 → 平替副规格编码)。跨品牌、同价位段。 */
@@ -141,15 +146,22 @@ export function computeInlinePairs(args: ComputeInlinePairsArgs): Map<string, In
     // ---- 1) 写死配对优先(先于一切派生)----
     // 否则"写死平替主规格恰好也能派生升级"会被升级抢走(如 320512:写死平替→360122,
     // 同时可派生升级→320517);写死优先保证它出平替框。
-    // 写死升级:升级款须客户在售,否则不出框、落到下方派生(不推客户没进的货);写死平替维持无条件。
+    // 写死升级:升级款须客户在售,否则该主规格**不出升级框**(不推客户没进的货)。
+    // 注意此时不再回落到派生升级 —— 写死即"业务已裁决这条升级路径",派生出来的只会是被业务
+    // 否掉的次优解(如 310301 牡丹(软):写死→红中支,若客户没进红中支,派生会给出飞马
+    // ——同为常规二类、仅贵 1 元的平价换代,不是升级)。宁可不出框。
+    // (平替不受此限:该主规格若脱销,仍可正常走下方平替派生,那是另一个专区的事。)
+    let upgradeCurated = false;
     if (enableUpgrade && UPGRADE_PAIRS[pid]) {
+      upgradeCurated = true;
       const sec = resolveCat(UPGRADE_PAIRS[pid]);
       if (sec && onSaleIds.has(sec.id) && trySet(sec, 'productUpgrade', UPGRADE_LABEL)) continue;
     }
     if (enableSubstitute && SUBSTITUTE_PAIRS[pid] && trySet(resolveCat(SUBSTITUTE_PAIRS[pid]), 'substitute', SUBSTITUTE_LABEL)) continue;
 
-    // ---- 2) 自动派生(写死未命中时;升级优先于平替)----
-    if (enableUpgrade && trySet(deriveUpgradeSecondary(primary, extendedMap, onSaleIds, isExcluded), 'productUpgrade', UPGRADE_LABEL)) continue;
+    // ---- 2) 自动派生(无写死配对时;升级优先于平替)----
+    if (enableUpgrade && !upgradeCurated &&
+        trySet(deriveUpgradeSecondary(primary, extendedMap, onSaleIds, isExcluded), 'productUpgrade', UPGRADE_LABEL)) continue;
     if (enableSubstitute && isStockout(pid) &&
         trySet(deriveSubstituteSecondary(primary, extendedMap, onSaleIds, isExcluded), 'substitute', SUBSTITUTE_LABEL)) continue;
   }

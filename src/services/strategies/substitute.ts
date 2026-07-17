@@ -76,14 +76,14 @@ interface StockoutIdRow extends RowDataPacket {
 }
 
 /**
- * POS 客户当前脱销 spec_ids：**唯一数据源 = cust_stockout**（POS 日结算出，精确、带天数，
- * 与陈列说明《脱销明细表》同源）。表未就绪（ER_NO_SUCH_TABLE）或该客户 0 行 → 返回空，
- * 平替专区据此静默退场。
+ * POS 客户当前脱销 spec_ids：数据源 = cust_stockout（POS 日结算出「当前仍连续脱销」，带天数）。
+ * 表未就绪（ER_NO_SUCH_TABLE）或该客户 0 行 → 返回空。
  *
- * ⚠️ 不再回退 cust_inventory 月度快照 stock_qty=0：那会把「未被 POS 判定为当前脱销」的规格
- * 混进专区（这些规格在 cust_stockout 里查无记录 → 前端脱销天数取不到显示 '—'，且与《脱销明细表》
- * 不一致）。单一数据源保证：专区绿框组合 = 陈列图裁图 = 《脱销明细表》三者恒一致，
- * 绝不出现「cust_stockout 未记录却被判为脱销」的规格。
+ * ⚠️ 不回退 cust_inventory 月度快照 stock_qty=0：那会把「未被 POS 判定为脱销」的规格混进来。
+ *
+ * ⚠️ 口径注意：**绿框平替配对不走这里**，它由 computeInlinePairs 按 cust_recent_stockout
+ * （近一周出现过脱销，含周内已回补）判定 —— 两者口径不同，前者是后者的子集。
+ * 本函数服务的 fetchSubstituteRules → classifySubstitute 分组路径当前并不用于绿框绘制。
  */
 async function fetchPosStockoutIds(customerId: string): Promise<string[]> {
   try {
@@ -150,8 +150,7 @@ export async function fetchSubstituteRules(
   try {
     if (hasPos) {
       if (!customerId) return new Map();
-      // POS 客户的"当前脱销"以 cust_stockout 为准（POS 日结算出，已剔除从未经销/退市/非当前0，且带脱销天数），
-      // 保证专区选出的脱销规格与陈列说明《脱销明细表》的脱销天数完全一致（不会出现"脱销但天数取不到"）。
+      // POS 客户的"当前脱销"以 cust_stockout 为准（POS 日结算出，已剔除从未经销/退市/非当前0，且带脱销天数）。
       stockoutIds = await fetchPosStockoutIds(customerId);
     } else {
       const [rows] = await pool.execute<YangpuStockoutRow[]>(
