@@ -96,6 +96,15 @@ export const ADMIN_TABLES: AdminTable[] = [
     note: 'POS日结算出的当前脱销(客户×规格)+脱销天数，供平替管家陈列说明。由 compute_stockout_days.py 读日结全部周文件生成 CSV，整表替换导入（新周到货后重跑重导，先自动备份）。',
   },
   {
+    key: 'cust_recent_stockout', table: 'cust_recent_stockout', label: '近一周脱销集', category: 'customer',
+    keyColumns: ['customer_id', 'spec_id'], cadence: 'manual', managed: true,
+    importMode: 'replace', importable: true,
+    searchable: ['customer_id', 'spec_id'],
+    defaultOrderBy: 'last_stockout_date',
+    freshness: { unit: '日', select: 'as_of_date', order: 'as_of_date' },
+    note: '近一周[L-6,L]内出现过脱销的(客户×规格)集(含已回补)，供平替专区派生的"脱销规格"判定。与 compute_stockout_days.py 同步产出、与 cust_stockout 同源，整表替换导入（新周到货后重跑重导，先自动备份）。',
+  },
+  {
     key: 'cust_spec_price', table: 'cust_spec_price', label: '客户售价明细', category: 'customer',
     keyColumns: ['customer_id', 'spec_id', 'snapshot_month'], cadence: 'monthly', managed: true,
     importMode: 'upsert', importable: true,
