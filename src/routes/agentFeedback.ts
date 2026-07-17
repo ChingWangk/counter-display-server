@@ -3,7 +3,7 @@ import pool from '../db';
 import { ResultSetHeader } from 'mysql2';
 
 /**
- * 助手回答反馈（agent_feedback）：小程序对话里用户对某条"陈列说明/经营建议"回答点赞/点踩，
+ * 助手回答反馈（agent_feedback）：小程序对话里用户对某条"陈列说明/经营建议"回答评价（有用 up / 一般 down / 不满意 bad），
  * 回收后用于修正话术（文档"三项体验增强·反馈点评机制"）。
  *
  * 前端为"发了就忘"（fire-and-forget）：本地已即时反馈，此接口成功与否都不影响体验。
@@ -16,7 +16,7 @@ import { ResultSetHeader } from 'mysql2';
  *     customer_id VARCHAR(32)  DEFAULT NULL,
  *     question    VARCHAR(64)  DEFAULT NULL,       -- 问句（陈列说明 / 经营建议 / 自由提问）
  *     answer      TEXT         DEFAULT NULL,       -- 被评价的回答原文（便于比对修订）
- *     feedback    ENUM('up','down') NOT NULL,
+ *     feedback    ENUM('up','down','bad') NOT NULL,   -- 有用 / 一般 / 不满意
  *     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
  *     INDEX idx_agent (agent_id), INDEX idx_feedback (feedback)
  *   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -39,7 +39,7 @@ function clip(v: unknown, max: number): string | null {
 router.post('/', async (req: Request, res: Response) => {
   const agentId = clip(req.body?.agentId, 32);
   const feedback = String(req.body?.feedback || '');
-  if (!agentId || (feedback !== 'up' && feedback !== 'down')) {
+  if (!agentId || (feedback !== 'up' && feedback !== 'down' && feedback !== 'bad')) {
     res.status(400).json({ success: false, error: '参数不合法' });
     return;
   }
