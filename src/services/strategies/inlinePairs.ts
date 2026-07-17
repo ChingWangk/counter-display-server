@@ -2,7 +2,7 @@ import { Category } from '../../types';
 import { SpecInventoryInfo } from './types';
 
 /**
- * 内嵌红框配对(产品升级 / 滞销平替,layoutKind='inlineRegular')。
+ * 内嵌红框配对(产品升级 / 脱销平替,layoutKind='inlineRegular')。
  *
  * 业务:这两个专区不再单独占行,而是从常规陈列中找出「主规格」,在其右侧紧跟一个「副规格」,
  * 由 imageGen 用粗红框圈住这对。本模块负责「主规格 → 副规格」的配对计算(纯函数,可单测),
@@ -33,7 +33,7 @@ const UPGRADE_PAIRS: Record<string, string> = {
   '340135': '340142', // 黄山(红方印细支)¥175 → 黄山(红方印金细支)¥263
 };
 
-/** 滞销平替写死配对(脱销主规格编码 → 平替副规格编码)。跨品牌、同价位段。 */
+/** 脱销平替写死配对(脱销主规格编码 → 平替副规格编码)。跨品牌、同价位段。 */
 const SUBSTITUTE_PAIRS: Record<string, string> = {
   '330421': '423801', // 利群(软蓝)¥159 → 黄鹤楼(软蓝)¥164
   '330409': '310102', // 利群(软长嘴)¥318 → 中华(硬)¥382
@@ -41,7 +41,7 @@ const SUBSTITUTE_PAIRS: Record<string, string> = {
 };
 
 const UPGRADE_LABEL = '产品升级';
-const SUBSTITUTE_LABEL = '滞销平替';
+const SUBSTITUTE_LABEL = '脱销平替';
 
 /**
  * 「产品升级」配对组数上限(所有客户统一封顶)。
@@ -54,7 +54,7 @@ const UPGRADE_PAIR_CAP_BY_CUSTOMER: Record<string, number> = {
   // 如需为个别客户单独调整上限,在此覆盖,例如 '116314785': 6;缺省一律用 DEFAULT_UPGRADE_PAIR_CAP。
 };
 
-/** 「滞销平替」配对组数上限(所有客户统一封顶)。写死平替优先保留,其余派生按**季度脱销频次降序**补到上限。 */
+/** 「脱销平替」配对组数上限(所有客户统一封顶)。写死平替优先保留,其余派生按**季度脱销频次降序**补到上限。 */
 const DEFAULT_SUBSTITUTE_PAIR_CAP = 10;
 
 /** 派生升级的每包价差护栏(元):升级款零售价 − 老品零售价 须在 (0, 此值] 内,超出视为跨消费层级、非升级。 */
@@ -67,7 +67,7 @@ export interface InlineBoxedPair {
   /** 副规格 Category(插到主规格右侧,与之同框) */
   secondary: Category;
   zoneId: 'productUpgrade' | 'substitute';
-  /** 红框左上角标签文字:'产品升级' | '滞销平替' */
+  /** 红框左上角标签文字:'产品升级' | '脱销平替' */
   boxLabel: string;
 }
 
@@ -158,7 +158,7 @@ export function computeInlinePairs(args: ComputeInlinePairsArgs): Map<string, In
   // 出现序 = specs 的排列序 = sortCategories 的推荐排序,即"按推荐排序决定先放哪些组"。
   const upCap = (customerId ? UPGRADE_PAIR_CAP_BY_CUSTOMER[customerId] : undefined) ?? DEFAULT_UPGRADE_PAIR_CAP;
   capUpgradePairs(pairs, upCap);
-  // 滞销平替组数封顶(写死平替必留,派生按**季度脱销频次降序**填到上限)。
+  // 脱销平替组数封顶(写死平替必留,派生按**季度脱销频次降序**填到上限)。
   capSubstitutePairs(pairs, DEFAULT_SUBSTITUTE_PAIR_CAP, recentStockoutFreq);
 
   return pairs;
@@ -193,7 +193,7 @@ function capUpgradePairs(pairs: Map<string, InlineBoxedPair>, cap: number): void
 }
 
 /**
- * 把「滞销平替」配对就地裁到 cap 组:
+ * 把「脱销平替」配对就地裁到 cap 组:
  *  - 写死平替(primary 命中 SUBSTITUTE_PAIRS)无条件全保留(curated,业务为先);
  *  - 其余自动派生平替按**季度脱销频次(freqById)降序**保留,直到达到 cap —— 频次越高=越常脱销、越该上样平替;
  *    freqById 缺省(回退旧口径)时退化为按 Map 插入序。

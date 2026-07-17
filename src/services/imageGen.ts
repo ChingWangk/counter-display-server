@@ -134,8 +134,8 @@ type RowSlot = ZoneSingleRowSlot | ZoneGroupRowSlot | ZoneCartonRowSlot | ZoneNe
 interface RenderPack {
   spec: Category;
   boxRole?: 'L' | 'R';
-  boxLabel?: string;   // 配对框左上角标签:'产品升级' | '滞销平替'
-  boxColor?: string;   // 配对框颜色(按专区:产品升级=红、滞销平替=绿);缺省走兜底色
+  boxLabel?: string;   // 配对框左上角标签:'产品升级' | '脱销平替'
+  boxColor?: string;   // 配对框颜色(按专区:产品升级=红、脱销平替=绿);缺省走兜底色
   boxZoneId?: string;  // 配对所属专区('productUpgrade' | 'substitute'),置于 'L' 包,供裁"局部特写"归类
 }
 
@@ -180,14 +180,14 @@ const COOP_MIN_PACK_GAP = Math.round(0.12 * CELL_W);  // 3 包之间的小缝隙
 
 // ---- 内嵌配对框(inlineRegular:产品升级/平替)绘制常量 ----
 // 配对框按专区着色以便一眼区分(工商共育是顶部条行,不画此框,故无需配色):
-//   产品升级 = 红(沿用)、滞销平替 = 绿。
+//   产品升级 = 红(沿用)、脱销平替 = 绿。
 const INLINE_BOX_COLOR_UPGRADE = '#E63946';     // 产品升级:红(粗框醒目)
-const INLINE_BOX_COLOR_SUBSTITUTE = '#2E7D32';  // 滞销平替:森林绿(粗框醒目)
+const INLINE_BOX_COLOR_SUBSTITUTE = '#2E7D32';  // 脱销平替:森林绿(粗框醒目)
 const INLINE_BOX_COLOR_DEFAULT = '#E63946';     // 兜底红(理论上每对都带专区色,不会落到此值)
 const INLINE_BOX_LINE_W = 6;          // 框线粗细(明显)
 const INLINE_BOX_TAB_H = 22;          // 左上角标签条高度
 
-/** 内嵌配对框专区 → 框色:产品升级=红、滞销平替=绿。 */
+/** 内嵌配对框专区 → 框色:产品升级=红、脱销平替=绿。 */
 function inlineBoxColor(zoneId: InlineBoxedPair['zoneId']): string {
   return zoneId === 'substitute' ? INLINE_BOX_COLOR_SUBSTITUTE : INLINE_BOX_COLOR_UPGRADE;
 }
@@ -977,7 +977,7 @@ async function drawFlatRow(
 /**
  * 画内嵌配对框 + 左上角标签。框线落在配对自身 2 格 footprint 内侧(inset = 线宽/2 + 1),
  * 因此无论相邻包多紧都不会覆盖相邻规格;标签条压在配对自身顶边内(同色底白字)。
- * color 由专区决定:产品升级=绿、滞销平替=紫。
+ * color 由专区决定:产品升级=红、脱销平替=绿。
  */
 function drawInlineBox(
   ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
