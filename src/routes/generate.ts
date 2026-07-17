@@ -21,7 +21,7 @@ import { manualStrategy } from '../services/strategies/manualStrategy';
 import { newCustomerStrategy } from '../services/strategies/newCustomerStrategy';
 import { regularCustomerStrategy } from '../services/strategies/regularCustomerStrategy';
 import { getCustomerClass } from '../services/customerClass';
-import { getCustomerHasPos } from '../services/strategies/substitute';
+import { getCustomerHasPos, fetchRecentStockoutIds } from '../services/strategies/substitute';
 import { getCustomerPriceComparison } from '../services/priceTag';
 
 // 加载背柜主题组数据
@@ -198,6 +198,12 @@ router.post('/', async (req: Request, res: Response) => {
       const onSaleIds = new Set(
         specs.filter(s => (inv?.get(s.id)?.stock_qty ?? 0) > 0).map(s => s.id),
       );
+      // 平替脱销判定:POS 客户用近一周脱销集(cust_recent_stockout);非 POS 无日结 → 留 undefined 回退 stock_qty==0。
+      let recentStockoutIds: Set<string> | null | undefined;
+      if (wantSubstitute && customer_id) {
+        const hasPos = await getCustomerHasPos(customer_id);
+        if (hasPos) recentStockoutIds = await fetchRecentStockoutIds(customer_id);
+      }
       inlinePairs = computeInlinePairs({
         specs,
         enableUpgrade: wantUpgrade,
@@ -205,6 +211,7 @@ router.post('/', async (req: Request, res: Response) => {
         extendedMap: await getExtendedCategoryMap(),
         onSaleIds,
         inventoryById: inv ?? new Map(),
+        recentStockoutIds,
         customerId: customer_id,
       });
     }

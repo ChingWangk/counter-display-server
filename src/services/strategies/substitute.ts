@@ -102,6 +102,32 @@ async function fetchPosStockoutIds(customerId: string): Promise<string[]> {
   }
 }
 
+/**
+ * 近一周脱销规格集（供平替专区派生的"脱销主规格"判定）：读 cust_recent_stockout 表
+ * （POS 日结算出，窗口 [L-6, L] 内出现过 <=0，含已回补，见 cust_recent_stockout_table.sql）。
+ *
+ * 返回 Set<spec_id>；表未就绪（ER_NO_SUCH_TABLE）返回 **null** —— 调用方据此回退旧口径
+ * （cust_inventory 月度快照 stock_qty==0），保证新表导入前行为不回归。该客户 0 行则返回空 Set
+ * （POS 客户确实近一周无脱销，不应回退）。
+ */
+export async function fetchRecentStockoutIds(customerId: string): Promise<Set<string> | null> {
+  if (!customerId) return null;
+  try {
+    const [rows] = await pool.execute<StockoutIdRow[]>(
+      'SELECT spec_id FROM cust_recent_stockout WHERE customer_id = ?',
+      [customerId],
+    );
+    return new Set(rows.map(r => r.spec_id));
+  } catch (err: unknown) {
+    const code = (err as { code?: string }).code;
+    if (code === 'ER_NO_SUCH_TABLE') {
+      console.warn('[substitute] cust_recent_stockout 表未就绪 → 平替脱销判定回退月度库存 stock_qty==0');
+      return null;
+    }
+    throw err;
+  }
+}
+
 export async function fetchSubstituteRules(
   customerId: string,
   hasPos: boolean,

@@ -18,7 +18,7 @@ import { SpecInventoryInfo } from './types';
  *           取上市最新(tie 价差最小)。比价用零售价(dim_category_ext.price,与升级明细「每包多赚」同口径),
  *           主/副任一零售价缺失或主规格无价类则不派生;升级款强制客户在售(只在 onSaleIds 里找,不推客户还没进的货)。
  *           所有客户统一封顶 10 组(写死配对优先保留),避免红框糊满整柜。
- *    · 平替:主规格须脱销(stock_qty=0);副规格按 同品牌 → 同价位段(tier) → 同支型 取最优,且强制客户在售。
+ *    · 平替:主规格须脱销(近一周脱销集 recentStockoutIds,缺省回退 stock_qty=0);副规格按 同品牌 → 同价位段(tier) → 同支型 取最优,且强制客户在售。
  *
  * 优先级:**写死配对(升级/平替)> 自动派生**;同档内升级 > 平替。
  *   —— 写死优先于派生,避免"写死平替主规格恰好也能派生升级"被升级抢走(如 320512)。
@@ -76,8 +76,13 @@ export interface ComputeInlinePairsArgs {
   extendedMap: ReadonlyMap<string, Category>;
   /** 客户在售规格集合(stock_qty > 0),平替派生候选必须在此集合内 */
   onSaleIds: ReadonlySet<string>;
-  /** spec_id → 库存快照,平替主规格脱销判定(stock_qty === 0)用 */
+  /** spec_id → 库存快照,平替主规格脱销判定的**回退**口径(stock_qty === 0)用 */
   inventoryById: ReadonlyMap<string, SpecInventoryInfo>;
+  /**
+   * 近一周脱销规格集(cust_recent_stockout,POS 日结窗口 [L-6,L] 内出现过脱销,含已回补)。
+   * 提供时,平替派生的"主规格脱销"以此为准;为 null/undefined 时回退 inventoryById.stock_qty===0(旧月度口径)。
+   */
+  recentStockoutIds?: ReadonlySet<string> | null;
   /** 客户编号。命中 UPGRADE_PAIR_CAP_BY_CUSTOMER 时,产品升级配对裁到该上限(写死配对必留)。缺省不限。 */
   customerId?: string;
 }
@@ -87,9 +92,13 @@ export interface ComputeInlinePairsArgs {
  * 两个专区都未启用 → 返回空 Map。
  */
 export function computeInlinePairs(args: ComputeInlinePairsArgs): Map<string, InlineBoxedPair> {
-  const { specs, enableUpgrade, enableSubstitute, extendedMap, onSaleIds, inventoryById, customerId } = args;
+  const { specs, enableUpgrade, enableSubstitute, extendedMap, onSaleIds, inventoryById, recentStockoutIds, customerId } = args;
   const pairs = new Map<string, InlineBoxedPair>();
   if (!enableUpgrade && !enableSubstitute) return pairs;
+
+  // 平替主规格「脱销」判定:优先用近一周脱销集(cust_recent_stockout);未提供则回退月度库存 stock_qty===0。
+  const isStockout = (id: string): boolean =>
+    recentStockoutIds ? recentStockoutIds.has(id) : (inventoryById.get(id)?.stock_qty === 0);
 
   // 写死副规格 id → catalog 解析(6 组配对的主/副规格现已全部录入 categories.json)
   const resolveCat = (id: string): Category | undefined => extendedMap.get(id);
@@ -136,7 +145,7 @@ export function computeInlinePairs(args: ComputeInlinePairsArgs): Map<string, In
 
     // ---- 2) 自动派生(写死未命中时;升级优先于平替)----
     if (enableUpgrade && trySet(deriveUpgradeSecondary(primary, extendedMap, onSaleIds, isExcluded), 'productUpgrade', UPGRADE_LABEL)) continue;
-    if (enableSubstitute && inventoryById.get(pid)?.stock_qty === 0 &&
+    if (enableSubstitute && isStockout(pid) &&
         trySet(deriveSubstituteSecondary(primary, extendedMap, onSaleIds, isExcluded), 'substitute', SUBSTITUTE_LABEL)) continue;
   }
 
