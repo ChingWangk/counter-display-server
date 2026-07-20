@@ -28,9 +28,18 @@ export interface SubstituteDetail {
   reason: '价位相近' | '支型相同' | '口味相似';
   /** 平替款胀库：库存包数；缺则 null。 */
   subStockQty: number | null;
-  /** 平替款胀库：可供天数（stock_days，越大越"胀"）；缺则 null。 */
+  /** 平替款胀库：可供天数（stock_days，越大越"胀"）；缺失**或为哨兵值**时 null（此时看 subNoSales）。 */
   subStockDays: number | null;
+  /** true = 该平替款统计窗口内日均销量≤0（压根没动销）→ 可供天数无意义，前端讲"近期无动销"。 */
+  subNoSales: boolean;
 }
+
+/**
+ * cust_inventory.stock_days 的哨兵值。取数脚本 build_customer_inventory_from_pos.py::stock_days()：
+ *   库存>0 且日均销量≤0（统计窗口内一包没卖）→ 记 9999，**不是真实天数**，只是"除不动、算不出"的占位。
+ * 全表约 13% 的行是这个值，直接显示会变成"可供 9999 天"这种明显不可信的数字。
+ */
+const NO_SALES_STOCK_DAYS = 9999;
 
 /** 价位相近阈值：两规格基础价（元/条）相对差 ≤ 15% 视为"价位相近"。 */
 const PRICE_CLOSE_RATIO = 0.15;
@@ -123,12 +132,17 @@ export async function getSubstituteDetails(
     // 无名无价无支型,平替点只能瞎猜、表里也只能显示一串代码。宁可不出这行。
     if (!primary || !sub) continue;
     const inv = invMap.get(subId);
+    // 哨兵 9999 不是天数,置 null 并改用 subNoSales 表达"没动销"——这本就是最强的胀库信号,
+    // 比一个假装精确的 9999 更有用,也更经得起店主质疑。
+    const rawDays = inv ? inv.stockDays : null;
+    const noSales = rawDays === NO_SALES_STOCK_DAYS;
     out.push({
       primaryId,
       subId,
       reason: decideReason(primary.price, sub.price, primary.pack_type, sub.pack_type),
       subStockQty: inv ? inv.stockQty : null,
-      subStockDays: inv ? inv.stockDays : null,
+      subStockDays: noSales ? null : rawDays,
+      subNoSales: noSales,
     });
   }
   return out;
