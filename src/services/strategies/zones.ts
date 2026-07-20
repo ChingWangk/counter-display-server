@@ -59,7 +59,10 @@ export const MANAGER_PICK_IDS: string[] = ['310140', '310143', '310141', '310142
  *  docs/尝鲜专区核心区域-按消费结构分档方案.md(2026-07-20 定稿)。
  *
  *  选品口径:
- *   - **集团烟新品先行**——先取上海集团 24 个月内上市的新品,不足再用同价带集团老品补位(仅 low 档用到);
+ *   - **一律是新品**。本专区叫"尝鲜",放老品就是自砸招牌——曾误把中南海(典5,2018 上市)、
+ *     中南海(硬酷爽风尚,2012 上市)当低价带补位塞进 low 档,已纠正:补位只能在窗口期新品里找。
+ *   - **集团烟新品先行**——先取上海集团 24 个月内上市的新品;集团在该价带不够时,
+ *     用**同价带的省外/外烟新品**补(low 档如此),绝不退回集团老品;
  *   - **310143 中华(细支5mg) 恒占 high / mid_high 首位**(用户定),不看价、不看上市窗口;
  *     它无货时该位自然由后一款顺延——injectManagerPicks 只注入客户在售的规格;
  *   - **不回避紧俏烟**(用户定):high / mid_high 档的中华、熊猫新品本身即紧俏品。
@@ -69,9 +72,48 @@ export const MANAGER_PICK_BY_LEVEL: Record<string, string[]> = {
   high:     ['310143', '310409', '310410', '310140', '310142', '310141'],
   // 教育 / 医疗 / 园区上班 / 商圈 / 游客：中高价带自吸兼小礼
   mid_high: ['310143', '310142', '310141', '310317', '310316', '110131'],
-  // 居民 / 工人 / 骑手 / 散客：口粮带向上试探（后两位为集团老品补位，新品价带不够）
-  low:      ['310316', '310315', '110131', '310314', '110114', '110125'],
+  // 居民 / 工人 / 骑手 / 散客：口粮带（¥160–300）。集团新品在该价带只有前 4 款，
+  // 后 2 位用同价带的省外新品补，价带顺势向下贴口粮盘。
+  low:      ['310316', '310315', '110131', '310314', '210409', '460203'],
 };
+
+/** 免"新品窗口"审计的店长推荐规格：310143 中华(细支5mg) 在 dim_category_ext 无 launch_date,
+ *  由用户明确指定恒占 high/mid_high 首位(不看价、不看窗口),故不参与下方超龄告警。 */
+const MANAGER_PICK_WINDOW_EXEMPT: ReadonlySet<string> = new Set(['310143']);
+
+/** 已跑过一次超龄审计(每进程一次,避免每次生成都刷日志)。 */
+let managerPicksAudited = false;
+
+/**
+ * 审计店长推荐名单是否还算"新品"。
+ *
+ * 存在的理由:MANAGER_PICK_* 是**写死的**,而 injectManagerPicks 又**故意绕过上市窗口**——
+ * 两者叠加意味着名单里的规格一旦上市超过 24 个月,会继续躺在"尝鲜专区"核心位上,悄无声息。
+ * 这类超龄不会报错、不会崩,只会让专区名不副实,所以必须主动喊出来。
+ * 只 console.warn 不改行为:改名单是业务决策,不该由代码替用户做。
+ */
+function auditManagerPicksAge(extendedMap: ReadonlyMap<string, Category>, now: Date): void {
+  if (managerPicksAudited || extendedMap.size === 0) return;
+  managerPicksAudited = true;
+  const all = new Set<string>([...MANAGER_PICK_IDS, ...Object.values(MANAGER_PICK_BY_LEVEL).flat()]);
+  const aged: string[] = [];
+  for (const id of all) {
+    if (MANAGER_PICK_WINDOW_EXEMPT.has(id)) continue;
+    const c = extendedMap.get(id);
+    if (!c || !c.launch_date) { aged.push(`${id}(无上市日期)`); continue; }
+    const launch = new Date(c.launch_date);
+    if (isNaN(launch.getTime())) { aged.push(`${id}(上市日期不可解析)`); continue; }
+    const months = monthsBetween(launch, now);
+    const window = HIGH_TIER_VALUES.has(c.tier ?? '') ? HIGH_TIER_NEW_MONTHS : DEFAULT_NEW_MONTHS;
+    if (months > window) aged.push(`${id} ${c.name}(上市 ${c.launch_date}, 已 ${months} 个月 > ${window})`);
+  }
+  if (aged.length > 0) {
+    console.warn(
+      `[zones] 店长推荐名单里有 ${aged.length} 个规格已不在新品窗口内,` +
+      `尝鲜专区核心位正在展示老品,请复核 MANAGER_PICK_BY_LEVEL:\n  ${aged.join('\n  ')}`,
+    );
+  }
+}
 
 /** 取该档位的店长推荐规格;档位为空或不在配置内 → 现网默认 MANAGER_PICK_IDS(不猜档)。 */
 export function resolveManagerPicks(structureLevel?: string | null): string[] {
@@ -302,7 +344,9 @@ function injectManagerPicks(
   extendedMap: ReadonlyMap<string, Category>,
   customerOnSaleIds: ReadonlySet<string>,
   structureLevel?: string | null,
+  now: Date = new Date(),
 ): ZoneSpec[] {
+  auditManagerPicksAge(extendedMap, now);
   const present = new Set(newProduct.map(s => s.id));
   for (const id of resolveManagerPicks(structureLevel)) {
     if (present.has(id) || !customerOnSaleIds.has(id)) continue; // 仅在售、未重复
@@ -388,7 +432,7 @@ export function classifyZones(
   const substitute = classifySubstitute(extendedMap, customerOnSaleIds, substituteRules, inventoryById);
   const keyRecommend = classifyKeyRecommend(specs, inventoryById);
   // 尝鲜专区:窗口期新品 + 注入在售的店长推荐重点品规(后者绕过上市窗口,如 310143)
-  const newProduct = injectManagerPicks(classifyNewProduct(specs, now), extendedMap, customerOnSaleIds, structureLevel);
+  const newProduct = injectManagerPicks(classifyNewProduct(specs, now), extendedMap, customerOnSaleIds, structureLevel, now);
   const beadFlavor = classifyBeadFlavor(specs);
 
   return { industrialCoop, substitute, keyRecommend, newProduct, beadFlavor };
