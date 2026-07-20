@@ -3,6 +3,7 @@ import { sortCategories } from '../sortCategories';
 import { getExtendedCategoryMap } from '../categoryCatalog';
 import { classifyZones, buildZonePlacements } from './zones';
 import { SelectionContext, SelectionResult, StrategyFn } from './types';
+import { getCustomerStructureLevel } from '../customerStructure';
 
 /**
  * 自选规格：直接按用户勾选的 id 列表取品规，允许同一 id 重复出现（表示多包陈列）。
@@ -30,7 +31,17 @@ export const manualStrategy: StrategyFn = async (ctx: SelectionContext): Promise
   // 专区分类(无 inventory + 无 substituteRules,slowMoving 和 substitute 返回 [])+ 按 zoneAssignments 落位
   if (ctx.zoneAssignments && ctx.zoneAssignments.length > 0) {
     const customerOnSaleIds = new Set(sorted.map(c => c.id));
-    const classification = classifyZones(sorted, extendedCategoryMap, customerOnSaleIds);
+    // 档位同 smart 模式一并传入,保证「店长推荐」注入的规格与 generate.ts 算出的高亮子集是同一套。
+    const structureLevel = await getCustomerStructureLevel(ctx.customerId ?? '');
+    const classification = classifyZones(
+      sorted,
+      extendedCategoryMap,
+      customerOnSaleIds,
+      new Map(),
+      new Map(),
+      new Date(),
+      structureLevel,
+    );
     const zonePlacements = buildZonePlacements(
       classification,
       ctx.zoneAssignments,

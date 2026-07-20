@@ -46,11 +46,38 @@ const DEFAULT_NEW_MONTHS = 12;
 
 const HIGH_TIER_VALUES = new Set(['一类', '二类']);
 
-/** 尝鲜专区「店长推荐」重点品规(中华 + 牡丹;按 3×2 网格 row-major 顺序:
+/** 尝鲜专区「店长推荐」重点品规的**默认**一套(中华 + 牡丹;按 3×2 网格 row-major 顺序:
  *  上行 = 中华细支3mg / 5mg / 6mg(310140/310143/310141),下行 = 金双中 / 玄华双中 / 蓝彩细支(310142/310317/310316))。
  *  这 6 个里**客户在售**的会被注入 newProduct 成员并由 imageGen 在中心 3×2 居中、垫店长推荐装饰。
- *  注意 310143 在 dim_category_ext 无 launch_date,classifyNewProduct 选不到它 —— 靠 injectManagerPicks 绕过窗口注入。 */
+ *  注意 310143 在 dim_category_ext 无 launch_date,classifyNewProduct 选不到它 —— 靠 injectManagerPicks 绕过窗口注入。
+ *
+ *  查得到客户消费结构档位时改用 MANAGER_PICK_BY_LEVEL;本常量是查不到档位时的兜底。 */
 export const MANAGER_PICK_IDS: string[] = ['310140', '310143', '310141', '310142', '310317', '310316'];
+
+/** 按客户消费客群结构(cust_consumer_structure.structure_level)切换的店长推荐 6 品规。
+ *  顺序即 3×2 网格 row-major(上行 3 个、下行 3 个)。方案见
+ *  docs/尝鲜专区核心区域-按消费结构分档方案.md(2026-07-20 定稿)。
+ *
+ *  选品口径:
+ *   - **集团烟新品先行**——先取上海集团 24 个月内上市的新品,不足再用同价带集团老品补位(仅 low 档用到);
+ *   - **310143 中华(细支5mg) 恒占 high / mid_high 首位**(用户定),不看价、不看上市窗口;
+ *     它无货时该位自然由后一款顺延——injectManagerPicks 只注入客户在售的规格;
+ *   - **不回避紧俏烟**(用户定):high / mid_high 档的中华、熊猫新品本身即紧俏品。
+ *  改规格改这里即可,injectManagerPicks 与 generate.ts 的高亮子集都读同一份。 */
+export const MANAGER_PICK_BY_LEVEL: Record<string, string[]> = {
+  // 商务招待 / 团购送礼：礼品带
+  high:     ['310143', '310409', '310410', '310140', '310142', '310141'],
+  // 教育 / 医疗 / 园区上班 / 商圈 / 游客：中高价带自吸兼小礼
+  mid_high: ['310143', '310142', '310141', '310317', '310316', '110131'],
+  // 居民 / 工人 / 骑手 / 散客：口粮带向上试探（后两位为集团老品补位，新品价带不够）
+  low:      ['310316', '310315', '110131', '310314', '110114', '110125'],
+};
+
+/** 取该档位的店长推荐规格;档位为空或不在配置内 → 现网默认 MANAGER_PICK_IDS(不猜档)。 */
+export function resolveManagerPicks(structureLevel?: string | null): string[] {
+  if (!structureLevel) return MANAGER_PICK_IDS;
+  return MANAGER_PICK_BY_LEVEL[structureLevel] ?? MANAGER_PICK_IDS;
+}
 
 
 function monthsBetween(from: Date, to: Date): number {
@@ -264,7 +291,8 @@ export function classifyNewProduct(
 }
 
 /**
- * 把「店长推荐」重点品规(MANAGER_PICK_IDS)中**客户在售**且尚未入选的注入 newProduct,绕过上市窗口。
+ * 把「店长推荐」重点品规(按客户消费结构档位取 resolveManagerPicks)中**客户在售**且尚未入选的
+ * 注入 newProduct,绕过上市窗口。
  * 例:310143 无 launch_date,classifyNewProduct 不会选它,但只要客户在售就应进尝鲜专区中心被高亮。
  * imageGen 凭 placement.highlightIds(generate.ts 计算)决定谁加框/加宽,这里只负责"让它进专区"。
  * 原地 push 后返回同一数组(调用方 classifyZones 持有该新数组)。
@@ -273,9 +301,10 @@ function injectManagerPicks(
   newProduct: ZoneSpec[],
   extendedMap: ReadonlyMap<string, Category>,
   customerOnSaleIds: ReadonlySet<string>,
+  structureLevel?: string | null,
 ): ZoneSpec[] {
   const present = new Set(newProduct.map(s => s.id));
-  for (const id of MANAGER_PICK_IDS) {
+  for (const id of resolveManagerPicks(structureLevel)) {
     if (present.has(id) || !customerOnSaleIds.has(id)) continue; // 仅在售、未重复
     const c = extendedMap.get(id);
     if (c) newProduct.push(toZoneSpec(c));
@@ -351,12 +380,15 @@ export function classifyZones(
   inventoryById: ReadonlyMap<string, SpecInventoryInfo> = new Map(),
   substituteRules: ReadonlyMap<string, ReadonlyArray<string>> = new Map(),
   now: Date = new Date(),
+  /** 客户消费结构档位(high/mid_high/low)：只影响尝鲜专区店长推荐那 6 个规格；
+   *  传 null/undefined 即回退现网默认，故所有旧调用点行为不变。 */
+  structureLevel?: string | null,
 ): ZoneClassification {
   const industrialCoop = classifyIndustrialCoop(specs);
   const substitute = classifySubstitute(extendedMap, customerOnSaleIds, substituteRules, inventoryById);
   const keyRecommend = classifyKeyRecommend(specs, inventoryById);
   // 尝鲜专区:窗口期新品 + 注入在售的店长推荐重点品规(后者绕过上市窗口,如 310143)
-  const newProduct = injectManagerPicks(classifyNewProduct(specs, now), extendedMap, customerOnSaleIds);
+  const newProduct = injectManagerPicks(classifyNewProduct(specs, now), extendedMap, customerOnSaleIds, structureLevel);
   const beadFlavor = classifyBeadFlavor(specs);
 
   return { industrialCoop, substitute, keyRecommend, newProduct, beadFlavor };

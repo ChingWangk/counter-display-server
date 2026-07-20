@@ -12,7 +12,8 @@ import {
   ZONE_META,
   FestivalId,
 } from '../services/strategies/types';
-import { autoExpandZonePlacements, MANAGER_PICK_IDS } from '../services/strategies/zones';
+import { autoExpandZonePlacements, resolveManagerPicks } from '../services/strategies/zones';
+import { getCustomerStructureLevel } from '../services/customerStructure';
 import { selectFestivalImage } from '../services/strategies/festivalSeason';
 import { getExtendedCategoryMap } from '../services/categoryCatalog';
 import { buildIndustrialCoopPlacement } from '../services/strategies/industrialCoop';
@@ -155,14 +156,17 @@ router.post('/', async (req: Request, res: Response) => {
     const initialZonePlacements: ZonePlacement[] = (selection.zonePlacements || [])
       .filter(p => (p.layoutKind ?? 'zoneRows') === 'zoneRows');
 
-    // ---- 尝鲜专区「店长推荐」重点品规:计算本次需高亮的在售子集(MANAGER_PICK_IDS ∩ 在售) ----
+    // ---- 尝鲜专区「店长推荐」重点品规:计算本次需高亮的在售子集(本档位的店长推荐 ∩ 在售) ----
+    // 规格按客户消费结构档位切换(resolveManagerPicks),与 classifyZones 注入的那套**必须同源**,
+    // 否则会高亮一个压根没进专区的 id。查不到档位两边都回退现网默认,仍然一致。
     // smart 取 stock_qty>0;manual 无库存,已选即视为在售(与 zonesAvailable / classifyZones 同口径)。
     // 落位 highlightIds 盖章见下方 zonePlacements 组装后;imageGen 据此渲染 2×2 居中高亮 + 加宽。
     const npInv = selection.inventoryById;
     const npOnSaleIds = new Set(
       specs.filter(s => (mode === 'smart' ? (npInv?.get(s.id)?.stock_qty ?? 0) > 0 : true)).map(s => s.id),
     );
-    const managerPickIds = MANAGER_PICK_IDS.filter(id => npOnSaleIds.has(id));
+    const npStructureLevel = await getCustomerStructureLevel(customer_id || '');
+    const managerPickIds = resolveManagerPicks(npStructureLevel).filter(id => npOnSaleIds.has(id));
 
     // ---- 工商共育 fixedTop 叠加层:强制落到第一个展示柜台(displayCounters[0])的前两行 ----
     // 忽略 toggle 送来的空 counter_id,用 buildIndustrialCoopPlacement 按优先级 + 方案 A

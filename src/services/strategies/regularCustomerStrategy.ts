@@ -5,6 +5,7 @@ import { sortCategories } from '../sortCategories';
 import { getExtendedCategoryMap } from '../categoryCatalog';
 import { classifyZones, buildZonePlacements } from './zones';
 import { fetchSubstituteRules, getCustomerHasPos } from './substitute';
+import { getCustomerStructureLevel } from '../customerStructure';
 import {
   SelectionContext,
   SelectionResult,
@@ -118,12 +119,16 @@ export const regularCustomerStrategy: StrategyFn = async (ctx: SelectionContext)
       .filter(c => (inventoryById.get(c.id)?.stock_qty ?? 0) > 0)
       .map(c => c.id),
   );
+  // 消费结构档位:只决定尝鲜专区「店长推荐」中心那 6 个规格;查不到档位返回 null → 走现网默认。
+  const structureLevel = await getCustomerStructureLevel(ctx.customerId);
   const classification = classifyZones(
     withImages,
     extendedCategoryMap,
     customerOnSaleIds,
     inventoryById,
     substituteRules,
+    new Date(),
+    structureLevel,
   );
 
   // 按用户的 zoneAssignments 计算 zone 落位。注意:zone specs 同时保留在常规陈列 withImages 中,
