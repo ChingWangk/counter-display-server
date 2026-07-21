@@ -64,7 +64,8 @@ export const MANAGER_PICK_IDS: string[] = ['310140', '310143', '310141', '310142
  *   - **集团烟新品先行**——先取上海集团 24 个月内上市的新品;集团在该价带不够时,
  *     用**同价带的省外/外烟新品**补(low 档如此),绝不退回集团老品;
  *   - **310143 中华(细支5mg) 恒占 high / mid_high 首位**(用户定),不看价、不看上市窗口;
- *     它无货时该位自然由后一款顺延——injectManagerPicks 只注入客户在售的规格;
+ *     它无货时**不是**由第 7 款补进来,而是后面的整体前移、总数少一个 —— 缺货补位见
+ *     MANAGER_PICK_BACKFILL_BY_LEVEL,凑不满的收口规则见 resolveManagerPickIds;
  *   - **不回避紧俏烟**(用户定):high / mid_high 档的中华、熊猫新品本身即紧俏品。
  *  改规格改这里即可,injectManagerPicks 与 generate.ts 的高亮子集都读同一份。 */
 export const MANAGER_PICK_BY_LEVEL: Record<string, string[]> = {
@@ -76,6 +77,63 @@ export const MANAGER_PICK_BY_LEVEL: Record<string, string[]> = {
   // 后 2 位用同价带的省外新品补，价带顺势向下贴口粮盘。
   low:      ['310316', '310315', '110131', '310314', '210409', '460203'],
 };
+
+/** 店长推荐**缺货补位池**(用户 2026-07-21 定):基础名单里有规格该客户没进货时,按此顺序补,
+ *  补到 MANAGER_PICK_TARGET 为止。补位规格必须同样满足"在售"。
+ *
+ *  只配了 high 档 —— high 的 6 款(中华细支 3/5/6mg + 金双中 + 熊猫典藏/经典)全是紧俏高价带,
+ *  单店缺 1–2 款是常态(如 116314303 就没进 310143)。牡丹玄华双中(¥400)/蓝彩细支(¥300)
+ *  价带略低但同为集团新品,顶上不违和。
+ *  mid_high 基础名单本就含这两款,再列即重复;low 档不在本次改动范围。 */
+export const MANAGER_PICK_BACKFILL_BY_LEVEL: Record<string, string[]> = {
+  high: ['310317', '310316'],   // 牡丹(玄华双中) → 牡丹(蓝彩细支)
+};
+
+/** 店长推荐方块的目标格数与退档格数(用户定:凑得满 6 就 6,凑不满就退到 4,**不出现 5**)。
+ *  5 个会被 layoutNewProductZone 排成"上 3 下 2"的缺角方块,视觉上像漏了一格,故宁可少放。 */
+const MANAGER_PICK_TARGET = 6;
+const MANAGER_PICK_FALLBACK = 4;
+
+/**
+ * 算出该客户**最终**要进店长推荐中心块的规格 id(已过在售、已补位、已按 6/4 收口)。
+ *
+ * 这是店长推荐名单的**唯一出口** —— injectManagerPicks(决定谁进专区)与 generate.ts
+ * (决定谁被高亮加宽)都必须调它,否则两边算出不同子集,会高亮一个没进专区的 id。
+ *
+ * 步骤:
+ *  1. 取本档位基础名单 ∩ 在售,保持名单原顺序(= 3×2 row-major 顺序);
+ *  2. **未配补位池的档位到此为止**(有几个用几个),行为与本次改动前完全一致;
+ *  3. 配了补位池的档位(当前仅 high):不足 6 个 → 按 MANAGER_PICK_BACKFILL_BY_LEVEL
+ *     顺序补在售的补位规格(去重);
+ *  4. 收口:≥6 取前 6;否则 >4 时截到 4;≤4 就有几个用几个(4/3/2/1 原样返回,不硬凑)。
+ *
+ * 第 4 步的"截到 4"只可能发生在补位后仍是 5 个的情形,即用户要的"不出现 5"。
+ * 收口**只对配了补位池的档位生效** —— mid_high / low 本次未纳入,不能因为一条显示规则
+ * 就悄悄把它们的中心块从 5 格砍到 4 格(low 档 878 家,影响面远大于 high 的 94 家)。
+ * 若日后要一并套用,给对应档位配上补位池即可,无需改此函数。
+ */
+export function resolveManagerPickIds(
+  structureLevel: string | null | undefined,
+  onSaleIds: ReadonlySet<string>,
+): string[] {
+  const picked = resolveManagerPicks(structureLevel).filter(id => onSaleIds.has(id));
+
+  const backfill = structureLevel ? MANAGER_PICK_BACKFILL_BY_LEVEL[structureLevel] : undefined;
+  if (!backfill) return picked;
+
+  if (picked.length < MANAGER_PICK_TARGET) {
+    const seen = new Set(picked);
+    for (const id of backfill) {
+      if (picked.length >= MANAGER_PICK_TARGET) break;
+      if (seen.has(id) || !onSaleIds.has(id)) continue;
+      seen.add(id);
+      picked.push(id);
+    }
+  }
+  if (picked.length >= MANAGER_PICK_TARGET) return picked.slice(0, MANAGER_PICK_TARGET);
+  if (picked.length > MANAGER_PICK_FALLBACK) return picked.slice(0, MANAGER_PICK_FALLBACK);
+  return picked;
+}
 
 /** 免"新品窗口"审计的店长推荐规格：310143 中华(细支5mg) 在 dim_category_ext 无 launch_date,
  *  由用户明确指定恒占 high/mid_high 首位(不看价、不看窗口),故不参与下方超龄告警。 */
@@ -348,8 +406,11 @@ function injectManagerPicks(
 ): ZoneSpec[] {
   auditManagerPicksAge(extendedMap, now);
   const present = new Set(newProduct.map(s => s.id));
-  for (const id of resolveManagerPicks(structureLevel)) {
-    if (present.has(id) || !customerOnSaleIds.has(id)) continue; // 仅在售、未重复
+  // 在售过滤 / 缺货补位 / 6-4 收口全在 resolveManagerPickIds 内完成,此处只负责"让它进专区"。
+  // 被收口砍掉的规格(如 5 → 4 时的第 5 个)不再注入;它若本就在新品窗口内,
+  // 仍会由 classifyNewProduct 作为普通新品出现在专区里,只是不进中心块、不高亮。
+  for (const id of resolveManagerPickIds(structureLevel, customerOnSaleIds)) {
+    if (present.has(id)) continue;
     const c = extendedMap.get(id);
     if (c) newProduct.push(toZoneSpec(c));
   }
