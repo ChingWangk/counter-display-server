@@ -45,6 +45,8 @@ export interface CounterResult {
   counterType: CounterType;
   imageUrl: string;
   layerImages?: string[];
+  /** 「导出柜台规格」xlsx 的下载地址(每行 = 图上一层)。写盘失败时缺省,前端据此隐藏导出按钮。 */
+  manifestUrl?: string;
 }
 
 export interface GenerateResponse {

@@ -14,6 +14,7 @@ import {
 } from '../services/strategies/types';
 import { autoExpandZonePlacements, resolveManagerPickIds } from '../services/strategies/zones';
 import { getCustomerStructureLevel } from '../services/customerStructure';
+import { writeCounterManifestXlsx } from '../services/counterManifestXlsx';
 import { selectFestivalImage } from '../services/strategies/festivalSeason';
 import { getExtendedCategoryMap } from '../services/categoryCatalog';
 import { buildIndustrialCoopPlacement } from '../services/strategies/industrialCoop';
@@ -404,11 +405,20 @@ router.post('/', async (req: Request, res: Response) => {
       }
       // ---- 先生成本柜陈列图,同时拿到「专区局部特写」裁图(crops) ----
       const regRows = regularRowsByCounter.get(cabinet.id) || 0;
-      const { imageUrl, crops } = await generateCounterImage(cabinet, cabinetSpecs, regRows, cabinetZones, priceTagMap, regularLayout, inlinePairs);
+      const { imageUrl, crops, manifest } = await generateCounterImage(cabinet, cabinetSpecs, regRows, cabinetZones, priceTagMap, regularLayout, inlinePairs);
+      // 「导出柜台规格」用的 xlsx:与本柜陈列图同源(同一份 rowSlots),行列即图上层/包位。
+      // 写盘失败返回 null → 前端不显示导出按钮,出图流程不受影响。
+      const typeLabel = cabinet.type === 'hanging' ? '吊柜' : '前柜';
+      const manifestUrl = writeCounterManifestXlsx(manifest, {
+        counterId: cabinet.id,
+        counterLabel: `${typeLabel}${displayCounters.filter((c, j) => c.type === cabinet.type && j <= i).length}`,
+        customerId: customer_id,
+      }) ?? undefined;
       results.push({
         counterId: cabinet.id,
         counterType: cabinet.type,
         imageUrl,
+        manifestUrl,
       });
 
       // 裁图归类:占行专区按 zoneId(整段行一张)、内嵌配对按主规格 id(每对一张)。

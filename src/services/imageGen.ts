@@ -151,6 +151,32 @@ export interface ZoneCrop {
   secondaryId?: string;
 }
 
+/**
+ * 「柜台规格清单」的一格:陈列图上从左到右数的第 seq 个烟包位。
+ * seq 与图上位置严格一一对应 —— 双包陈列时同一规格连着占两格,导出表里就是连着两行,
+ * 店主拿表对图时数得过来。
+ */
+export interface ManifestCell {
+  /** 本行内自左向右的序号,从 1 起 */
+  seq: number;
+  specId: string;
+  specName: string;
+  /** 该格的补充说明:'条+3包' / '★退市' / '反面' / '店长推荐' / '产品升级(左)' 等;无则空串 */
+  note: string;
+}
+
+/**
+ * 「柜台规格清单」的一行,对应陈列图上自上而下的一层。
+ * 行序 = 图上层序,空层也会出一行(cells 为空),保证第 N 行就是图上第 N 层。
+ */
+export interface ManifestRow {
+  /** 层号,从 1 起(图上自上而下) */
+  rowIndex: number;
+  /** 该层归属:'常规陈列' 或专区名(工商共育/重点推荐区/尝鲜专区…);空层为 '空层' */
+  section: string;
+  cells: ManifestCell[];
+}
+
 /** 本行画出的内嵌配对框像素区域(drawFlatRow 回收,供整图完成后裁"局部特写")。 */
 interface BoxRegion {
   xLeft: number;
@@ -569,7 +595,7 @@ export async function generateCounterImage(
   priceTagMap?: ReadonlyMap<string, number>,
   regularLayout?: RegularFillLayout,
   inlinePairs?: ReadonlyMap<string, InlineBoxedPair>,
-): Promise<{ imageUrl: string; usedCount: number; crops: ZoneCrop[] }> {
+): Promise<{ imageUrl: string; usedCount: number; crops: ZoneCrop[]; manifest: ManifestRow[] }> {
   const displayAreaW = Math.round(counter.length * PX_PER_CM);
   const levels = counter.levels;
 
@@ -718,6 +744,53 @@ export async function generateCounterImage(
     bottomCursor += info.rows;
   }
 
+  // ---- 柜台规格清单(导出用):与下方绘制循环读同一份 rowSlots / placedRegular,
+  // 保证"表里第 N 行第 M 格"就是"图上第 N 层从左数第 M 包"。此处只读不改,不影响绘制。
+  const sectionByRow = new Map<number, string>();
+  for (const b of zoneLabelBlocks) {
+    for (let r = b.startRow; r < b.startRow + b.rowCount; r++) sectionByRow.set(r, b.label);
+  }
+  const manifest: ManifestRow[] = [];
+  let manifestRegularIdx = 0;
+  for (let row = 0; row < levels; row++) {
+    const slot = rowSlots[row];
+    const cells: ManifestCell[] = [];
+    const push = (spec: Category, note: string) => cells.push({
+      seq: cells.length + 1, specId: spec.id, specName: spec.name, note,
+    });
+    if (slot) {
+      if (slot.type === 'zone-carton') {
+        // 工商共育:每单元 = 1 条 + 3 包(同规格),图上占 8 包宽,清单里记为一格并标明形态
+        for (const u of slot.units) push(u, '条+3包');
+      } else if (slot.type === 'zone-group') {
+        for (const g of slot.groups) {
+          push(g.primary, g.primary.is_delisted ? '★退市' : '');
+          for (const a of g.alternatives) push(a, '同组');
+        }
+      } else if (slot.type === 'zone-newproduct') {
+        // 每个单元 = 正面 + 反面两包;units 已按 x 升序即图上左右序
+        for (const u of slot.row.units) {
+          push(u.spec, u.special ? '店长推荐·正面' : '正面');
+          push(u.spec, u.special ? '店长推荐·反面' : '反面');
+        }
+      } else if (slot.type === 'zone-single') {
+        for (const s of slot.specs) push(s, '');
+      } else {
+        const packs = placedRegular.slice(manifestRegularIdx, manifestRegularIdx + slot.specCount);
+        manifestRegularIdx += slot.specCount;
+        for (const p of packs) {
+          const role = p.boxRole === 'L' ? '(左)' : p.boxRole === 'R' ? '(右)' : '';
+          push(p.spec, p.boxLabel ? `${p.boxLabel}${role}` : '');
+        }
+      }
+    }
+    manifest.push({
+      rowIndex: row + 1,
+      section: slot ? (sectionByRow.get(row) ?? '常规陈列') : '空层',
+      cells,
+    });
+  }
+
   // 左侧专区标签栏仅在本柜台确有专区行(顶部条行或底部专区)时才预留宽度;否则 labelW=0,陈列区贴左缘。
   // 左侧专区标签栏宽度:含爆珠子专区(带 iconImage,每行画 ≈ 烟包大图标)→ 加宽到 BEAD_LABEL_W;
   // 其它专区 → ZONE_LABEL_W;本柜台无任何专区行 → 0(陈列区贴左缘)。加宽只增左侧留白,不缩减烟包区。
@@ -855,7 +928,7 @@ export async function generateCounterImage(
     crops.push(writeZoneCrop(canvas, sx, cy, ex - sx, ey - cy, counter.id, zkey, cropSeq++, r.primaryId, r.secondaryId));
   }
 
-  return { imageUrl: `/images/generated/${filename}`, usedCount, crops };
+  return { imageUrl: `/images/generated/${filename}`, usedCount, crops, manifest };
 }
 
 /**
