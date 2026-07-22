@@ -1120,8 +1120,11 @@ async function drawGroupedZoneRow(
 }
 
 /**
- * 绘制工商共育「条行」:units 个条单元(≤2),每单元 = 1 条(5包宽) + 3 包(同规格)。
+ * 绘制工商共育「条行」:units 个条单元(≤2),每单元 = 1 条 + 3 包(同规格)。
  * 行结构:[margin] 条 [gap_cp] 包 [gap_pp] 包 [gap_pp] 包 [gap_unit] 条 ... [margin]
+ *  - 条图**不再拉伸**:统一取"层高"CELL_H,再按原图宽高比横向缩放;实际宽 = min(CARTON_W, CELL_H×宽高比),
+ *    极个别超宽条(宽高比>CARTON_W/CELL_H)才回退为按 CARTON_W 等比缩放(高度略低,落在货架板上)。
+ *  - 缺条图时占位仍用满宽 CARTON_W。
  *  - 包-包小缝隙 packGap(偏小,COOP_MIN_PACK_GAP);条-包 / 单元间 / 两侧外边距 均分剩余宽度;
  *  - 内容 + 最小包缝隙 > 行宽时整行按宽度等比缩放塞入(窄柜兜底,高度仍占满 CELL_H)。
  * 条行不画价签(政策曝光位)。
@@ -1136,9 +1139,15 @@ async function drawIndustrialCoopRow(
   const n = units.length;
   if (n === 0) return;
 
-  // 每单元不可压缩的最小宽 = 条 + 3包 + 2 个小缝隙;可调间隙位 = 左右边距(2) + 单元间(n-1) + 条-包(n) = 2n+1
-  const fixedPerUnit = CARTON_W + COOP_PACKS_PER_UNIT * CELL_W + (COOP_PACKS_PER_UNIT - 1) * COOP_MIN_PACK_GAP;
-  const totalFixed = n * fixedPerUnit;
+  // 预加载每个条单元的条图,按原图宽高比在"层高"下算出各自应占宽度(不拉伸)。
+  const cartonImgs = await Promise.all(units.map(u => loadCartonImage(u)));
+  const cartonW = cartonImgs.map(img =>
+    img ? Math.min(CARTON_W, CELL_H * (img.width / img.height)) : CARTON_W
+  );
+
+  // 每单元不可压缩的最小宽 = 条(按比例) + 3包 + 2 个小缝隙;可调间隙位 = 左右边距(2) + 单元间(n-1) + 条-包(n) = 2n+1
+  const fixedPerUnit = cartonW.map(w => w + COOP_PACKS_PER_UNIT * CELL_W + (COOP_PACKS_PER_UNIT - 1) * COOP_MIN_PACK_GAP);
+  const totalFixed = fixedPerUnit.reduce((a, b) => a + b, 0);
   const adjustableSlots = 2 * n + 1;
 
   let scale = 1;
@@ -1151,13 +1160,14 @@ async function drawIndustrialCoopRow(
   } else {
     adjGap = (areaW - totalFixed) / adjustableSlots;
   }
-  const cw = CARTON_W * scale;
   const pw = CELL_W * scale;
 
   let cursor = areaStartX + adjGap;  // 左边距
   for (let u = 0; u < n; u++) {
     if (u > 0) cursor += adjGap;     // 单元之间的间隙
-    await drawCarton(ctx, units[u], cursor, baseY, cw, CELL_H);
+    const cw = cartonW[u] * scale;
+    // 条图按 (cw × CELL_H) 盒**等比 contain**,底部对齐坐落货架板;缺图画满盒占位
+    drawCartonImage(ctx, cartonImgs[u], units[u].name, cursor, baseY, cw, CELL_H);
     cursor += cw + adjGap;           // 条 → 包 之间的间隙
     for (let p = 0; p < COOP_PACKS_PER_UNIT; p++) {
       if (p > 0) cursor += packGap;  // 3 包之间的小缝隙
@@ -1168,30 +1178,47 @@ async function drawIndustrialCoopRow(
 }
 
 /**
- * 绘制单个「条」(carton)图。条图按 {卷烟编码}_ti.jpg 命名(在包图 imageUrl 后缀前插 _ti),
- * 缺图时画占位条(深灰底 + 名称 + "条")。条图宽 = 5 包宽,占满整行高 CELL_H。
+ * 加载单个「条」(carton)图。条图按 {卷烟编码}_ti.jpg 命名(在包图 imageUrl 后缀前插 _ti)。
+ * 缺图 / 加载失败返回 null(由调用方画占位),不抛错。
  */
-async function drawCarton(
-  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
+async function loadCartonImage(
   spec: Category,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-): Promise<void> {
+): Promise<Awaited<ReturnType<typeof loadImage>> | null> {
   // /images/categories/310143.jpg → /images/categories/310143_ti.jpg
   const cartonUrl = spec.imageUrl.replace(/(\.[^./]+)$/, '_ti$1');
   const imgPath = path.join(CATEGORY_IMG_ROOT, cartonUrl);
-  if (fs.existsSync(imgPath)) {
-    try {
-      const img = await loadImage(imgPath);
-      ctx.drawImage(img, x, y, w, h);
-      return;
-    } catch {
-      // 加载失败 → 占位
-    }
+  if (!fs.existsSync(imgPath)) return null;
+  try {
+    return await loadImage(imgPath);
+  } catch {
+    return null;
   }
-  drawCartonPlaceholder(ctx, spec.name, x, y, w, h);
+}
+
+/**
+ * 把条图**等比**画进 (boxW × boxH) 盒:统一高度、保持原图宽高比,绝不拉伸。
+ * 常规情形盒宽恰为 CELL_H×宽高比 → 正好填满;超宽条按宽度贴合、高度略低。
+ * 水平居中、垂直**底部对齐**(条坐落在货架板上)。缺图退回占位(填满盒)。
+ */
+function drawCartonImage(
+  ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
+  img: Awaited<ReturnType<typeof loadImage>> | null,
+  name: string,
+  x: number,
+  y: number,
+  boxW: number,
+  boxH: number,
+): void {
+  if (!img) {
+    drawCartonPlaceholder(ctx, name, x, y, boxW, boxH);
+    return;
+  }
+  const s = Math.min(boxW / img.width, boxH / img.height);
+  const dw = img.width * s;
+  const dh = img.height * s;
+  const dx = x + (boxW - dw) / 2;   // 水平居中(常规无留白)
+  const dy = y + (boxH - dh);       // 底部对齐,坐落货架板
+  ctx.drawImage(img, dx, dy, dw, dh);
 }
 
 /**
