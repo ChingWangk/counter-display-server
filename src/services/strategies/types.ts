@@ -328,7 +328,7 @@ export const ZONE_META: Record<ZoneId, ZoneMeta> = {
   beadFlavor: {
     id: 'beadFlavor',
     label: '爆珠口味组合',
-    icon: '🫐',
+    icon: '🍇',  // 注意:勿换回 🫐(U+1FAD0,Emoji 13.0),旧机型微信渲染不出会显示空白
     description: '爆珠规格按口味分 3 个子专区(果香花香 / 酒香饮品 / 特色草本)左侧分段竖标陈列;各子专区内按铺市面低→高、订足率高→低排列(缺数据则按价格),便于顾客横向比较口味',
     priorityRank: 2,
     tier: 'advanced',
