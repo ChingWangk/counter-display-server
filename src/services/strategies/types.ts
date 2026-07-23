@@ -164,6 +164,9 @@ export interface ZonePlacement {
    *  由 imageGen 生成整图后裁出、generate.ts 回填;供 result → 助手气泡"陈列说明"配图讲解。
    *  inlineRegular(产品升级/平替)不占行,不填此字段——它的裁图落在各 group.cropImageUrl(每对一张)。 */
   cropImageUrl?: string;
+  /** newProduct 专用:店长推荐高亮块的「放大特写」裁图 URL(imageGen 于整图上按高亮带单独裁出,含金底+👍)。
+   *  尝鲜助手气泡只出这张核心块特写、不再整段直出;无在售重点品规(无高亮带)时为空。 */
+  picksCropImageUrl?: string;
 }
 
 /** Category 形态的单组陈列单元(供 imageGen 绘制)。 */

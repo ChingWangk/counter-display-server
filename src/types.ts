@@ -58,6 +58,9 @@ export interface GenerateResponse {
   layout?: GenerateLayout;
   /** 该客户存在"售价低于区域常卖价"的待升价规格 → 出图已贴价签、前端应显示价签助手悬浮入口。缺省视为 false。 */
   showPriceTag?: boolean;
+  /** 客户消费结构档位(cust_consumer_structure.structure_level:high/mid_high/low;查不到则缺省)。
+   *  与店长推荐选品同源(generate 内同一次查询透传),尝鲜助手"陈列说明"据此讲清门店面向客群。 */
+  structureLevel?: string | null;
   error?: string;
 }
 

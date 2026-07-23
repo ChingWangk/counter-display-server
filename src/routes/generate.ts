@@ -433,6 +433,13 @@ router.post('/', async (req: Request, res: Response) => {
         const url = bandCropByZone.get(p.zoneId);
         if (url) p.cropImageUrl = url;
       }
+      // 尝鲜「店长推荐」核心块放大特写(imageGen 以 zoneId='newProductPicks' 单独裁出)
+      // → 回填到 newProduct 落位;尝鲜助手气泡只出这张、不整段直出。
+      const picksUrl = bandCropByZone.get('newProductPicks');
+      if (picksUrl) {
+        const np = cabinetZones.find(p => p.zoneId === 'newProduct');
+        if (np) np.picksCropImageUrl = picksUrl;
+      }
 
       // 内嵌红框配对:统计本柜命中的主规格(在 cabinetSpecs 内),按 zoneId 汇总为 chip 占位 placement,
       // 每组带上该对的局部特写裁图(pairCropByPrimary),供 result → 助手气泡按组展示。
@@ -571,6 +578,8 @@ router.post('/', async (req: Request, res: Response) => {
       ...(allZonePlacements.length > 0 ? { zonePlacements: allZonePlacements } : {}),
       ...(layoutInfo ? { layout: layoutInfo } : {}),
       ...(showPriceTag ? { showPriceTag: true } : {}),
+      // 消费结构档位透传(与店长推荐选品同一次查询):尝鲜助手"陈列说明"讲清门店面向客群
+      ...(npStructureLevel ? { structureLevel: npStructureLevel } : {}),
     };
     res.json(body);
   } catch (err) {

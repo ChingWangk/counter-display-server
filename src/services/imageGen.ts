@@ -820,6 +820,8 @@ export async function generateCounterImage(
   // 分组专区:组内紧贴(primary + alts 均单包),组与组之间加 gap
   // 所有绘制都偏移 ZONE_LABEL_W,把陈列区域限制在 [ZONE_LABEL_W, canvasW] 内
   let regularIdx = 0;
+  // 尝鲜「店长推荐」高亮块的像素包络(两块行同带对齐):渲染后据此单独裁「放大特写」
+  let npPicksRegion: { x0: number; x1: number; y0: number; y1: number } | null = null;
   for (let row = 0; row < levels; row++) {
     const slot = rowSlots[row];
     if (!slot) continue;
@@ -840,6 +842,19 @@ export async function generateCounterImage(
     if (slot.type === 'zone-newproduct') {
       // 尝鲜专区行:正反面 + 店长推荐 2×2 居中(高亮背景带 + 👍)
       await drawNewProductRow(ctx, slot.row, labelW, baseY, priceTagMap);
+      // 记录高亮带区域(跨块行取包络),供渲染完成后裁「店长推荐放大特写」
+      if (slot.row.bgBand) {
+        const x0 = labelW + slot.row.bgBand.x0;
+        const x1 = labelW + slot.row.bgBand.x1;
+        if (!npPicksRegion) {
+          npPicksRegion = { x0, x1, y0: baseY, y1: baseY + CELL_H };
+        } else {
+          npPicksRegion.x0 = Math.min(npPicksRegion.x0, x0);
+          npPicksRegion.x1 = Math.max(npPicksRegion.x1, x1);
+          npPicksRegion.y0 = Math.min(npPicksRegion.y0, baseY);
+          npPicksRegion.y1 = Math.max(npPicksRegion.y1, baseY + CELL_H);
+        }
+      }
       continue;
     }
 
@@ -913,6 +928,16 @@ export async function generateCounterImage(
     const sy = PADDING_TOP + topR * (CELL_H + SHELF_BOARD_H);
     const ey = PADDING_TOP + botR * (CELL_H + SHELF_BOARD_H) + CELL_H;
     crops.push(writeZoneCrop(canvas, 0, sy, canvasW, ey - sy, counter.id, b.zoneId, cropSeq++));
+  }
+
+  // 尝鲜「店长推荐」核心块放大特写:按高亮带包络单独裁一张(含金底与👍),
+  // zoneId='newProductPicks' 与整段图区分,generate.ts 据此回填 placement.picksCropImageUrl。
+  if (npPicksRegion) {
+    const sx = Math.max(0, npPicksRegion.x0 - CROP_PAD);
+    const sy = Math.max(0, npPicksRegion.y0 - CROP_PAD);
+    const ex = Math.min(canvasW, npPicksRegion.x1 + CROP_PAD);
+    const ey = Math.min(canvasH, npPicksRegion.y1 + CROP_PAD);
+    crops.push(writeZoneCrop(canvas, sx, sy, ex - sx, ey - sy, counter.id, 'newProductPicks', cropSeq++));
   }
 
   const pairCountByZone = new Map<string, number>();
