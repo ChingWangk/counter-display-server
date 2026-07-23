@@ -88,6 +88,29 @@ const OUTPUT_DIR = '/www/wwwroot/47.103.65.4/images/generated';
 // 品类图片根目录
 const CATEGORY_IMG_ROOT = '/www/wwwroot/47.103.65.4';
 
+/* ---- 磁盘图片解码缓存（并发性能关键）----
+ * 一柜陈列图要 loadImage 数百张包图/条图/装饰图；不缓存时每次生成都重复「磁盘IO + JPEG解码」，
+ * 是多人同时使用时事件循环卡顿（别人登录/拉专区一直转圈）的主要放大器。
+ * 品类图是静态资源，进程内缓存解码结果；上传新图后 pm2 restart 生效（与现有运维流程一致）。
+ * 缓存 Promise 而非结果：并发首载同一张图只解码一次；失败不缓存（下次重试）。 */
+const diskImageCache = new Map<string, Promise<Awaited<ReturnType<typeof loadImage>>>>();
+function loadImageCached(p: string): Promise<Awaited<ReturnType<typeof loadImage>>> {
+  let hit = diskImageCache.get(p);
+  if (!hit) {
+    hit = loadImage(p);
+    diskImageCache.set(p, hit);
+    hit.catch(() => diskImageCache.delete(p));
+  }
+  return hit;
+}
+
+/** PNG 编码走 node-canvas 的异步回调（libuv 线程池），不再用同步 toBuffer 卡事件循环。 */
+function encodePng(c: ReturnType<typeof createCanvas>): Promise<Buffer> {
+  return new Promise((resolve, reject) =>
+    c.toBuffer((err, buf) => (err ? reject(err) : resolve(buf)), 'image/png'),
+  );
+}
+
 // ---- 每行布局描述 ----
 // 单品专区行:specs 是扁平 Category[],每包紧贴,按 id 切换处留 gap(与常规行算法一致)
 // 双包白名单(爆珠)时 specs 为「每规格连放两包」(同 id 相邻紧贴 → drawFlatRow 自然成对)。
@@ -909,8 +932,9 @@ export async function generateCounterImage(
 
   const filename = `counter_${counter.id}_${Date.now()}.png`;
   const outputPath = path.join(OUTPUT_DIR, filename);
-  const buffer = canvas.toBuffer('image/png');
-  fs.writeFileSync(outputPath, buffer);
+  // 异步编码 + 异步写盘:PNG 压缩是本函数里最重的一段 CPU,走线程池让事件循环继续服务其他请求
+  const buffer = await encodePng(canvas);
+  await fs.promises.writeFile(outputPath, buffer);
 
   // ---- 裁「局部特写」小图:占行专区各一张(整段行,含左侧专区标签) + 内嵌红/绿框每对一张 ----
   // 从已合成的整图 canvas 上裁,保证局部与整图完全一致(含红/绿框、★、店长推荐金底等标记)。
@@ -927,7 +951,7 @@ export async function generateCounterImage(
     const botR = Math.min(topR + b.rows - 1, levels - 1);
     const sy = PADDING_TOP + topR * (CELL_H + SHELF_BOARD_H);
     const ey = PADDING_TOP + botR * (CELL_H + SHELF_BOARD_H) + CELL_H;
-    crops.push(writeZoneCrop(canvas, 0, sy, canvasW, ey - sy, counter.id, b.zoneId, cropSeq++));
+    crops.push(await writeZoneCrop(canvas, 0, sy, canvasW, ey - sy, counter.id, b.zoneId, cropSeq++));
   }
 
   // 尝鲜「店长推荐」核心块放大特写:按高亮带包络单独裁一张(含金底与👍),
@@ -937,7 +961,7 @@ export async function generateCounterImage(
     const sy = Math.max(0, npPicksRegion.y0 - CROP_PAD);
     const ex = Math.min(canvasW, npPicksRegion.x1 + CROP_PAD);
     const ey = Math.min(canvasH, npPicksRegion.y1 + CROP_PAD);
-    crops.push(writeZoneCrop(canvas, sx, sy, ex - sx, ey - sy, counter.id, 'newProductPicks', cropSeq++));
+    crops.push(await writeZoneCrop(canvas, sx, sy, ex - sx, ey - sy, counter.id, 'newProductPicks', cropSeq++));
   }
 
   const pairCountByZone = new Map<string, number>();
@@ -950,7 +974,7 @@ export async function generateCounterImage(
     const cy = Math.max(0, r.baseY - CROP_PAD);
     const ex = Math.min(canvasW, r.xRight + CROP_PAD);
     const ey = Math.min(canvasH, r.baseY + CELL_H + CROP_PAD);
-    crops.push(writeZoneCrop(canvas, sx, cy, ex - sx, ey - cy, counter.id, zkey, cropSeq++, r.primaryId, r.secondaryId));
+    crops.push(await writeZoneCrop(canvas, sx, cy, ex - sx, ey - cy, counter.id, zkey, cropSeq++, r.primaryId, r.secondaryId));
   }
 
   return { imageUrl: `/images/generated/${filename}`, usedCount, crops, manifest };
@@ -960,7 +984,7 @@ export async function generateCounterImage(
  * 从整图 src 裁出 [sx,sy,sw,sh] 区域,写为独立 PNG 到 OUTPUT_DIR,返回 ZoneCrop。
  * 供生成专区/配对的「局部特写」小图(助手气泡"陈列说明"配图)。
  */
-function writeZoneCrop(
+async function writeZoneCrop(
   src: ReturnType<typeof createCanvas>,
   sx: number,
   sy: number,
@@ -971,14 +995,14 @@ function writeZoneCrop(
   seq: number,
   primaryId?: string,
   secondaryId?: string,
-): ZoneCrop {
+): Promise<ZoneCrop> {
   const w = Math.max(1, Math.round(sw));
   const h = Math.max(1, Math.round(sh));
   const crop = createCanvas(w, h);
   const cctx = crop.getContext('2d');
   cctx.drawImage(src, Math.round(sx), Math.round(sy), w, h, 0, 0, w, h);
   const filename = `crop_${counterId}_${zoneId}_${seq}_${Date.now()}.png`;
-  fs.writeFileSync(path.join(OUTPUT_DIR, filename), crop.toBuffer('image/png'));
+  await fs.promises.writeFile(path.join(OUTPUT_DIR, filename), await encodePng(crop));
   return { zoneId, imageUrl: `/images/generated/${filename}`, primaryId, secondaryId };
 }
 
@@ -1214,7 +1238,7 @@ async function loadCartonImage(
   const imgPath = path.join(CATEGORY_IMG_ROOT, cartonUrl);
   if (!fs.existsSync(imgPath)) return null;
   try {
-    return await loadImage(imgPath);
+    return await loadImageCached(imgPath);
   } catch {
     return null;
   }
@@ -1412,7 +1436,7 @@ async function drawBackFace(
   const imgPath = path.join(CATEGORY_IMG_ROOT, backUrl);
   if (fs.existsSync(imgPath)) {
     try {
-      const img = await loadImage(imgPath);
+      const img = await loadImageCached(imgPath);
       ctx.drawImage(img, x, y, w, h);
       return;
     } catch {
@@ -1462,7 +1486,7 @@ async function drawManagerThumb(
   const p = path.join(CATEGORY_IMG_ROOT, MANAGER_THUMB_PATH);
   if (fs.existsSync(p)) {
     try {
-      const img = await loadImage(p);
+      const img = await loadImageCached(p);
       ctx.drawImage(img, x, y, size, size);
       return;
     } catch {
@@ -1536,7 +1560,7 @@ async function drawZoneLabel(
     const p = path.join(CATEGORY_IMG_ROOT, iconPath);
     if (fs.existsSync(p)) {
       try {
-        iconImg = await loadImage(p);
+        iconImg = await loadImageCached(p);
       } catch {
         iconImg = null;  // 加载失败 → 落到色块占位
       }
@@ -1613,7 +1637,7 @@ async function drawSpec(
 
   if (hasFile) {
     try {
-      const img = await loadImage(imgPath);
+      const img = await loadImageCached(imgPath);
       ctx.drawImage(img, x, y, w, h);
     } catch {
       drawPlaceholder(ctx, spec.name, x, y, w, h);
