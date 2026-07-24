@@ -88,20 +88,26 @@ const OUTPUT_DIR = '/www/wwwroot/47.103.65.4/images/generated';
 // 品类图片根目录
 const CATEGORY_IMG_ROOT = '/www/wwwroot/47.103.65.4';
 
-/* ---- 磁盘图片解码缓存（并发性能关键）----
- * 一柜陈列图要 loadImage 数百张包图/条图/装饰图；不缓存时每次生成都重复「磁盘IO + JPEG解码」，
+/* ---- 磁盘图片「压缩字节」缓存（并发性能关键）----
+ * 一柜陈列图要 loadImage 数百张包图/条图/装饰图；不缓存时每次生成都重复磁盘IO，
  * 是多人同时使用时事件循环卡顿（别人登录/拉专区一直转圈）的主要放大器。
- * 品类图是静态资源，进程内缓存解码结果；上传新图后 pm2 restart 生效（与现有运维流程一致）。
- * 缓存 Promise 而非结果：并发首载同一张图只解码一次；失败不缓存（下次重试）。 */
-const diskImageCache = new Map<string, Promise<Awaited<ReturnType<typeof loadImage>>>>();
+ * 品类图是静态资源，进程内缓存其「压缩文件字节」（每张几百 KB）；上传新图后 pm2 restart 生效。
+ *
+ * ⚠ 关键教训（2026-07-24 OOM 事故）：**不要缓存 loadImage 的解码结果**。
+ * 品类原图约 2000×3300，node-canvas 解码后是 ~27MB/张的原生位图（非 V8 堆）。
+ * 若把 Image 常驻 Map 不淘汰，铺满整柜(200+ 规格)会瞬间占用 6GB+ → 进程被 OOM 杀掉 → generate 502。
+ * 这里只缓存压缩字节（内存有界），每次绘制时才 loadImage(buffer) 解码，用完即被 GC 回收，
+ * 峰值内存只与「同时在画的几张图」相关，不随累计规格数增长。
+ * 失败不缓存（下次重试）。 */
+const diskImageCache = new Map<string, Promise<Buffer>>();
 function loadImageCached(p: string): Promise<Awaited<ReturnType<typeof loadImage>>> {
-  let hit = diskImageCache.get(p);
-  if (!hit) {
-    hit = loadImage(p);
-    diskImageCache.set(p, hit);
-    hit.catch(() => diskImageCache.delete(p));
+  let buf = diskImageCache.get(p);
+  if (!buf) {
+    buf = fs.promises.readFile(p);
+    diskImageCache.set(p, buf);
+    buf.catch(() => diskImageCache.delete(p));
   }
-  return hit;
+  return buf.then(b => loadImage(b));
 }
 
 /** PNG 编码走 node-canvas 的异步回调（libuv 线程池），不再用同步 toBuffer 卡事件循环。 */
