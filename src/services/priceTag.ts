@@ -15,6 +15,7 @@ export interface PriceCompareRow {
   spec_name: string;
   region_price: number;       // 区域常卖价（ref_yangpu_avg_price.avg_price；建议上调到的目标价）
   my_price: number;           // 客户当前售价（cust_spec_price；一定 < region_price）
+  month_qty: number | null;   // 近一个月销量（包，cust_spec_month_sales）；非 POS / 查不到为 null
   below: true;                // 恒为 true（对照表只列偏低规格，保留字段供前端标红/兼容）
 }
 
@@ -22,12 +23,19 @@ export interface PriceComparison {
   rows: PriceCompareRow[];    // 只含"卖得比区域常卖价低"的待升价规格；无则为空数组
   belowCount: number;         // = rows.length，售价偏低（可上调）的规格数
   snapshotMonth: string | null;
+  /** 本月少赚 = Σ (区域常卖价 − 客户售价) × 月销量（元，取整），只算有销量的行；无任何销量数据为 null（不出该段话术）。 */
+  monthLoss: number | null;
 }
 
 interface RegionRow extends RowDataPacket {
   spec_id: string;
   spec_name: string;
   avg_price: string;
+}
+
+interface MonthSalesRow extends RowDataPacket {
+  spec_id: string;
+  month_qty: number;
 }
 
 interface CustPriceRow extends RowDataPacket {
@@ -58,7 +66,7 @@ export async function getCustomerPriceComparison(
        ORDER BY avg_price DESC
       `,
     );
-    if (regionRows.length === 0) return { rows: [], belowCount: 0, snapshotMonth: null };
+    if (regionRows.length === 0) return { rows: [], belowCount: 0, snapshotMonth: null, monthLoss: null };
 
     // 客户售价（最新月）——表未建时 myPriceById 为空 → 无从判定偏低 → 最终空表，不报错
     const myPriceById = new Map<string, number>();
@@ -84,22 +92,47 @@ export async function getCustomerPriceComparison(
       console.warn('[priceTag] cust_spec_price table not ready, comparison degrades to empty');
     }
 
+    // 近一个月销量（POS 日结折月）——表未建/非 POS 客户 → 空 Map → monthLoss=null，不编销量
+    const monthQtyById = new Map<string, number>();
+    try {
+      const [salesRows] = await pool.execute<MonthSalesRow[]>(
+        'SELECT spec_id, month_qty FROM cust_spec_month_sales WHERE customer_id = ?',
+        [customerId],
+      );
+      for (const r of salesRows) {
+        const q = Number(r.month_qty);
+        if (Number.isFinite(q)) monthQtyById.set(r.spec_id, q);
+      }
+    } catch (err: unknown) {
+      const code = (err as { code?: string }).code;
+      if (code !== 'ER_NO_SUCH_TABLE') throw err;
+      console.warn('[priceTag] cust_spec_month_sales table not ready, monthLoss degrades to null');
+    }
+
     // 只保留"客户售价 < 区域常卖价"的待升价规格；卖价达标或查不到售价的直接丢弃。
     const rows: PriceCompareRow[] = [];
+    let loss = 0;
+    let hasSales = false;
     for (const r of regionRows) {
       const region = Number(r.avg_price);
       const mine = myPriceById.get(r.spec_id);
       if (mine === undefined || !(mine < region)) continue;
-      rows.push({ spec_id: r.spec_id, spec_name: r.spec_name, region_price: region, my_price: mine, below: true });
+      const qty = monthQtyById.get(r.spec_id) ?? null;
+      if (qty !== null && qty > 0) {
+        loss += (region - mine) * qty;
+        hasSales = true;
+      }
+      rows.push({ spec_id: r.spec_id, spec_name: r.spec_name, region_price: region, my_price: mine, month_qty: qty, below: true });
     }
-    return { rows, belowCount: rows.length, snapshotMonth };
+    const monthLoss = hasSales ? Math.round(loss) : null;
+    return { rows, belowCount: rows.length, snapshotMonth, monthLoss };
   } catch (err: unknown) {
     const code = (err as { code?: string }).code;
     if (code === 'ER_NO_SUCH_TABLE') {
       console.warn('[priceTag] ref_yangpu_avg_price table not ready, empty comparison');
-      return { rows: [], belowCount: 0, snapshotMonth: null };
+      return { rows: [], belowCount: 0, snapshotMonth: null, monthLoss: null };
     }
     console.error('[priceTag] getCustomerPriceComparison error:', err);
-    return { rows: [], belowCount: 0, snapshotMonth: null };
+    return { rows: [], belowCount: 0, snapshotMonth: null, monthLoss: null };
   }
 }

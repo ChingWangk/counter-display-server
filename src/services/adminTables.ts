@@ -112,6 +112,14 @@ export const ADMIN_TABLES: AdminTable[] = [
     freshness: { unit: '月', select: 'snapshot_month', order: 'snapshot_month' },
     note: '价签助手对照表的"您的当前售价"列；由 build_cust_spec_price.py 从价库/零售明细生成，与 ref_yangpu_avg_price 对照。',
   },
+  {
+    key: 'cust_spec_month_sales', table: 'cust_spec_month_sales', label: '客户月销量', category: 'customer',
+    keyColumns: ['customer_id', 'spec_id'], cadence: 'manual', managed: true,
+    importMode: 'replace', importable: true,
+    searchable: ['customer_id', 'spec_id'],
+    freshness: { unit: '日', select: 'window_end', order: 'window_end' },
+    note: '价签白名单规格的近一个月销量(包)，供价签助手陈列说明测算"本月少赚 xx 元"。由 build_cust_spec_month_sales.py 读 POS 日结最近 4 周折月，整表替换导入（仅 POS 客户有数据）。',
+  },
 
   // ---------------- 商品与陈列资源 ----------------
   {
