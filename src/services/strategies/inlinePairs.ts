@@ -59,6 +59,17 @@ const UPGRADE_PAIR_CAP_BY_CUSTOMER: Record<string, number> = {
   // 如需为个别客户单独调整上限,在此覆盖,例如 '116314785': 6;缺省一律用 DEFAULT_UPGRADE_PAIR_CAP。
 };
 
+/**
+ * 按客户屏蔽的「产品升级」组合(主规格编码 → 被屏蔽的升级款编码)。业务点名"这家不要这组"时在此登记。
+ * 命中后该主规格**不出升级框**(不改派其他升级款,避免换出一组业务没看过的组合);
+ * 被屏蔽的升级款若本身在常规陈列里,照常以普通包陈列。写死配对与自动派生一律适用。
+ */
+const UPGRADE_PAIR_BLOCK_BY_CUSTOMER: Record<string, Record<string, string>> = {
+  '116314785': {
+    '310311': '310314', // 牡丹(红中支) → 牡丹(恒大硬中支):业务要求该客户不展示此升级组合(2026-10-15)
+  },
+};
+
 /** 「脱销平替」配对组数上限(所有客户统一封顶)。写死平替优先保留,其余派生按**季度脱销频次降序**补到上限。 */
 const DEFAULT_SUBSTITUTE_PAIR_CAP = 10;
 
@@ -117,6 +128,8 @@ export function computeInlinePairs(args: ComputeInlinePairsArgs): Map<string, In
     Object.prototype.hasOwnProperty.call(UPGRADE_PAIRS, id) ||
     Object.prototype.hasOwnProperty.call(SUBSTITUTE_PAIRS, id);
 
+  const blockedUpgrade: Record<string, string> = (customerId && UPGRADE_PAIR_BLOCK_BY_CUSTOMER[customerId]) || {};
+
   // 已被用作副规格的 id:避免某规格既当别组主规格又当本组副规格(防链式/重复框)
   const usedSecondaryIds = new Set<string>();
   // 已处理过的 primaryId(specs 可能含重复 id,只配一次)
@@ -138,6 +151,7 @@ export function computeInlinePairs(args: ComputeInlinePairsArgs): Map<string, In
     // 命中即落位并跳过本规格(secondary 须存在且非自身)。
     const trySet = (secondary: Category | undefined, zoneId: 'productUpgrade' | 'substitute', label: string): boolean => {
       if (!secondary || secondary.id === pid) return false;
+      if (zoneId === 'productUpgrade' && blockedUpgrade[pid] === secondary.id) return false;  // 该客户屏蔽的升级组合
       pairs.set(pid, { primaryId: pid, secondary, zoneId, boxLabel: label });
       usedSecondaryIds.add(secondary.id);
       return true;

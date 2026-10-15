@@ -129,6 +129,8 @@ export interface ZoneAssignment {
   festival_id?: FestivalId;
   /** 仅 festivalSeason:用户为该背柜单选的商品(spec_id),空=后端自动智能选图。每背柜各自独立。 */
   festival_spec_id?: string;
+  /** 仅 festivalSeason:投稿主题图(/images/user-festival/{customer_id}/xxx;已通过或本人审核中)。有效时整柜直接用这张,优先于 festival_spec_id。 */
+  festival_upload_url?: string;
 }
 
 /** 策略层根据 zoneAssignments 计算的最终落位：具体哪些 group 落到哪个柜台的几行。 */

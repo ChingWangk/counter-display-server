@@ -16,6 +16,7 @@ import { autoExpandZonePlacements, resolveManagerPickIds } from '../services/str
 import { getCustomerStructureLevel } from '../services/customerStructure';
 import { writeCounterManifestXlsx } from '../services/counterManifestXlsx';
 import { selectFestivalImage } from '../services/strategies/festivalSeason';
+import { resolveFestivalUploadUrl } from '../services/festivalUploads';
 import { getExtendedCategoryMap } from '../services/categoryCatalog';
 import { buildIndustrialCoopPlacement } from '../services/strategies/industrialCoop';
 import { computeInlinePairs, InlineBoxedPair } from '../services/strategies/inlinePairs';
@@ -480,10 +481,14 @@ router.post('/', async (req: Request, res: Response) => {
     // 节日命中的背柜跳过 back-cabinet-select 主题匹配,跟用户在 zone-select 上的"节日优先"约定一致。
     const festivalByBackCounter = new Map<string, FestivalId>();
     const festivalSpecByBackCounter = new Map<string, string>();  // counter → 用户单选的商品 spec_id(可选)
+    const festivalUploadByBackCounter = new Map<string, string>(); // counter → 投稿主题图 URL(可选,最优先)
     for (const a of backCabinetAssignments) {
       if (a.zone_id === 'festivalSeason' && a.festival_id) {
         festivalByBackCounter.set(a.counter_id, a.festival_id);
         if (a.festival_spec_id) festivalSpecByBackCounter.set(a.counter_id, a.festival_spec_id);
+        // 投稿主题图:只认"已通过"或"本人审核中"且文件仍在的;无效(被驳回/删除/伪造)则忽略、回退选商品/自动选图
+        const uploadUrl = await resolveFestivalUploadUrl(customer_id, a.festival_upload_url);
+        if (uploadUrl) festivalUploadByBackCounter.set(a.counter_id, uploadUrl);
       }
     }
     let extendedMap: ReadonlyMap<string, Category> | null = null;
@@ -511,6 +516,18 @@ router.post('/', async (req: Request, res: Response) => {
     let globalThemeCursor = 0;
 
     for (const counter of backCounters) {
+      // 投稿主题图:整柜直接用,不参与跨柜去重(同一张图用户若选给两个背柜,尊重其选择)
+      const uploadUrl = festivalUploadByBackCounter.get(counter.id);
+      if (uploadUrl) {
+        results.push({
+          counterId: counter.id,
+          counterType: counter.type,
+          imageUrl: uploadUrl,
+          layerImages: [uploadUrl],
+        });
+        continue;
+      }
+
       const festivalId = festivalByBackCounter.get(counter.id);
       if (festivalId && extendedMap) {
         const festivalUrl = await selectFestivalImage(

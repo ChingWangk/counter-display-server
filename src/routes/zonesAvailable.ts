@@ -145,11 +145,11 @@ router.post('/', async (req: Request, res: Response) => {
     // 产品升级 / 平替为 inlineRegular(纯开关)专区:可用性按「内嵌红框配对数」判定,
     // 而非 classifyZones 的旧 grouped 结果(两者口径不同)。computeInlinePairs 与 /api/generate 同源,
     // 保证 zone-select 列出开关 ⇔ 生成时确有红框可画。
-    // 注:此处不传 customerId → 不套用 UPGRADE_PAIR_CAP_BY_CUSTOMER 封顶(仅 116314785),
-    // 生成时才封顶。封顶下限 ≥ 1,裁后仍 >0,不影响"开关是否出现"的判定,故无碍。
+    // 传 customerId:按客户屏蔽的升级组合(UPGRADE_PAIR_BLOCK_BY_CUSTOMER)也要算进来,
+    // 否则某客户唯一的一组被屏蔽时,开关仍会出现、生成却没有红框。封顶下限 ≥ 1,不影响开关判定。
     const upgradePairCount = computeInlinePairs({
       specs: sourceSpecs, enableUpgrade: true, enableSubstitute: false,
-      extendedMap, onSaleIds: customerOnSaleIds, inventoryById,
+      extendedMap, onSaleIds: customerOnSaleIds, inventoryById, customerId: customer_id,
     }).size;
     const substitutePairCount = computeInlinePairs({
       specs: sourceSpecs, enableUpgrade: false, enableSubstitute: true,

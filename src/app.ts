@@ -18,6 +18,8 @@ import wholesaleRankRouter from './routes/wholesaleRank';
 import localBrandGrowthRouter from './routes/localBrandGrowth';
 import zonesAvailableRouter from './routes/zonesAvailable';
 import festivalSpecsRouter from './routes/festivalSpecs';
+import festivalUploadsRouter from './routes/festivalUploads';
+import festivalReviewRouter from './routes/festivalReview';
 import customerAuthRouter from './routes/customerAuth';
 import ondemandSpecsRouter from './routes/ondemandSpecs';
 import agentFeedbackRouter from './routes/agentFeedback';
@@ -30,6 +32,10 @@ import { adminAuth } from './middleware/adminAuth';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// 节日专区客户投稿主题图:base64 上传体积大,须挂在全局 express.json()(默认 100kb 上限)之前、单独放宽,
+// 否则全局解析器先抛 413。
+app.use('/api/festival-uploads', express.json({ limit: '12mb' }), festivalUploadsRouter);
 
 app.use(express.json());
 
@@ -63,6 +69,8 @@ app.use('/api/price-tag', priceTagRouter);
 app.use('/api/spec-promo-detail', specPromoDetailRouter);
 app.use('/api/substitute-detail', substituteDetailRouter);
 app.use('/api/upgrade-detail', upgradeDetailRouter);
+// 节日主题图投稿审核（后台管理平台「主题图审核」）：同样需后台令牌
+app.use('/api/admin/festival-submissions', adminAuth, festivalReviewRouter);
 // 后台管理通用数据接口：全程经 adminAuth 令牌校验（读写皆需 X-Admin-Token）
 app.use('/api/admin', adminAuth, adminRouter);
 

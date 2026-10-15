@@ -224,6 +224,19 @@
 
   .maint-tbl td{vertical-align:middle}
   .maint-tbl code{font-size:10.5px;color:var(--grey)}
+
+  /* 节日主题图投稿审核 */
+  .fr-tabs{display:flex;gap:6px;flex-wrap:wrap}
+  .fr-tab{padding:5px 12px;border-radius:20px;border:1px solid var(--line);background:#fff;font-size:12px;color:var(--grey);cursor:pointer;font-weight:600}
+  .fr-tab.on{background:var(--green);border-color:var(--green);color:#fff}
+  .fr-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+  .fr-card{background:#fff;border:1px solid var(--line);border-radius:var(--r-card);overflow:hidden;display:flex;flex-direction:column}
+  .fr-card img{width:100%;height:180px;object-fit:cover;background:var(--cream);cursor:zoom-in;display:block}
+  .fr-body{padding:10px 12px;font-size:12px;color:var(--ink);display:flex;flex-direction:column;gap:6px;flex:1}
+  .fr-meta{color:var(--grey)}
+  .fr-reason{color:var(--danger)}
+  .fr-body select{padding:4px 6px;border:1px solid var(--line);border-radius:6px;font-size:12px}
+  .fr-ops{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto}
 </style>
 </head>
 <body>
@@ -940,6 +953,8 @@ function renderChips(){
   });
   const allt=document.createElement('div'); allt.className='chip'; allt.dataset.cat='alltables';
   allt.textContent='🗃️ 全部数据表'; allt.title='任意数据表按关键字检索（含客户代码）'; wrap.appendChild(allt);
+  const fr=document.createElement('div'); fr.className='chip'; fr.dataset.cat='festreview';
+  fr.textContent='🖼️ 主题图审核'; fr.title='客户投稿的节日主题陈列图 · 审核通过后成为公共素材'; wrap.appendChild(fr);
   const maint=document.createElement('div'); maint.className='chip'; maint.dataset.cat='maint';
   maint.textContent='🔧 维护台'; maint.title='需定期更新的数据表'; wrap.appendChild(maint);
   wrap.querySelectorAll('.chip').forEach(ch=>ch.onclick=()=>{
@@ -950,6 +965,7 @@ function renderChips(){
 function filterCat(cat){
   if(cat==='maint'){ renderMaintenance(); return; }
   if(cat==='alltables'){ renderAllTables(); return; }
+  if(cat==='festreview'){ renderFestivalReview(); return; }
   if($('#cats').dataset.mode){ renderCats(); }  // 从维护台 / 全部数据表切回 → 还原分区
   CATEGORIES.forEach(c=>{ const blk=document.getElementById('catblk-'+c.id); if(blk) blk.style.display=(cat==='all'||cat===c.id)?'':'none'; });
 }
@@ -1413,6 +1429,78 @@ function rowForTable(t){
     '<td>'+(t.exists?t.rowCount:'—')+'</td>'+
     '<td><span class="pill '+cad.pill+'">'+cad.label+'</span></td>'+
     '<td>'+op+'</td></tr>';
+}
+
+/* ---- 节日主题图投稿审核 ----
+ * 客户在小程序节日专区上传的主题陈列图先进「待审核」（投稿人本人可先用）；
+ * 通过 → 成为该节日的公共素材，所有客户都能在「大家的主题图」里选；驳回 → 附原因，投稿人可见、不可再用。 */
+const FR_STATUS={pending:{label:'待审核',pill:'y'},approved:{label:'已通过',pill:'g'},rejected:{label:'已驳回',pill:'r'}};
+const FR_FESTIVALS=[['newYear','元旦'],['springFestival','春节'],['lanternFestival','元宵'],['dragonBoat','端午'],['midAutumn','中秋'],['nationalDay','国庆'],['chongyang','重阳']];
+let frStatus='pending';
+async function renderFestivalReview(){
+  const root=$('#cats'); root.dataset.mode='festreview';
+  if(!ADMIN.token){
+    root.innerHTML='<div class="cat-block"><div class="hint">请先在右上角「连接数据库」后审核投稿。</div></div>'; return;
+  }
+  root.innerHTML='<div class="cat-block"><div class="hint">加载中…</div></div>';
+  let j;
+  try{ const res=await adminFetch('/api/admin/festival-submissions?status='+frStatus); j=await res.json(); }
+  catch(e){ root.innerHTML='<div class="cat-block"><div class="hint">加载失败，请稍后重试。</div></div>'; return; }
+  if(!j.success){ root.innerHTML='<div class="cat-block"><div class="hint">'+esc(j.error||'加载失败')+'</div></div>'; return; }
+  const c=j.counts||{}; const total=(c.pending||0)+(c.approved||0)+(c.rejected||0);
+  const tabs=[['pending','待审核',c.pending||0],['approved','已通过',c.approved||0],['rejected','已驳回',c.rejected||0],['all','全部',total]];
+  let h='<div class="cat-block"><div class="cat-head"><div class="badge-ic" style="background:var(--c-goods)">🖼️</div>'+
+    '<div><h3>主题图审核 · 节日专区客户投稿</h3><div class="desc">通过后成为该节日的公共素材，所有客户可选；驳回需填写原因，投稿客户可见。</div></div>'+
+    '<div class="cnt">待审 '+(c.pending||0)+' 张</div></div>'+
+    '<div class="admin-toolbar"><div class="fr-tabs">'+
+      tabs.map(t=>'<span class="fr-tab'+(t[0]===frStatus?' on':'')+'" data-s="'+t[0]+'">'+t[1]+' '+t[2]+'</span>').join('')+
+    '</div><span class="spacer"></span></div>';
+  const items=j.items||[];
+  if(items.length===0){ h+='<div class="hint">暂无'+(frStatus==='all'?'':(FR_STATUS[frStatus]||{}).label||'')+'投稿。</div></div>'; root.innerHTML=h; bindFrTabs(); return; }
+  h+='<div class="fr-grid">'+items.map(frCard).join('')+'</div></div>';
+  root.innerHTML=h; bindFrTabs();
+}
+function bindFrTabs(){ document.querySelectorAll('.fr-tab').forEach(t=>t.onclick=()=>{ frStatus=t.dataset.s; renderFestivalReview(); }); }
+function frCard(it){
+  const st=FR_STATUS[it.status]||{label:it.status,pill:'n'};
+  const opts=FR_FESTIVALS.map(f=>'<option value="'+f[0]+'"'+(f[0]===it.festivalId?' selected':'')+'>'+f[1]+'</option>').join('');
+  const ops=[];
+  if(it.status!=='approved') ops.push('<button class="btn primary mini" data-act="approve" onclick="frReview('+it.id+',this.dataset.act)">✓ 通过</button>');
+  if(it.status!=='rejected') ops.push('<button class="btn ghost mini" data-act="reject" onclick="frReview('+it.id+',this.dataset.act)">驳回</button>');
+  ops.push('<button class="btn del mini" onclick="frDelete('+it.id+')">删除</button>');
+  return '<div class="fr-card">'+
+    '<img src="'+esc(imgUrl(it.url))+'" loading="lazy" onclick="window.open(this.src)" alt="主题图"/>'+
+    '<div class="fr-body">'+
+      '<div><span class="pill '+st.pill+'">'+st.label+'</span> <b>客户 '+esc(it.customerId)+'</b></div>'+
+      '<div class="fr-meta">投稿 '+esc(it.createdAt||'—')+(it.reviewedAt?' · 审核 '+esc(it.reviewedAt):'')+'</div>'+
+      '<div>节日：<select id="frFest-'+it.id+'"'+(it.status==='approved'?' disabled':'')+'>'+opts+'</select></div>'+
+      (it.status==='rejected'&&it.rejectReason?'<div class="fr-reason">驳回原因：'+esc(it.rejectReason)+'</div>':'')+
+      '<div class="fr-ops">'+ops.join('')+'</div>'+
+    '</div></div>';
+}
+async function frReview(id, action){
+  const body={action};
+  if(action==='approve'){ const sel=$('#frFest-'+id); if(sel) body.festival_id=sel.value; }
+  else{
+    const reason=prompt('驳回原因（投稿客户可见）：','图片与节日主题不符');
+    if(reason===null) return;
+    body.reason=reason;
+  }
+  try{
+    const res=await adminFetch('/api/admin/festival-submissions/'+id+'/review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const j=await res.json();
+    if(!j.success){ toast(j.error||'操作失败','err'); return; }
+    toast(action==='approve'?'已通过，已加入公共素材':'已驳回','ok'); renderFestivalReview();
+  }catch(e){ toast('操作失败','err'); }
+}
+async function frDelete(id){
+  if(!confirm('彻底删除这张投稿？图片文件一并删除，不可恢复；已选用它的客户下次出图会回退自动选图。')) return;
+  try{
+    const res=await adminFetch('/api/admin/festival-submissions/'+id,{method:'DELETE'});
+    const j=await res.json();
+    if(!j.success){ toast(j.error||'删除失败','err'); return; }
+    toast('已删除','ok'); renderFestivalReview();
+  }catch(e){ toast('删除失败','err'); }
 }
 
 /* 抽屉打开时：tkey 模块（且已连库）→ 用 admin API 渲染全量分页表 */
