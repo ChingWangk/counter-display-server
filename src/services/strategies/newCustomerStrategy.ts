@@ -3,7 +3,7 @@ import { RowDataPacket } from 'mysql2';
 import { Category } from '../../types';
 import { sortCategories } from '../sortCategories';
 import { categoryMap } from '../categoryCatalog';
-import { MONTHLY_HOT_SPEC_IDS } from './monthlyHotSpecs';
+import { FORCED_HOT_SPECS_BY_CUSTOMER, MONTHLY_HOT_SPEC_IDS } from './monthlyHotSpecs';
 import { SelectionContext, SelectionResult, StrategyFn, ValidationError } from './types';
 
 /** 高价烟保护阈值：批发价 > 600 元/条 的紧俏烟即便资源不足也保留（门店刚需） */
@@ -63,7 +63,14 @@ export const newCustomerStrategy: StrategyFn = async (ctx: SelectionContext): Pr
   let withImages = sortCategories(pool_);
 
   let filteredHotSpecs: { id: string; name: string }[] | undefined;
-  if (withImages.length > ctx.totalSlots) {
+  const forcedHot = FORCED_HOT_SPECS_BY_CUSTOMER[ctx.customerId];
+  if (forcedHot) {
+    // 该客户固定剔除清单:始终剔除并整份列入明细,不走下方按货源属性表的超容剔除
+    const removeIds = new Set(forcedHot);
+    filteredHotSpecs = forcedHot.map(id => ({ id, name: categoryMap.get(id)?.name ?? id }));
+    withImages = withImages.filter(c => !removeIds.has(c.id));
+    for (const id of forcedHot) usedSpecIds.delete(id);
+  } else if (withImages.length > ctx.totalSlots) {
     // 紧俏口径取当月货源属性表(MONTHLY_HOT_SPEC_IDS),不用 categories.json 的 is_hot,
     // 保证暂缓的规格与结果页剔除明细完全一致
     const hotSpecs = withImages.filter(c => MONTHLY_HOT_SPEC_IDS.has(c.id) && c.price <= HIGH_PRICE_PROTECT);

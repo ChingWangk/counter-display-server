@@ -6,6 +6,7 @@ import { getExtendedCategoryMap } from '../categoryCatalog';
 import { classifyZones, buildZonePlacements } from './zones';
 import { fetchSubstituteRules, getCustomerHasPos } from './substitute';
 import { getCustomerStructureLevel } from '../customerStructure';
+import { FORCED_HOT_SPECS_BY_CUSTOMER } from './monthlyHotSpecs';
 import {
   SelectionContext,
   SelectionResult,
@@ -96,7 +97,14 @@ export const regularCustomerStrategy: StrategyFn = async (ctx: SelectionContext)
 
   // 资源不足时过滤紧俏烟，高价烟保护
   let filteredHotSpecs: { id: string; name: string }[] | undefined;
-  if (withImages.length > ctx.totalSlots) {
+  const forcedHot = FORCED_HOT_SPECS_BY_CUSTOMER[ctx.customerId];
+  if (forcedHot) {
+    // 该客户固定剔除清单:始终剔除并整份列入明细(在专区分类之前,专区/红框/背柜主题都不会再用到这些规格)
+    const removeIds = new Set(forcedHot);
+    filteredHotSpecs = forcedHot.map(id => ({ id, name: extendedCategoryMap.get(id)?.name ?? id }));
+    withImages = withImages.filter(c => !removeIds.has(c.id));
+    for (const id of forcedHot) usedSpecIds.delete(id);
+  } else if (withImages.length > ctx.totalSlots) {
     const hotSpecs = withImages.filter(c => c.is_hot && c.price <= HIGH_PRICE_PROTECT);
     if (hotSpecs.length > 0) {
       filteredHotSpecs = hotSpecs.map(c => ({ id: c.id, name: c.name }));
