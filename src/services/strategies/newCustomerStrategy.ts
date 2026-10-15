@@ -3,6 +3,7 @@ import { RowDataPacket } from 'mysql2';
 import { Category } from '../../types';
 import { sortCategories } from '../sortCategories';
 import { categoryMap } from '../categoryCatalog';
+import { MONTHLY_HOT_SPEC_IDS } from './monthlyHotSpecs';
 import { SelectionContext, SelectionResult, StrategyFn, ValidationError } from './types';
 
 /** 高价烟保护阈值：批发价 > 600 元/条 的紧俏烟即便资源不足也保留（门店刚需） */
@@ -22,7 +23,7 @@ interface InventoryRow extends RowDataPacket {
  *  1. 客户编号必填
  *  2. 从 cust_inventory 拉该客户的所有 spec_id(取每个 spec 最新一次盘库,与 regular 一致)
  *  3. 按 sortCategories 排序（集团→省外→外烟）
- *  4. 资源匮乏（specCount > totalSlots）时过滤紧俏烟，但高价烟（price>600）保留
+ *  4. 资源匮乏（specCount > totalSlots）时过滤当月货源属性表里的紧俏烟，但高价烟（price>600）保留
  *
  * 与 regularCustomerStrategy 的差异(刻意保持):
  *  - 不做专区分类、不读 ref_co_purchase_rules / dim_category_ext 等
@@ -63,7 +64,9 @@ export const newCustomerStrategy: StrategyFn = async (ctx: SelectionContext): Pr
 
   let filteredHotSpecs: { id: string; name: string }[] | undefined;
   if (withImages.length > ctx.totalSlots) {
-    const hotSpecs = withImages.filter(c => c.is_hot && c.price <= HIGH_PRICE_PROTECT);
+    // 紧俏口径取当月货源属性表(MONTHLY_HOT_SPEC_IDS),不用 categories.json 的 is_hot,
+    // 保证暂缓的规格与结果页剔除明细完全一致
+    const hotSpecs = withImages.filter(c => MONTHLY_HOT_SPEC_IDS.has(c.id) && c.price <= HIGH_PRICE_PROTECT);
     if (hotSpecs.length > 0) {
       filteredHotSpecs = hotSpecs.map(c => ({ id: c.id, name: c.name }));
       const removeIds = new Set(hotSpecs.map(c => c.id));
