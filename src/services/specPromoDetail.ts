@@ -19,6 +19,18 @@ export interface SpecPromoDetail {
   audience: string | null;    // 适销人群
 }
 
+/**
+ * 详情表「口味特色」的展示文案覆盖(优先于 dim_category_ext.flavor)。
+ * 爆珠规格(340136/450817)的 flavor 列存的是归一化口味(果香/草本/其它…),供爆珠子专区、
+ * 节日专区判定,不能改成长文案;所以消费者侧说明放在这里,不动库。
+ */
+const PROMO_FLAVOR_OVERRIDE: Record<string, string> = {
+  '340136': '石斛爆珠，好抽好看，细而不淡',         // 黄山(徽商新概念细支)
+  '450817': '绣球与冰感爆珠结合，醇和柔细，口感清爽', // 真龙(冰净)
+  '310143': '清雅梅香，低焦柔和，温润雅致',         // 中华(细支5mg)
+  '310140': '传承经典，低焦保香，细品出色',         // 中华(细支3mg)
+};
+
 interface DetailRow extends RowDataPacket {
   spec_id: string;
   price: string | number | null;
@@ -48,7 +60,7 @@ export async function getSpecPromoDetails(ids: string[]): Promise<SpecPromoDetai
       spec_id: r.spec_id,
       price: r.price === null || r.price === undefined || r.price === '' ? null : Number(r.price),
       pack_type: r.pack_type ?? null,
-      flavor: r.flavor ?? null,
+      flavor: PROMO_FLAVOR_OVERRIDE[r.spec_id] ?? r.flavor ?? null,
       audience: r.audience ?? null,
     }));
   } catch (err: unknown) {
