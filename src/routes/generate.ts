@@ -420,6 +420,7 @@ router.post('/', async (req: Request, res: Response) => {
         counterType: cabinet.type,
         imageUrl,
         manifestUrl,
+        manifest,
       });
 
       // 裁图归类:占行专区按 zoneId(整段行一张)、内嵌配对按主规格 id(每对一张)。

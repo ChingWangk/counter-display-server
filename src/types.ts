@@ -47,6 +47,8 @@ export interface CounterResult {
   layerImages?: string[];
   /** 「导出柜台规格」xlsx 的下载地址(每行 = 图上一层)。写盘失败时缺省,前端据此隐藏导出按钮。 */
   manifestUrl?: string;
+  /** 逐格清单(与陈列图同源,每行 = 图上一层、每格 = 一个烟包位)。后台「陈列看板」据此画可拖拽柜台。 */
+  manifest?: import('./services/imageGen').ManifestRow[];
 }
 
 export interface GenerateResponse {

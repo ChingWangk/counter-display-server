@@ -98,8 +98,9 @@ export const regularCustomerStrategy: StrategyFn = async (ctx: SelectionContext)
   // 资源不足时过滤紧俏烟，高价烟保护
   let filteredHotSpecs: { id: string; name: string }[] | undefined;
   const forcedHot = FORCED_HOT_SPECS_BY_CUSTOMER[ctx.customerId];
-  if (forcedHot) {
-    // 该客户固定剔除清单:始终剔除并整份列入明细(在专区分类之前,专区/红框/背柜主题都不会再用到这些规格)
+  if (withImages.length > ctx.totalSlots && forcedHot) {
+    // 该客户固定剔除清单:仅超容时剔除并整份列入明细(在专区分类之前,专区/红框/背柜主题都不会再用到这些规格);
+    // 不超容不剔除,避免"未超容却提示紧俏暂缓"的矛盾
     const removeIds = new Set(forcedHot);
     filteredHotSpecs = forcedHot.map(id => ({ id, name: extendedCategoryMap.get(id)?.name ?? id }));
     withImages = withImages.filter(c => !removeIds.has(c.id));

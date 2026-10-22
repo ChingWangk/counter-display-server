@@ -955,6 +955,8 @@ function renderChips(){
   allt.textContent='🗃️ 全部数据表'; allt.title='任意数据表按关键字检索（含客户代码）'; wrap.appendChild(allt);
   const fr=document.createElement('div'); fr.className='chip'; fr.dataset.cat='festreview';
   fr.textContent='🖼️ 主题图审核'; fr.title='客户投稿的节日主题陈列图 · 审核通过后成为公共素材'; wrap.appendChild(fr);
+  const board=document.createElement('a'); board.className='chip'; board.href='board.html'; board.style.textDecoration='none';
+  board.textContent='🧩 陈列看板'; board.title='拖拽烟包增删客户经营品规，按小程序规则实时重排'; wrap.appendChild(board);
   const maint=document.createElement('div'); maint.className='chip'; maint.dataset.cat='maint';
   maint.textContent='🔧 维护台'; maint.title='需定期更新的数据表'; wrap.appendChild(maint);
   wrap.querySelectorAll('.chip').forEach(ch=>ch.onclick=()=>{

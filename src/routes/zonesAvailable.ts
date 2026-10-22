@@ -8,7 +8,6 @@ import { fetchSubstituteRules, getCustomerHasPos, fetchRecentStockoutFreq } from
 import { getCustomerClass } from '../services/customerClass';
 import { computeInlinePairs } from '../services/strategies/inlinePairs';
 import { hasFestivalCandidates } from '../services/strategies/festivalSeason';
-import { FORCED_HOT_SPECS_BY_CUSTOMER } from '../services/strategies/monthlyHotSpecs';
 import {
   AvailableZone,
   SpecInventoryInfo,
@@ -92,9 +91,6 @@ router.post('/', async (req: Request, res: Response) => {
         const c = extendedMap.get(r.spec_id);
         if (c) sourceSpecs.push(c);
       }
-      // 客户固定剔除的紧俏烟不进陈列,专区可用性也不能算上它们(与 /api/generate 选品同口径)
-      const forcedHot = FORCED_HOT_SPECS_BY_CUSTOMER[customer_id];
-      if (forcedHot) sourceSpecs = sourceSpecs.filter(c => !forcedHot.includes(c.id));
     } else {
       // manual:用前端传入的 categories(只需要 id),通过 extendedMap 合并 ext 字段
       if (!Array.isArray(categories) || categories.length === 0) {

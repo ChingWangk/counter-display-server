@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>陈列看板 · 柜台陈列助手</title>
+<style>
+  :root{
+    --green:#2D6A4F; --green-d:#1B4D3A; --green-l:#3E8E6B;
+    --cream:#F5F0E8; --paper:#FBF9F5; --ink:#222; --grey:#6B6B6B; --line:#E6E0D4;
+    --danger:#E63946; --ok:#2E9E5B; --warn:#C9742B;
+    --wood:#8B6914; --wood-d:#6B500F;
+    --r-card:14px; --r-btn:8px; --shadow:0 6px 22px rgba(27,77,58,.10);
+    --cell:46px;                 /* 一个烟包位(6cm)在看板上的宽度 */
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{font-family:"PingFang SC","Microsoft YaHei",-apple-system,sans-serif;color:var(--ink);background:var(--cream);font-size:14px;line-height:1.5}
+  button,input{font:inherit}
+
+  .topbar{position:sticky;top:0;z-index:20;background:linear-gradient(100deg,var(--green-d),var(--green));color:#fff;box-shadow:0 4px 18px rgba(27,77,58,.28)}
+  .topbar .in{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 24px}
+  .brand{font-size:18px;font-weight:700;margin-right:auto}
+  .brand small{font-weight:400;opacity:.8;margin-left:8px;font-size:13px}
+  .topbar input{width:150px;padding:7px 10px;border-radius:var(--r-btn);border:0;outline:0}
+  .btn{padding:7px 14px;border-radius:var(--r-btn);border:1px solid transparent;cursor:pointer;background:#fff;color:var(--green-d);font-weight:600}
+  .btn.ghost{background:transparent;color:#fff;border-color:rgba(255,255,255,.55)}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .topbar a{color:#fff;opacity:.85;font-size:13px}
+
+  .summary{display:flex;gap:10px;flex-wrap:wrap;padding:14px 24px 0}
+  .kpi{background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px 14px;min-width:120px}
+  .kpi b{display:block;font-size:20px;color:var(--green-d)}
+  .kpi span{color:var(--grey);font-size:12px}
+  .kpi.mode b{color:var(--warn)}
+  .notice{margin:10px 24px 0;padding:8px 12px;border-radius:10px;background:#FFF4E5;border:1px solid #F1D2A8;color:#8A4B12;font-size:13px}
+  .notice:empty{display:none}
+
+  .layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:18px;padding:16px 24px 120px;align-items:start}
+  @media(max-width:980px){.layout{grid-template-columns:1fr}}
+
+  .counter{background:#fff;border-radius:var(--r-card);box-shadow:var(--shadow);padding:14px 16px;margin-bottom:16px;transition:box-shadow .15s,outline-color .15s;outline:3px dashed transparent;outline-offset:-3px}
+  .counter.drop-on{outline-color:var(--green-l);box-shadow:0 0 0 6px rgba(62,142,107,.15)}
+  .counter h3{margin:0 0 10px;font-size:15px;display:flex;align-items:baseline;gap:10px}
+  .counter h3 small{color:var(--grey);font-weight:400}
+  .counter h3 a{margin-left:auto;font-size:12px;font-weight:400;color:var(--green)}
+  .shelf{overflow-x:auto;padding-bottom:4px}
+  .shelf-inner{background:#F5F0E8;border-radius:6px;padding:4px 0}
+  .row{display:flex;align-items:flex-end;height:calc(var(--cell) * 1.333);padding:0 2px}
+  .row.just{justify-content:space-between}
+  .row.center{justify-content:center}
+  .board{height:8px;background:var(--wood);box-shadow:0 2px 0 var(--wood-d)}
+  .grp{display:flex}
+  .pack{width:var(--cell);height:calc(var(--cell) * 1.333);position:relative;cursor:grab}
+  .pack img{width:100%;height:100%;object-fit:contain;display:block;pointer-events:none}
+  .pack .ph{position:absolute;inset:2px;border-radius:4px;background:#e8e2d6;color:#555;font-size:10px;display:flex;align-items:center;justify-content:center;text-align:center;padding:2px}
+  .pack:hover{outline:2px solid var(--green-l);outline-offset:-2px}
+  .pack.flash{animation:flash 1.2s ease}
+  @keyframes flash{0%,40%{outline:3px solid var(--ok);outline-offset:-3px}100%{outline:3px solid transparent}}
+  .pack .tag{position:absolute;left:0;right:0;bottom:0;background:rgba(201,116,43,.9);color:#fff;font-size:9px;text-align:center}
+  .row-empty{color:#aaa;font-size:12px;align-self:center;margin:auto}
+  .back-list{color:var(--grey);font-size:13px;margin:4px 0 16px}
+  .gen-img{display:none;margin-top:10px;max-width:100%;border-radius:6px;border:1px solid var(--line)}
+  .counter.show-img .gen-img{display:block}
+
+  .side{position:sticky;top:72px;display:flex;flex-direction:column;gap:14px;max-height:calc(100vh - 90px)}
+  .panel{background:#fff;border-radius:var(--r-card);box-shadow:var(--shadow);padding:12px 14px;display:flex;flex-direction:column;min-height:0}
+  .panel h4{margin:0 0 8px;font-size:14px;display:flex;justify-content:space-between;align-items:baseline}
+  .panel h4 small{color:var(--grey);font-weight:400}
+  .panel.lib{flex:1}
+  .search{width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:var(--r-btn);margin-bottom:8px}
+  .lib-list{overflow-y:auto;min-height:0}
+  .brand-h{font-size:12px;color:var(--grey);margin:8px 0 4px;position:sticky;top:0;background:#fff;padding:2px 0}
+  .lib-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+  .lib-item{border:1px solid var(--line);border-radius:8px;padding:4px;text-align:center;cursor:grab;background:var(--paper);position:relative}
+  .lib-item img{width:100%;height:56px;object-fit:contain;pointer-events:none}
+  .lib-item div{font-size:10px;line-height:1.25;height:2.5em;overflow:hidden}
+  .lib-item.on{border-color:var(--green-l);background:#EEF6F1;cursor:default;opacity:.75}
+  .lib-item.on::after{content:'在营';position:absolute;top:2px;right:2px;background:var(--green);color:#fff;font-size:9px;border-radius:4px;padding:0 4px}
+  .hidden-list{display:flex;flex-wrap:wrap;gap:6px;max-height:140px;overflow:auto}
+  .chip{font-size:12px;border:1px solid var(--line);border-radius:14px;padding:2px 10px;background:var(--paper);cursor:grab}
+  .chip.out{border-color:#F1D2A8;background:#FFF4E5}
+  .empty-hint{color:#aaa;font-size:12px}
+
+  .trash{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:30;padding:16px 36px;border-radius:40px;background:#fff;border:2px dashed var(--danger);color:var(--danger);font-weight:700;box-shadow:var(--shadow);transition:transform .15s,background .15s;opacity:.92}
+  .trash.drop-on{background:var(--danger);color:#fff;transform:translateX(-50%) scale(1.08)}
+  .toast{position:fixed;right:24px;bottom:24px;z-index:40;background:var(--green-d);color:#fff;padding:10px 16px;border-radius:10px;box-shadow:var(--shadow);display:none;max-width:360px}
+  .toast.err{background:var(--danger)}
+  .toast button{margin-left:10px;background:#fff;color:var(--green-d);border:0;border-radius:6px;padding:2px 10px;cursor:pointer}
+  .busy{position:fixed;inset:0;z-index:35;background:rgba(245,240,232,.55);display:none;align-items:center;justify-content:center;font-weight:600;color:var(--green-d)}
+  .busy.on{display:flex}
+  .welcome{background:#fff;border-radius:var(--r-card);padding:40px;text-align:center;color:var(--grey);box-shadow:var(--shadow)}
+</style>
+</head>
+<body>
+<div class="topbar"><div class="in">
+  <div class="brand">🧩 陈列看板<small>拖拽烟包 = 增删经营品规 · 实时按小程序规则重排</small></div>
+  <input id="cid" placeholder="客户代码" />
+  <button class="btn" id="loadBtn">载入</button>
+  <button class="btn ghost" id="undoBtn" disabled>↶ 撤销上一步</button>
+  <button class="btn ghost" id="tokenBtn">令牌</button>
+  <a href="/admin/">返回后台</a>
+</div></div>
+
+<div class="summary" id="summary"></div>
+<div class="notice" id="notice"></div>
+
+<div class="layout">
+  <main id="counters"><div class="welcome">输入客户代码并载入。<br/>从右侧品类库把烟包拖到任一柜台 = 新增经营品规；把柜台上的烟包拖到底部回收区 = 移出经营。<br/>烟包的位置由系统按小程序的陈列规则自动排，改完立即重排。</div></main>
+  <aside class="side">
+    <div class="panel">
+      <h4>在营但未上柜 <small id="hiddenCnt"></small></h4>
+      <div class="hidden-list" id="hiddenList"><span class="empty-hint">—</span></div>
+    </div>
+    <div class="panel lib">
+      <h4>品类库 <small>拖到柜台上即加入经营</small></h4>
+      <input class="search" id="search" placeholder="搜索品牌 / 规格 / 编码" />
+      <div class="lib-list" id="lib"></div>
+    </div>
+  </aside>
+</div>
+
+<div class="trash" id="trash">🗑 拖到这里 · 移出经营</div>
+<div class="toast" id="toast"></div>
+<div class="busy" id="busy">正在按陈列规则重新排图…</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const S = { token: localStorage.getItem('adminToken') || '', cid: '', cats: [], catById: new Map(),
+            board: null, gen: null, onSale: new Set() };
+const TYPE_LABEL = { front: '前柜', hanging: '吊柜', back: '背柜' };
+const MODE_LABEL = { double: '货少柜宽 · 双包陈列', expanded: '尚有余量 · 单包扩距', standard: '刚好铺满 · 标准排满' };
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function toast(msg, opt = {}) {
+  const t = $('#toast');
+  t.className = 'toast' + (opt.err ? ' err' : '');
+  t.innerHTML = esc(msg) + (opt.undo ? '<button id="tUndo">撤销</button>' : '');
+  t.style.display = 'block';
+  if (opt.undo) $('#tUndo').onclick = undo;
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.style.display = 'none', opt.undo ? 6000 : 3000);
+}
+const busy = on => $('#busy').classList.toggle('on', on);
+
+function askToken() {
+  const v = prompt('请输入后台管理令牌（与后台管理平台相同）', S.token);
+  if (v !== null) { S.token = v.trim(); try { localStorage.setItem('adminToken', S.token); } catch (e) {} }
+}
+
+async function api(url, opt = {}) {
+  opt.headers = Object.assign({ 'Content-Type': 'application/json' }, opt.headers || {});
+  if (url.startsWith('/api/admin/')) opt.headers['X-Admin-Token'] = S.token;
+  const r = await fetch(url, opt);
+  const j = await r.json().catch(() => ({ success: false, error: 'HTTP ' + r.status }));
+  if (r.status === 401 || r.status === 503) { askToken(); throw new Error(j.error || '令牌无效'); }
+  if (!j.success) throw new Error(j.error || '请求失败');
+  return j;
+}
+
+async function loadCats() {
+  if (S.cats.length) return;
+  const j = await api('/api/categories');
+  S.cats = j.categories;
+  S.cats.forEach(c => S.catById.set(c.id, c));
+}
+
+/* ---------- 载入客户 + 出图 ---------- */
+async function load() {
+  const cid = $('#cid').value.trim();
+  if (!cid) return toast('请先输入客户代码', { err: true });
+  if (!S.token) askToken();
+  S.cid = cid;
+  try { localStorage.setItem('boardCid', cid); } catch (e) {}
+  busy(true);
+  try {
+    await loadCats();
+    await refresh();
+    $('#undoBtn').disabled = false;
+  } catch (e) { toast(e.message, { err: true }); }
+  finally { busy(false); }
+}
+
+async function refresh(flashId) {
+  S.board = await api('/api/admin/board/' + encodeURIComponent(S.cid));
+  S.onSale = new Set(S.board.inventory.filter(r => r.stock_qty > 0).map(r => r.spec_id));
+  const display = S.board.counters.filter(c => c.type === 'front' || c.type === 'hanging');
+  S.gen = null;
+  if (display.length && S.onSale.size) {
+    S.gen = await api('/api/generate', {
+      method: 'POST',
+      body: JSON.stringify({
+        counters: display.map(c => ({ id: c.counter_id, type: c.type, length: Number(c.length), levels: Number(c.levels) })),
+        categories: [], mode: 'smart', customer_id: S.cid, zone_assignments: [],
+      }),
+    });
+  }
+  render(flashId);
+}
+
+/* ---------- 渲染 ---------- */
+function packHTML(cell, extraCls = '') {
+  const c = S.catById.get(cell.specId);
+  const img = c ? `<img src="${esc(c.imageUrl)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'ph',textContent:this.parentNode.title}))"/>`
+                : `<div class="ph">${esc(cell.specName)}</div>`;
+  const tag = cell.note ? `<div class="tag">${esc(cell.note)}</div>` : '';
+  return `<div class="pack ${extraCls}" draggable="true" data-spec="${esc(cell.specId)}" title="${esc(cell.specName)}（${esc(cell.specId)}）">${img}${tag}</div>`;
+}
+
+/** 与出图一致的分组:双包档每 2 格一组;其余档按规格切换分组(配对框两格一组)。组间空隙两端对齐撑满。 */
+function rowHTML(cells, mode) {
+  if (!cells.length) return '<div class="row"><span class="row-empty">空层</span></div>';
+  const groups = [];
+  cells.forEach((cell, i) => {
+    const prev = cells[i - 1];
+    const newGroup = i === 0 || (mode === 'double' ? i % 2 === 0
+      : (/\(右\)|副/.test(cell.note) ? false : prev.specId !== cell.specId || /\(左\)/.test(cell.note)));
+    if (newGroup) groups.push([]);
+    groups[groups.length - 1].push(cell);
+  });
+  const cls = groups.length > 1 ? 'just' : 'center';
+  return `<div class="row ${cls}">${groups.map(g => `<div class="grp">${g.map(c => packHTML(c)).join('')}</div>`).join('')}</div>`;
+}
+
+function render(flashId) {
+  const b = S.board, g = S.gen, cus = b.customer;
+  const display = b.counters.filter(c => c.type === 'front' || c.type === 'hanging');
+  const backs = b.counters.filter(c => c.type === 'back');
+  const cap = display.reduce((s, c) => s + Math.floor(c.length / 6) * c.levels, 0);
+  const lay = g && g.layout;
+  $('#summary').innerHTML = [
+    ['客户', cus ? `${esc(cus.customer_name || '')}` : '（cust_info 无记录）', cus ? esc(S.cid) : ''],
+    ['经营品规', S.onSale.size, '个（库存 > 0）'],
+    ['陈列位', cap, '前柜 + 吊柜'],
+    ['布局档', lay ? MODE_LABEL[lay.mode] : '—', lay ? `上柜 ${lay.specCount} 个规格` : '无专区出图'],
+  ].map(([k, v, s], i) => `<div class="kpi ${i === 3 ? 'mode' : ''}"><span>${k}</span><b>${v}</b><span>${s}</span></div>`).join('');
+
+  const hot = (g && g.filteredHotSpecs) || [];
+  $('#notice').textContent = hot.length ? `品规超容，已暂缓 ${hot.length} 个紧俏规格：${hot.map(h => h.name).join('、')}` : '';
+
+  const resById = new Map(((g && g.results) || []).map(r => [r.counterId, r]));
+  const shown = new Set();
+  let html = '';
+  if (!display.length) html += '<div class="welcome">该客户没有前柜 / 吊柜档案（cust_counters），无法出图。</div>';
+  const seq = {};
+  display.forEach(c => {
+    seq[c.type] = (seq[c.type] || 0) + 1;
+    const r = resById.get(c.counter_id);
+    const rows = (r && r.manifest) || [];
+    rows.forEach(row => row.cells.forEach(cell => shown.add(cell.specId)));
+    const w = Math.floor(c.length / 6) * 46 + 4;
+    const body = rows.length
+      ? rows.map((row, i) => rowHTML(row.cells, lay && lay.mode) + (i < rows.length - 1 ? '<div class="board"></div>' : '')).join('')
+      : `<div class="row"><span class="row-empty">${S.onSale.size ? '后端未返回逐格清单（请确认已部署最新后端）' : '暂无经营品规，从右侧拖入烟包'}</span></div>`;
+    html += `<section class="counter" data-counter="${esc(c.counter_id)}">
+      <h3>${TYPE_LABEL[c.type]} ${seq[c.type]} <small>${c.length} cm × ${c.levels} 层 · 每层 ${Math.floor(c.length / 6)} 个包位</small>
+        ${r && r.imageUrl ? '<a href="javascript:void 0" data-toggle-img>对照出图原图</a>' : ''}</h3>
+      <div class="shelf"><div class="shelf-inner" style="width:${w}px">${body}</div></div>
+      ${r && r.imageUrl ? `<img class="gen-img" src="${esc(r.imageUrl)}" alt="出图原图"/>` : ''}
+    </section>`;
+  });
+  if (backs.length) html += `<div class="back-list">背柜 ${backs.length} 个（主题贴图，不参与烟包陈列）：${backs.map(c => `${c.length} cm × ${c.levels} 层`).join('；')}</div>`;
+  $('#counters').innerHTML = html;
+
+  // 在营但未上柜:库存在售、却没出现在任何柜台上(紧俏暂缓 / 超容裁掉 / 不在品类库)
+  const hidden = b.inventory.filter(r => r.stock_qty > 0 && !shown.has(r.spec_id));
+  const hotIds = new Set(hot.map(h => h.id));
+  $('#hiddenCnt').textContent = hidden.length ? hidden.length + ' 个' : '';
+  $('#hiddenList').innerHTML = hidden.length
+    ? hidden.map(r => `<span class="chip ${hotIds.has(r.spec_id) ? 'out' : ''}" draggable="true" data-spec="${esc(r.spec_id)}"
+        title="${hotIds.has(r.spec_id) ? '紧俏暂缓' : r.inCatalog ? '超出柜台容量' : '不在品类库，无法出图'}">${esc(r.name)}</span>`).join('')
+    : '<span class="empty-hint">全部在营品规都已上柜</span>';
+
+  renderLib();
+  if (flashId) document.querySelectorAll(`.pack[data-spec="${CSS.escape(flashId)}"]`).forEach(p => {
+    p.classList.add('flash'); p.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  });
+}
+
+function renderLib() {
+  const q = $('#search').value.trim().toLowerCase();
+  const list = S.cats.filter(c => !q || [c.name, c.brand, c.id].some(v => String(v || '').toLowerCase().includes(q)));
+  const byBrand = new Map();
+  list.forEach(c => { const k = c.brand || '其他'; if (!byBrand.has(k)) byBrand.set(k, []); byBrand.get(k).push(c); });
+  $('#lib').innerHTML = [...byBrand].map(([brand, arr]) => `<div class="brand-h">${esc(brand)} · ${arr.length}</div>
+    <div class="lib-grid">${arr.map(c => {
+      const on = S.onSale.has(c.id);
+      return `<div class="lib-item ${on ? 'on' : ''}" ${on ? '' : 'draggable="true"'} data-spec="${esc(c.id)}" title="${esc(c.name)}（${esc(c.id)}）">
+        <img src="${esc(c.imageUrl)}" alt="" loading="lazy"/><div>${esc(c.name)}</div></div>`;
+    }).join('')}</div>`).join('') || '<div class="empty-hint">没有匹配的规格</div>';
+}
+
+/* ---------- 写库 ---------- */
+async function addSpec(id) {
+  if (!S.cid) return toast('请先载入客户', { err: true });
+  if (S.onSale.has(id)) return toast('该规格已在经营');
+  busy(true);
+  try {
+    await api(`/api/admin/board/${encodeURIComponent(S.cid)}/specs`, { method: 'POST', body: JSON.stringify({ spec_id: id }) });
+    await refresh(id);
+    const shownNow = document.querySelector(`.pack[data-spec="${CSS.escape(id)}"]`);
+    toast(`已加入经营：${S.catById.get(id)?.name || id}` + (shownNow ? '' : '（未上柜，见右侧「在营但未上柜」）'), { undo: true });
+  } catch (e) { toast(e.message, { err: true }); }
+  finally { busy(false); }
+}
+
+async function removeSpec(id) {
+  busy(true);
+  try {
+    await api(`/api/admin/board/${encodeURIComponent(S.cid)}/specs/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    await refresh();
+    toast(`已移出经营：${S.catById.get(id)?.name || id}`, { undo: true });
+  } catch (e) { toast(e.message, { err: true }); }
+  finally { busy(false); }
+}
+
+async function undo() {
+  if (!S.cid) return;
+  busy(true);
+  try {
+    const j = await api(`/api/admin/board/${encodeURIComponent(S.cid)}/undo`, { method: 'POST', body: '{}' });
+    if (j.nothing) { toast('没有可撤销的操作'); return; }
+    await refresh(j.op === 'remove' ? j.spec_id : undefined);
+    toast(`已撤销：${j.op === 'add' ? '加入' : '移出'} ${j.name}`);
+  } catch (e) { toast(e.message, { err: true }); }
+  finally { busy(false); }
+}
+
+/* ---------- 拖拽 ---------- */
+let drag = null;   // { id, from: 'lib' | 'shelf' }
+document.addEventListener('dragstart', e => {
+  const el = e.target.closest('[data-spec][draggable="true"]');
+  if (!el) return;
+  drag = { id: el.dataset.spec, from: el.classList.contains('lib-item') ? 'lib' : 'shelf' };
+  e.dataTransfer.setData('text/plain', drag.id);
+  e.dataTransfer.effectAllowed = 'move';
+});
+document.addEventListener('dragend', () => {
+  drag = null;
+  document.querySelectorAll('.drop-on').forEach(x => x.classList.remove('drop-on'));
+});
+function dropTarget(e) {
+  if (!drag) return null;
+  if (drag.from === 'lib') return e.target.closest('.counter');
+  return e.target.closest('#trash');
+}
+document.addEventListener('dragover', e => {
+  const t = dropTarget(e);
+  document.querySelectorAll('.drop-on').forEach(x => x !== t && x.classList.remove('drop-on'));
+  if (t) { e.preventDefault(); t.classList.add('drop-on'); }
+});
+document.addEventListener('drop', e => {
+  const t = dropTarget(e);
+  if (!t) return;
+  e.preventDefault();
+  const id = drag.id;
+  t.classList.remove('drop-on');
+  if (t.id === 'trash') removeSpec(id); else addSpec(id);
+});
+
+/* ---------- 其他交互 ---------- */
+$('#loadBtn').onclick = load;
+$('#cid').addEventListener('keydown', e => { if (e.key === 'Enter') load(); });
+$('#undoBtn').onclick = undo;
+$('#tokenBtn').onclick = askToken;
+$('#search').addEventListener('input', () => S.cats.length && renderLib());
+$('#counters').addEventListener('click', e => {
+  const a = e.target.closest('[data-toggle-img]');
+  if (a) a.closest('.counter').classList.toggle('show-img');
+});
+try {
+  const qs = new URLSearchParams(location.search).get('cid');
+  const last = qs || localStorage.getItem('boardCid');
+  if (last) { $('#cid').value = last; if (qs) load(); }
+} catch (e) {}
+</script>
+</body>
+</html>

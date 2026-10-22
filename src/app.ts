@@ -29,6 +29,7 @@ import substituteDetailRouter from './routes/substituteDetail';
 import upgradeDetailRouter from './routes/upgradeDetail';
 import adminRouter from './routes/admin';
 import { adminAuth } from './middleware/adminAuth';
+import adminBoardRouter from './routes/adminBoard';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -72,6 +73,8 @@ app.use('/api/upgrade-detail', upgradeDetailRouter);
 // 节日主题图投稿审核（后台管理平台「主题图审核」）：同样需后台令牌
 app.use('/api/admin/festival-submissions', adminAuth, festivalReviewRouter);
 // 后台管理通用数据接口：全程经 adminAuth 令牌校验（读写皆需 X-Admin-Token）
+// 陈列看板(/admin/board.html):拖拽烟包增删客户经营品规,同样需后台令牌
+app.use('/api/admin/board', adminAuth, adminBoardRouter);
 app.use('/api/admin', adminAuth, adminRouter);
 
 app.listen(PORT, () => {
