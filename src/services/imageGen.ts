@@ -203,6 +203,8 @@ export interface ManifestRow {
   rowIndex: number;
   /** 该层归属:'常规陈列' 或专区名(工商共育/重点推荐区/尝鲜专区…);空层为 '空层' */
   section: string;
+  /** 专区行的色条颜色(与图上左侧标签栏一致);常规 / 空层缺省。后台陈列看板据此给行着色。 */
+  sectionColor?: string;
   cells: ManifestCell[];
 }
 
@@ -830,8 +832,12 @@ export async function generateCounterImage(
   // ---- 柜台规格清单(导出用):与下方绘制循环读同一份 rowSlots / placedRegular,
   // 保证"表里第 N 行第 M 格"就是"图上第 N 层从左数第 M 包"。此处只读不改,不影响绘制。
   const sectionByRow = new Map<number, string>();
+  const sectionColorByRow = new Map<number, string>();
   for (const b of zoneLabelBlocks) {
-    for (let r = b.startRow; r < b.startRow + b.rowCount; r++) sectionByRow.set(r, b.label);
+    for (let r = b.startRow; r < b.startRow + b.rowCount; r++) {
+      sectionByRow.set(r, b.label);
+      sectionColorByRow.set(r, b.barColor);
+    }
   }
   const manifest: ManifestRow[] = [];
   let manifestRegularIdx = 0;
@@ -870,6 +876,7 @@ export async function generateCounterImage(
     manifest.push({
       rowIndex: row + 1,
       section: slot ? (sectionByRow.get(row) ?? '常规陈列') : '空层',
+      sectionColor: sectionColorByRow.get(row),
       cells,
     });
   }

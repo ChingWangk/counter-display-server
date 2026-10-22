@@ -105,6 +105,32 @@
   .btn.green{background:var(--green);color:#fff}
   .btn.line{background:#fff;color:var(--green-d);border-color:var(--line)}
   .edit-entry{display:flex;justify-content:flex-end;margin-bottom:10px}
+  .zones{background:#fff;border-radius:var(--r-card);box-shadow:var(--shadow);padding:14px 16px;margin-bottom:16px}
+  .zones h3{margin:0 0 4px;font-size:15px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .zones h3 small{color:var(--grey);font-weight:400}
+  .zones .tier{font-size:12px;color:var(--grey);margin:12px 0 6px;border-bottom:1px solid var(--line);padding-bottom:2px}
+  .zrow{display:grid;grid-template-columns:22px 1fr;gap:6px 8px;padding:7px 0;border-bottom:1px dashed #EFE9DE}
+  .zrow input[type=checkbox]{width:16px;height:16px;margin-top:3px;accent-color:var(--green)}
+  .zhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .zbar{width:10px;height:16px;border-radius:3px}
+  .zname{font-weight:600}
+  .zcnt{font-size:11px;color:#fff;background:var(--green);border-radius:10px;padding:0 8px}
+  .zdesc{grid-column:2;font-size:12px;color:var(--grey)}
+  .zcabs{grid-column:2;display:flex;flex-direction:column;gap:6px}
+  .zcab{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px}
+  .zcab select{padding:4px 6px;border:1px solid var(--line);border-radius:6px}
+  .zprev{display:flex;flex-direction:column;gap:4px;margin-top:10px}
+  .zprev div{font-size:12px;color:var(--grey)}
+  .zprev .err{color:var(--danger);font-weight:600}
+  .zdirty{color:var(--warn);font-size:12px}
+  .rowwrap{display:flex;align-items:stretch}
+  .rlabel{width:20px;flex:none;color:#fff;font-size:10px;writing-mode:vertical-rl;text-align:center;overflow:hidden;border-radius:3px 0 0 3px;letter-spacing:1px}
+  .rowwrap .row{flex:1}
+  .shelf-inner.has-label .board{margin-left:20px}
+  .backs{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+  .backcard{background:#fff;border-radius:var(--r-card);box-shadow:var(--shadow);padding:10px 12px;width:260px}
+  .backcard h4{margin:0 0 6px;font-size:13px}
+  .backcard img{width:100%;display:block;border-radius:4px;margin-bottom:3px}
   .welcome{background:#fff;border-radius:var(--r-card);padding:40px;text-align:center;color:var(--grey);box-shadow:var(--shadow)}
 </style>
 </head>
@@ -125,6 +151,7 @@
   <main>
   <div class="edit-entry" id="editEntry" style="display:none"><button class="btn line" id="editBtn">✏️ 编辑柜台</button></div>
   <div id="editor"></div>
+  <div id="zonePanel"></div>
   <div id="counters"><div class="welcome">输入客户代码并载入。<br/>从右侧品类库把烟包拖到任一柜台 = 新增经营品规；把柜台上的烟包拖到底部回收区 = 移出经营。<br/>烟包的位置由系统按小程序的陈列规则自动排，改完立即重排。</div></div>
   </main>
   <aside class="side">
@@ -147,7 +174,8 @@
 <script>
 const $ = s => document.querySelector(s);
 const S = { token: localStorage.getItem('adminToken') || '', cid: '', cats: [], catById: new Map(),
-            board: null, gen: null, onSale: new Set(), edit: null };
+            board: null, gen: null, onSale: new Set(), edit: null,
+            zones: [], zoneCfg: {}, specCount: 0, applied: [], zoneDirty: false };
 const TYPE_LABEL = { front: '前柜', hanging: '吊柜', back: '背柜' };
 const MODE_LABEL = { double: '货少柜宽 · 双包陈列', expanded: '尚有余量 · 单包扩距', standard: '刚好铺满 · 标准排满' };
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -191,6 +219,7 @@ async function load() {
   if (!S.token) askToken();
   S.cid = cid;
   closeEditor();
+  S.zones = []; S.zoneCfg = {}; S.applied = []; S.zoneDirty = false;
   try { localStorage.setItem('boardCid', cid); } catch (e) {}
   busy(true);
   try {
@@ -205,17 +234,20 @@ async function refresh(flashId) {
   S.board = await api('/api/admin/board/' + encodeURIComponent(S.cid));
   S.onSale = new Set(S.board.inventory.filter(r => r.stock_qty > 0).map(r => r.spec_id));
   const display = S.board.counters.filter(c => c.type === 'front' || c.type === 'hanging');
+  if (isRegular()) await loadZones();
+  else { S.zones = []; S.zoneCfg = {}; S.applied = []; }
   S.gen = null;
   if (display.length && S.onSale.size) {
     S.gen = await api('/api/generate', {
       method: 'POST',
       body: JSON.stringify({
-        counters: display.map(c => ({ id: c.counter_id, type: c.type, length: Number(c.length), levels: Number(c.levels) })),
-        categories: [], mode: 'smart', customer_id: S.cid, zone_assignments: [],
+        counters: S.board.counters.map(c => ({ id: c.counter_id, type: c.type, length: Number(c.length), levels: Number(c.levels) })),
+        categories: [], mode: 'smart', customer_id: S.cid, zone_assignments: S.applied,
       }),
     });
   }
   render(flashId);
+  renderZones();
 }
 
 /* ---------- 渲染 ---------- */
@@ -228,8 +260,10 @@ function packHTML(cell, extraCls = '') {
 }
 
 /** 与出图一致的分组:双包档每 2 格一组;其余档按规格切换分组(配对框两格一组)。组间空隙两端对齐撑满。 */
-function rowHTML(cells, mode) {
-  if (!cells.length) return '<div class="row"><span class="row-empty">空层</span></div>';
+function rowHTML(cells, mode, label) {
+  const wrap = inner => label === undefined ? inner
+    : `<div class="rowwrap"><div class="rlabel" style="background:${label.color || 'transparent'}" title="${esc(label.text)}">${label.first ? esc(label.text) : ''}</div>${inner}</div>`;
+  if (!cells.length) return wrap('<div class="row"><span class="row-empty">空层</span></div>');
   const groups = [];
   cells.forEach((cell, i) => {
     const prev = cells[i - 1];
@@ -239,7 +273,7 @@ function rowHTML(cells, mode) {
     groups[groups.length - 1].push(cell);
   });
   const cls = groups.length > 1 ? 'just' : 'center';
-  return `<div class="row ${cls}">${groups.map(g => `<div class="grp">${g.map(c => packHTML(c)).join('')}</div>`).join('')}</div>`;
+  return wrap(`<div class="row ${cls}">${groups.map(g => `<div class="grp">${g.map(c => packHTML(c)).join('')}</div>`).join('')}</div>`);
 }
 
 function render(flashId) {
@@ -252,7 +286,9 @@ function render(flashId) {
     ['客户', cus ? `${esc(cus.customer_name || '')}` : '（cust_info 无记录）', cus ? esc(S.cid) : ''],
     ['经营品规', S.onSale.size, '个（库存 > 0）'],
     ['陈列位', cap, '前柜 + 吊柜'],
-    ['布局档', lay ? MODE_LABEL[lay.mode] : '—', lay ? `上柜 ${lay.specCount} 个规格` : '无专区出图'],
+    lay ? ['布局档', MODE_LABEL[lay.mode], `上柜 ${lay.specCount} 个规格`]
+        : ['布局档', S.applied.length ? '专区模式' : '—', S.applied.length ? `已部署 ${new Set(S.applied.map(a => a.zone_id)).size} 个专区` : ''],
+    ['客户类型', b.customerClass === 'regular' ? '常规客户' : '新入网客户', b.customerClass === 'regular' ? '可部署专区' : '入网未满 3 个月'],
   ].map(([k, v, s], i) => `<div class="kpi ${i === 3 ? 'mode' : ''}"><span>${k}</span><b>${v}</b><span>${s}</span></div>`).join('');
 
   const hot = (g && g.filteredHotSpecs) || [];
@@ -269,17 +305,33 @@ function render(flashId) {
     const rows = (r && r.manifest) || [];
     rows.forEach(row => row.cells.forEach(cell => shown.add(cell.specId)));
     const w = Math.floor(c.length / 6) * 46 + 4;
+    const hasZoneRow = rows.some(row => row.sectionColor);
     const body = rows.length
-      ? rows.map((row, i) => rowHTML(row.cells, lay && lay.mode) + (i < rows.length - 1 ? '<div class="board"></div>' : '')).join('')
+      ? rows.map((row, i) => {
+          const label = hasZoneRow ? { text: row.sectionColor ? row.section : '', color: row.sectionColor,
+            first: i === 0 || rows[i - 1].section !== row.section } : undefined;
+          return rowHTML(row.cells, lay && lay.mode, label) + (i < rows.length - 1 ? '<div class="board"></div>' : '');
+        }).join('')
       : `<div class="row"><span class="row-empty">${S.onSale.size ? '后端未返回逐格清单（请确认已部署最新后端）' : '暂无经营品规，从右侧拖入烟包'}</span></div>`;
     html += `<section class="counter" data-counter="${esc(c.counter_id)}">
       <h3>${TYPE_LABEL[c.type]} ${seq[c.type]} <small>${c.length} cm × ${c.levels} 层 · 每层 ${Math.floor(c.length / 6)} 个包位</small>
         ${r && r.imageUrl ? '<a href="javascript:void 0" data-toggle-img>对照出图原图</a>' : ''}</h3>
-      <div class="shelf"><div class="shelf-inner" style="width:${w}px">${body}</div></div>
+      <div class="shelf"><div class="shelf-inner ${hasZoneRow ? 'has-label' : ''}" style="width:${w + (hasZoneRow ? 20 : 0)}px">${body}</div></div>
       ${r && r.imageUrl ? `<img class="gen-img" src="${esc(r.imageUrl)}" alt="出图原图"/>` : ''}
     </section>`;
   });
-  if (backs.length) html += `<div class="back-list">背柜 ${backs.length} 个（主题贴图，不参与烟包陈列）：${backs.map(c => `${c.length} cm × ${c.levels} 层`).join('；')}</div>`;
+  if (backs.length) {
+    const fest = new Map(S.applied.filter(a => a.zone_id === 'festivalSeason').map(a => [a.counter_id, a.festival_id]));
+    let bi = 0;
+    html += `<div class="back-list">背柜 ${backs.length} 个（主题贴图，不参与烟包陈列）</div><div class="backs">${backs.map(c => {
+      bi++;
+      const r = resById.get(c.counter_id);
+      const imgs = r ? (r.layerImages && r.layerImages.length ? r.layerImages : [r.imageUrl]).filter(u => u && u.startsWith('/')) : [];
+      const fname = fest.has(c.counter_id) ? ` · 节日：${FESTIVAL_LABEL[fest.get(c.counter_id)] || ''}` : '';
+      return `<div class="backcard"><h4>背柜 ${bi} <small>${c.length} cm × ${c.levels} 层${fname}</small></h4>
+        ${imgs.length ? [...new Set(imgs)].map(u => `<img src="${esc(u)}" alt="" loading="lazy"/>`).join('') : '<div class="empty-hint">无主题图</div>'}</div>`;
+    }).join('')}</div>`;
+  }
   $('#counters').innerHTML = html;
   $('#editEntry').style.display = S.edit ? 'none' : '';
 
@@ -398,6 +450,181 @@ async function saveCounters() {
     closeEditor();
     await refresh();
     toast('柜台已保存，已按新柜台重排', { undo: true });
+  } catch (e) { toast(e.message, { err: true }); }
+  finally { busy(false); }
+}
+
+/* ---------- 专区部署(常规客户;规则同小程序 zone-select) ---------- */
+const FESTIVALS = [['newYear', '元旦'], ['springFestival', '春节'], ['lanternFestival', '元宵'], ['dragonBoat', '端午'],
+                   ['midAutumn', '中秋'], ['nationalDay', '国庆'], ['chongyang', '重阳']];
+const FESTIVAL_LABEL = Object.fromEntries(FESTIVALS);
+const isRegular = () => S.board && S.board.customerClass === 'regular';
+const zoneKind = z => z.id === 'festivalSeason' ? 'festival'
+  : (z.layoutKind === 'fixedTop' || z.layoutKind === 'inlineRegular') ? 'toggle' : 'rows';
+const displayCounters = () => (S.board ? S.board.counters : []).filter(c => c.type === 'front' || c.type === 'hanging');
+const backCounters = () => (S.board ? S.board.counters : []).filter(c => c.type === 'back');
+const counterLabel = (c, list) => {
+  const same = list.filter(x => x.type === c.type);
+  return `${TYPE_LABEL[c.type]} ${same.indexOf(c) + 1}`;
+};
+
+async function loadZones() {
+  const j = await api('/api/zones/available', { method: 'POST', body: JSON.stringify({ customer_id: S.cid, mode: 'smart' }) });
+  S.zones = j.zones || [];
+  S.specCount = j.customerSpecCount || 0;
+  // 品规变动后某专区可能不再可用:丢掉它的配置,已应用的也一并剔除
+  const ids = new Set(S.zones.map(z => z.id));
+  Object.keys(S.zoneCfg).forEach(id => { if (!ids.has(id)) delete S.zoneCfg[id]; });
+  // 柜台被编辑删除后,指向它的分配也要清掉,否则出图接口会因柜台不存在而报错
+  const cids = new Set(S.board.counters.map(c => c.counter_id));
+  Object.values(S.zoneCfg).forEach(cfg => { cfg.cabs = cfg.cabs.filter(c => cids.has(c.counterId)); });
+  S.applied = S.applied.filter(a => ids.has(a.zone_id) && (!a.counter_id || cids.has(a.counter_id)));
+}
+
+/** 与小程序 computePreviews 同口径:常规按顺序铺进各展示柜(工商共育占首柜前两行),剩余层 = 可放专区的空闲层。 */
+function zonePreview() {
+  const dc = displayCounters();
+  const coop = S.zoneCfg.industrialCoop && S.zoneCfg.industrialCoop.enabled;
+  let remaining = S.specCount;
+  const prev = dc.map((c, i) => {
+    const fixedTop = coop && i === 0 ? Math.min(2, c.levels) : 0;
+    const eff = c.levels - fixedTop;
+    const per = Math.floor(c.length / 6);
+    const used = Math.min(remaining, per * eff);
+    remaining -= used;
+    const regularRows = per > 0 ? Math.min(eff, Math.ceil(used / per)) : 0;
+    return { c, fixedTop, regularRows, freeRows: eff - regularRows, zoneRows: 0, parts: [] };
+  });
+  S.zones.forEach(z => {
+    const cfg = S.zoneCfg[z.id];
+    if (!cfg || !cfg.enabled || zoneKind(z) !== 'rows') return;
+    cfg.cabs.forEach(cab => {
+      const p = prev.find(x => x.c.counter_id === cab.counterId);
+      if (p) { p.zoneRows += cab.rows; p.parts.push(`${z.label} ${cab.rows}`); }
+    });
+  });
+  return prev;
+}
+
+function buildAssignments() {
+  const out = [];
+  S.zones.forEach(z => {
+    const cfg = S.zoneCfg[z.id];
+    if (!cfg || !cfg.enabled) return;
+    const kind = zoneKind(z);
+    if (kind === 'toggle') { out.push({ zone_id: z.id, counter_id: '', row_count: 0 }); return; }
+    cfg.cabs.forEach(cab => {
+      if (!cab.counterId) return;
+      const a = { zone_id: z.id, counter_id: cab.counterId, row_count: kind === 'festival' ? 1 : cab.rows };
+      if (kind === 'festival') a.festival_id = cab.festival || 'nationalDay';
+      out.push(a);
+    });
+  });
+  return out;
+}
+
+function renderZones() {
+  const el = $('#zonePanel');
+  if (!S.board || !isRegular()) { el.innerHTML = ''; return; }
+  if (!S.zones.length) {
+    el.innerHTML = `<div class="zones"><h3>专区部署 <small>当前品规下没有可用专区</small></h3></div>`;
+    return;
+  }
+  const dc = displayCounters(), bc = backCounters();
+  const prev = zonePreview();
+  const overflow = prev.filter(p => p.zoneRows > p.freeRows);
+  const opt = (list, sel) => list.map(c => `<option value="${esc(c.counter_id)}" ${c.counter_id === sel ? 'selected' : ''}>${counterLabel(c, list)}</option>`).join('');
+  const tiers = [['basic', '基础版 · 守住底线'], ['advanced', '进阶版 · 放大价值']];
+  const zoneHTML = z => {
+    const cfg = S.zoneCfg[z.id] || { enabled: false, cabs: [] };
+    const kind = zoneKind(z);
+    const metas = kind === 'festival' ? bc : dc;
+    let cabs = '';
+    if (cfg.enabled && kind !== 'toggle') {
+      cabs = `<div class="zcabs">${cfg.cabs.map((cab, ci) => {
+        const p = prev.find(x => x.c.counter_id === cab.counterId);
+        const max = Math.max(1, p ? p.freeRows : 1, cab.rows);
+        const rowsSel = kind === 'rows'
+          ? `占 <select data-z="${z.id}" data-ci="${ci}" data-f="rows">${Array.from({ length: max }, (_, k) => k + 1).map(n => `<option ${n === cab.rows ? 'selected' : ''}>${n}</option>`).join('')}</select> 行`
+          : `节日 <select data-z="${z.id}" data-ci="${ci}" data-f="festival">${FESTIVALS.map(([id, l]) => `<option value="${id}" ${id === (cab.festival || 'nationalDay') ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+        return `<div class="zcab">${kind === 'festival' ? '背柜' : '柜台'} <select data-z="${z.id}" data-ci="${ci}" data-f="counter">${opt(metas, cab.counterId)}</select>
+          ${rowsSel} ${cfg.cabs.length > 1 ? `<button class="ib del" data-z="${z.id}" data-ci="${ci}" data-act="zdel">移除</button>` : ''}</div>`;
+      }).join('')}${cfg.cabs.length < metas.length ? `<div><button class="ib" data-z="${z.id}" data-act="zadd">＋ 再分配一个${kind === 'festival' ? '背柜' : '柜台'}</button></div>` : ''}</div>`;
+    }
+    const noTarget = kind !== 'toggle' && !metas.length;
+    return `<div class="zrow">
+      <input type="checkbox" data-z="${z.id}" data-act="ztoggle" ${cfg.enabled ? 'checked' : ''} ${noTarget ? 'disabled' : ''}/>
+      <div class="zhead"><span class="zbar" style="background:${esc(z.barColor)}"></span><span>${esc(z.icon || '')}</span><span class="zname">${esc(z.label)}</span>
+        ${kind === 'rows' ? `<span class="zcnt">${z.groupCount} 组</span>` : ''}${noTarget ? '<small class="zdesc">（没有可用的' + (kind === 'festival' ? '背柜' : '展示柜') + '）</small>' : ''}</div>
+      <div class="zdesc">${esc(z.description || '')}</div>${cabs}</div>`;
+  };
+  el.innerHTML = `<div class="zones">
+    <h3>专区部署 <small>常规客户 · 勾选专区并分配柜台，规则与小程序「选择功能专区」一致；剩余空层会自动按品规数扩展专区</small></h3>
+    ${tiers.map(([t, name]) => {
+      const list = S.zones.filter(z => z.tier === t);
+      return list.length ? `<div class="tier">${name}</div>${list.map(zoneHTML).join('')}` : '';
+    }).join('')}
+    <div class="zprev">${prev.map(p => `<div class="${p.zoneRows > p.freeRows ? 'err' : ''}">${counterLabel(p.c, dc)}（${p.c.levels} 层）：${p.fixedTop ? `工商共育 ${p.fixedTop} · ` : ''}常规 ${p.regularRows} · 空闲 ${p.freeRows}${p.parts.length ? ` · 已分配 ${p.parts.join('、')}` : ''}${p.zoneRows > p.freeRows ? ` —— 超出 ${p.zoneRows - p.freeRows} 行，请减少行数或换柜台` : ''}</div>`).join('')}</div>
+    <div class="ed-actions">
+      ${S.zoneDirty ? '<span class="zdirty">专区设置已改动，尚未应用</span>' : S.applied.length ? '<span class="zdirty" style="color:var(--ok)">当前图已按专区生成</span>' : ''}
+      <span style="flex:1"></span>
+      <button class="btn line" data-act="zclear">清空专区</button>
+      <button class="btn green" data-act="zapply" ${overflow.length ? 'disabled' : ''}>应用专区并重排</button>
+    </div></div>`;
+}
+
+$('#zonePanel').addEventListener('change', e => {
+  const t = e.target, zid = t.dataset.z;
+  if (!zid) return;
+  const z = S.zones.find(x => x.id === zid);
+  if (t.dataset.act === 'ztoggle') {
+    const cfg = S.zoneCfg[zid] || (S.zoneCfg[zid] = { enabled: false, cabs: [] });
+    cfg.enabled = t.checked;
+    const metas = zoneKind(z) === 'festival' ? backCounters() : displayCounters();
+    if (cfg.enabled && zoneKind(z) !== 'toggle' && !cfg.cabs.length && metas.length) {
+      cfg.cabs.push({ counterId: metas[0].counter_id, rows: 1, festival: 'nationalDay' });
+    }
+  } else {
+    const cab = S.zoneCfg[zid].cabs[Number(t.dataset.ci)];
+    if (t.dataset.f === 'counter') {
+      if (S.zoneCfg[zid].cabs.some((c, i) => i !== Number(t.dataset.ci) && c.counterId === t.value)) {
+        toast('该专区已分配过这个柜台', { err: true });
+      } else cab.counterId = t.value;
+    } else if (t.dataset.f === 'rows') cab.rows = Number(t.value);
+    else if (t.dataset.f === 'festival') cab.festival = t.value;
+  }
+  S.zoneDirty = true;
+  renderZones();
+});
+$('#zonePanel').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  const act = b.dataset.act, zid = b.dataset.z;
+  if (act === 'zadd') {
+    const z = S.zones.find(x => x.id === zid);
+    const metas = zoneKind(z) === 'festival' ? backCounters() : displayCounters();
+    const used = new Set(S.zoneCfg[zid].cabs.map(c => c.counterId));
+    const next = metas.find(c => !used.has(c.counter_id));
+    if (next) S.zoneCfg[zid].cabs.push({ counterId: next.counter_id, rows: 1, festival: 'nationalDay' });
+    S.zoneDirty = true; renderZones();
+  } else if (act === 'zdel') {
+    S.zoneCfg[zid].cabs.splice(Number(b.dataset.ci), 1);
+    S.zoneDirty = true; renderZones();
+  } else if (act === 'zclear') {
+    S.zoneCfg = {};
+    S.zoneDirty = S.applied.length > 0;
+    renderZones();
+  } else if (act === 'zapply') {
+    applyZones();
+  }
+});
+async function applyZones() {
+  S.applied = buildAssignments();
+  S.zoneDirty = false;
+  busy(true);
+  try {
+    await refresh();
+    toast(S.applied.length ? '已按专区重新出图' : '已清空专区，按常规陈列出图');
   } catch (e) { toast(e.message, { err: true }); }
   finally { busy(false); }
 }

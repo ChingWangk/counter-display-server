@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { RowDataPacket, ResultSetHeader } from 'mysql2';
 import pool from '../db';
 import { categoryMap } from '../services/categoryCatalog';
+import { getCustomerClass } from '../services/customerClass';
 
 /**
  * 陈列看板(后台管理平台 /admin/board.html)专用接口,挂在 /api/admin/board,经 adminAuth 令牌校验。
@@ -9,7 +10,7 @@ import { categoryMap } from '../services/categoryCatalog';
  * 看板 = 小程序出图 + 库存编辑:页面调 /api/generate 拿每个柜台的逐格清单(manifest)画出可拖拽的柜台,
  * 拖入/拖出烟包时调本路由增删该客户 cust_inventory 中的经营品规,再重新出图。
  *
- *  GET    /:cid                 客户信息 + 柜台档案 + 经营品规(每个规格取最新快照)
+ *  GET    /:cid                 客户信息 + 客户类型 + 柜台档案 + 经营品规(每个规格取最新快照)
  *  POST   /:cid/specs           { spec_id, stock_qty? } 新增经营品规(写一条今日快照)
  *  DELETE /:cid/specs/:specId   删除该规格的全部快照行(删前整行存入 board_ops_log,可撤销)
  *  PUT    /:cid/counters        { counters:[{counter_id?,type,length,levels}] } 整体替换柜台档案(顺序即 sort_order)
@@ -84,9 +85,12 @@ router.get('/:cid', async (req: Request, res: Response) => {
          JOIN (SELECT spec_id, MAX(snapshot_date) AS d FROM cust_inventory WHERE customer_id = ? GROUP BY spec_id) m
            ON t.spec_id = m.spec_id AND t.snapshot_date = m.d
         WHERE t.customer_id = ?`, [cid, cid]);
+    // 客户类型与 /api/generate 同口径(入网满 3 个月 = 常规):常规客户看板才开放专区部署
+    const customerClass = await getCustomerClass(cid);
     res.json({
       success: true,
       customer: info[0] ?? null,
+      customerClass,
       counters,
       inventory: inv.map(r => ({
         spec_id: r.spec_id,
