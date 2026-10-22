@@ -12,9 +12,11 @@ import { categoryMap } from '../services/categoryCatalog';
  *  GET    /:cid                 客户信息 + 柜台档案 + 经营品规(每个规格取最新快照)
  *  POST   /:cid/specs           { spec_id, stock_qty? } 新增经营品规(写一条今日快照)
  *  DELETE /:cid/specs/:specId   删除该规格的全部快照行(删前整行存入 board_ops_log,可撤销)
- *  POST   /:cid/undo            撤销该客户最近一次看板操作
+ *  PUT    /:cid/counters        { counters:[{counter_id?,type,length,levels}] } 整体替换柜台档案(顺序即 sort_order)
+ *  POST   /:cid/undo            撤销该客户最近一次看板操作(增删品规 / 柜台编辑)
  *
- * 每次增删都记入 board_ops_log(懒建表):既是删除前的备份,也是操作审计,撤销据此恢复。
+ * 每次操作都记入 board_ops_log(懒建表):既是改动前的备份,也是操作审计,撤销据此恢复。
+ * 柜台编辑记的是改动前的整份柜台档案(op='counters'),撤销即整份写回。
  */
 
 const router = Router();
@@ -32,7 +34,7 @@ interface InvRow extends RowDataPacket {
 
 interface LogRow extends RowDataPacket {
   id: number;
-  op: 'add' | 'remove';
+  op: 'add' | 'remove' | 'counters';
   spec_id: string;
   rows_json: string;
 }
@@ -44,7 +46,7 @@ async function ensureLogTable(): Promise<void> {
     CREATE TABLE IF NOT EXISTS board_ops_log (
       id          INT AUTO_INCREMENT PRIMARY KEY,
       customer_id VARCHAR(64) NOT NULL,
-      op          ENUM('add','remove') NOT NULL,
+      op          VARCHAR(16) NOT NULL,
       spec_id     VARCHAR(32) NOT NULL,
       rows_json   MEDIUMTEXT NOT NULL,
       undone      TINYINT(1) NOT NULL DEFAULT 0,
@@ -52,6 +54,8 @@ async function ensureLogTable(): Promise<void> {
       INDEX idx_cust (customer_id, undone, id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
+  // 早期版本 op 为 ENUM('add','remove'),放宽为 VARCHAR 以记柜台编辑(幂等)
+  await pool.execute(`ALTER TABLE board_ops_log MODIFY op VARCHAR(16) NOT NULL`);
   logTableReady = true;
 }
 
@@ -168,6 +172,84 @@ router.delete('/:cid/specs/:specId', async (req: Request, res: Response) => {
   }
 });
 
+interface CounterRow extends RowDataPacket {
+  counter_id: string;
+  type: string;
+  length: number;
+  levels: number;
+  sort_order: number;
+}
+
+interface CounterInput { counter_id?: string; type: string; length: number; levels: number }
+
+const COUNTER_PREFIX: Record<string, string> = { front: 'QG', hanging: 'DG', back: 'BG' };
+
+/** 写入一份柜台档案(先删后插,顺序即 sort_order);调用方负责事务。 */
+async function writeCounters(
+  conn: import('mysql2/promise').PoolConnection,
+  cid: string,
+  list: { counter_id: string; type: string; length: number; levels: number }[],
+): Promise<void> {
+  await conn.execute('DELETE FROM cust_counters WHERE customer_id = ?', [cid]);
+  for (let i = 0; i < list.length; i++) {
+    const c = list[i];
+    await conn.execute(
+      'INSERT INTO cust_counters (customer_id, counter_id, type, length, levels, sort_order) VALUES (?, ?, ?, ?, ?, ?)',
+      [cid, c.counter_id, c.type, c.length, c.levels, i + 1]);
+  }
+}
+
+router.put('/:cid/counters', async (req: Request, res: Response) => {
+  const cid = req.params.cid;
+  const input = (req.body || {}).counters as CounterInput[] | undefined;
+  if (!validCid(cid) || !Array.isArray(input)) {
+    res.status(400).json({ success: false, error: '参数不对' });
+    return;
+  }
+  for (const c of input) {
+    const len = Number(c.length), lv = Number(c.levels);
+    if (!COUNTER_PREFIX[c.type] || !Number.isInteger(len) || len < 6 || len > 1000 || !Number.isInteger(lv) || lv < 1 || lv > 20) {
+      res.status(400).json({ success: false, error: '柜台类型须为前柜/吊柜/背柜,长度 6–1000 cm、层数 1–20 的整数' });
+      return;
+    }
+  }
+  const conn = await pool.getConnection();
+  try {
+    await ensureLogTable();
+    await conn.beginTransaction();
+    const [before] = await conn.execute<CounterRow[]>(
+      'SELECT counter_id, type, length, levels, sort_order FROM cust_counters WHERE customer_id = ? ORDER BY sort_order FOR UPDATE',
+      [cid]);
+    // 保留原 counter_id;新增的按类型前缀续号(如 116320143QG004),不与已有/本次的 id 撞号
+    const used = new Set<string>([...before.map(r => r.counter_id), ...input.map(c => c.counter_id || '')]);
+    const nextId = (type: string): string => {
+      for (let n = 1; ; n++) {
+        const id = `${cid}${COUNTER_PREFIX[type]}${String(n).padStart(3, '0')}`;
+        if (!used.has(id)) { used.add(id); return id; }
+      }
+    };
+    const keepIds = new Set(before.map(r => r.counter_id));
+    const list = input.map(c => ({
+      counter_id: c.counter_id && keepIds.has(c.counter_id) ? c.counter_id : nextId(c.type),
+      type: c.type, length: Number(c.length), levels: Number(c.levels),
+    }));
+    await conn.execute(
+      'INSERT INTO board_ops_log (customer_id, op, spec_id, rows_json) VALUES (?, ?, ?, ?)',
+      [cid, 'counters', '', JSON.stringify(before.map(r => ({
+        counter_id: r.counter_id, type: r.type, length: Number(r.length), levels: Number(r.levels),
+      })))]);
+    await writeCounters(conn, cid, list);
+    await conn.commit();
+    res.json({ success: true, counters: list });
+  } catch (err) {
+    await conn.rollback();
+    console.error('[adminBoard] counters error:', err);
+    res.status(500).json({ success: false, error: err instanceof Error ? err.message : '保存柜台失败' });
+  } finally {
+    conn.release();
+  }
+});
+
 router.post('/:cid/undo', async (req: Request, res: Response) => {
   const cid = req.params.cid;
   if (!validCid(cid)) { res.status(400).json({ success: false, error: '客户代码格式不对' }); return; }
@@ -180,6 +262,13 @@ router.post('/:cid/undo', async (req: Request, res: Response) => {
       [cid]);
     if (logs.length === 0) { await conn.rollback(); res.json({ success: true, nothing: true }); return; }
     const log = logs[0];
+    if (log.op === 'counters') {
+      await writeCounters(conn, cid, JSON.parse(log.rows_json));
+      await conn.execute('UPDATE board_ops_log SET undone = 1 WHERE id = ?', [log.id]);
+      await conn.commit();
+      res.json({ success: true, op: 'counters', spec_id: '', name: '柜台编辑' });
+      return;
+    }
     const rows = JSON.parse(log.rows_json) as {
       customer_id: string; spec_id: string; stock_qty: number; stock_days: number; snapshot_date: string;
     }[];
