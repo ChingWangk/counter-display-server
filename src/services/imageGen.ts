@@ -587,6 +587,52 @@ function distributePairAware(packs: RenderPack[], idealPerRow: number[], cap: nu
 }
 
 /**
+ * 双包档保护:每层只放完整的「两包一组」,且各层组数相同,层与层同列对齐。
+ *
+ * 渲染包按 2 个一组切成单元(普通规格的两包 / 红框配对主+副,上游已保证两两成组)。
+ * 每层组数 k = ceil(单元数 / 层数),上限为一层能放下的组数 floor(每层包数 / 2)。
+ *  - 单元不足 k×层数:把排在最前的普通规格(优先级最高)各补一组,紧贴在原组右侧,补齐空缺;
+ *    红框配对不复制。连普通单元都没有时,空缺就留着(极端情况,不硬造)。
+ *  - 单元超出(仅在组数被行宽封顶时发生):从尾部裁掉低优先级的单元。
+ * 返回补齐/裁剪后的包序列,以及每层包数(恒为 2k)。
+ */
+function equalizeDoubleRows(
+  packs: RenderPack[],
+  rows: number,
+  maxPerRow: number,
+): { packs: RenderPack[]; perRow: number[] } {
+  if (rows <= 0) return { packs: [], perRow: [] };
+  const units: RenderPack[][] = [];
+  for (let i = 0; i < packs.length; i += 2) units.push(packs.slice(i, i + 2));
+  // 上游裁剪可能留下孤包:补成完整一组(复制同规格,不带红框角色)
+  const last = units[units.length - 1];
+  if (last && last.length === 1) last.push({ spec: last[0].spec });
+
+  const k = Math.min(Math.ceil(units.length / rows), Math.floor(maxPerRow / 2));
+  if (k <= 0) return { packs: [], perRow: new Array(rows).fill(0) };
+  const target = k * rows;
+
+  let out = units;
+  if (units.length > target) {
+    out = units.slice(0, target);
+  } else if (units.length < target) {
+    const plainIdx = units.map((u, i) => (u[0].boxRole === undefined ? i : -1)).filter(i => i >= 0);
+    const dupAfter = new Set(plainIdx.slice(0, target - units.length));
+    out = [];
+    units.forEach((u, i) => {
+      out.push(u);
+      if (dupAfter.has(i)) out.push(u.map(p => ({ spec: p.spec })));
+    });
+  }
+  const perRowUnits = Math.min(k, Math.ceil(out.length / rows));
+  return {
+    packs: out.flat(),
+    perRow: Array.from({ length: rows }, (_, r) =>
+      2 * Math.max(0, Math.min(perRowUnits, out.length - r * perRowUnits))),
+  };
+}
+
+/**
  * 为单个柜台生成陈列图片
  *
  * 整张画布:左侧 labelW 宽的"专区标签栏"(仅当本柜台有专区行时才预留,否则 labelW=0) +
@@ -664,11 +710,19 @@ export async function generateCounterImage(
     const idealDistribute = regularLayout
       ? (regularLayout.mode === 'standard' ? uniformDistribute : staggeredDistribute)
       : uniformDistribute;
-    const idealPerRow = idealDistribute(renderPacks.length, clampedRegularRows);
-    const hasPairs = renderPacks.some(p => p.boxRole !== undefined);
-    const perRow = hasPairs
-      ? distributePairAware(renderPacks, idealPerRow, singleMaxPerRow)
-      : idealPerRow;
+    let perRow: number[];
+    if (doubleMode) {
+      // 双包档保护:各层整组双包、组数相同、同列对齐(见 equalizeDoubleRows),不再走 staggered 错位
+      const eq = equalizeDoubleRows(renderPacks, clampedRegularRows, singleMaxPerRow);
+      renderPacks = eq.packs;
+      perRow = eq.perRow;
+    } else {
+      const idealPerRow = idealDistribute(renderPacks.length, clampedRegularRows);
+      const hasPairs = renderPacks.some(p => p.boxRole !== undefined);
+      perRow = hasPairs
+        ? distributePairAware(renderPacks, idealPerRow, singleMaxPerRow)
+        : idealPerRow;
+    }
     regularRowLayouts = perRow.map(n => ({ type: 'regular' as const, specCount: n }));
     placedRegular = renderPacks;
   }
@@ -908,7 +962,9 @@ export async function generateCounterImage(
     }
     if (rowPacks.length === 0) continue;
 
-    await drawFlatRow(ctx, rowPacks, labelW, displayAreaW, baseY, priceTagMap, capGap, boxRegions);
+    // 双包档:间隙按「每 2 包一组」落位(同规格补出的第二组也分开),各层组数相同 → 同列对齐
+    const unitSize = slot.type === 'regular' && regularLayout?.mode === 'double' ? 2 : undefined;
+    await drawFlatRow(ctx, rowPacks, labelW, displayAreaW, baseY, priceTagMap, capGap, boxRegions, unitSize);
   }
 
   // ---- 绘制层板(横贯整个画布,后续 zone label 会覆盖其在 label 栏内的部分) ----
@@ -1033,12 +1089,17 @@ async function drawFlatRow(
   priceTagMap?: ReadonlyMap<string, number>,
   capGap: boolean = true,
   boxSink?: BoxRegion[],
+  unitSize?: number,
 ): Promise<void> {
   const packs = rowPacks;
   if (packs.length === 0) return;
 
   // 组键间隙:红框配对的 L/R 紧贴(无 gap),红框两侧留 gap;普通包按 id 切换留 gap。
-  const isGap = (prev: RenderPack, cur: RenderPack): boolean => {
+  // 传 unitSize(双包档=2)时改为定长分组:每 unitSize 包一组,组与组之间留 gap。
+  const isGap = (i: number): boolean => {
+    if (unitSize) return i % unitSize === 0;
+    const prev = packs[i - 1];
+    const cur = packs[i];
     if (cur.boxRole === 'R') return false;       // 副规格紧贴其主规格
     if (cur.boxRole === 'L') return true;        // 红框前留 gap
     if (prev.boxRole === 'R') return true;       // 红框后留 gap
@@ -1047,7 +1108,7 @@ async function drawFlatRow(
 
   let diffTransitions = 0;
   for (let i = 1; i < packs.length; i++) {
-    if (isGap(packs[i - 1], packs[i])) diffTransitions++;
+    if (isGap(i)) diffTransitions++;
   }
 
   const totalPackW = packs.length * CELL_W;
@@ -1073,7 +1134,7 @@ async function drawFlatRow(
   for (let col = 0; col < packs.length; col++) {
     if (col > 0) {
       cursor += CELL_W;
-      if (isGap(packs[col - 1], packs[col])) cursor += interGap;
+      if (isGap(col)) cursor += interGap;
     }
     xs[col] = cursor;
     await drawSpec(ctx, packs[col].spec, cursor, baseY, CELL_W, CELL_H, priceTagMap);
